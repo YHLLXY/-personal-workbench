@@ -9,9 +9,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      manifest: false, // M6 再启用
+    VitePWA({ registerType: 'autoUpdate', manifest: false, // Task 18 补全 manifest 与图标
     }),
   ],
   resolve: {
