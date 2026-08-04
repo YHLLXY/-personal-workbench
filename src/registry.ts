@@ -42,7 +42,7 @@ export const allSubModules: SubModuleDef[] = modules.flatMap(m => m.children)
 export function subModuleById(id: string) { return allSubModules.find(s => s.id === id) }
 /** 主模块下子模块 id 集合 */
 export function subIdsOf(moduleId: string) { return modules.find(m => m.id === moduleId)?.children.map(c => c.id) ?? [] }
-/** 首页卡片（按桌面顺序排好，供 home.tsx 使用） */
+/** 首页卡片（flatMap 顺序，供 home.tsx 使用时自行 sort） */
 export function homeCards() {
   return allSubModules
     .map(s => s.homeCard && { ...s.homeCard, subId: s.id })
