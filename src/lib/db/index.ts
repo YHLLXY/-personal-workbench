@@ -1,7 +1,13 @@
-import { LocalRepository } from './local-repository'
 import type { WorkbenchRepository } from './types'
+import { LocalRepository } from './local-repository'
+import { SupabaseRepository } from './supabase-repository'
 
-// TODO Task 5: 接入 SupabaseRepository（配置 VITE_SUPABASE_URL/ANON_KEY 时启用云端模式）
-export const isCloudMode = false
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
+const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
-export const repository: WorkbenchRepository = new LocalRepository()
+/** 云端模式：配置了 Supabase 环境变量 */
+export const isCloudMode = Boolean(supabaseUrl && supabaseAnon)
+
+export const repository: WorkbenchRepository = isCloudMode
+  ? new SupabaseRepository(supabaseUrl!, supabaseAnon!)
+  : new LocalRepository()
