@@ -18,12 +18,13 @@ export default function Papers() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ArxivResult[]>([])
   const [searching, setSearching] = useState(false)
+  const [searched, setSearched] = useState(false)
   const [filter, setFilter] = useState<'all' | Paper['status']>('all')
 
   async function doSearch(e: FormEvent) {
     e.preventDefault(); if (!query.trim()) return
     setSearching(true)
-    try { setResults(await searchArxiv(query)) }
+    try { setResults(await searchArxiv(query)); setSearched(true) }
     catch { toast.error('搜索失败，请稍后重试') }
     finally { setSearching(false) }
   }
@@ -57,22 +58,26 @@ export default function Papers() {
       </form>
 
       {searching ? <div className="space-y-2"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div>
-        : results.length > 0 && (
+        : results.length > 0 ? (
           <div className="bg-card border border-border rounded-2xl divide-y divide-border/70 mb-6">
-            {results.map(r => (
-              <div key={r.arxivId} className="px-4 py-3 flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{r.title}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5 truncate">{r.authors.join(', ')} · {r.published}</div>
+            {results.map(r => {
+              const inLibrary = (papers ?? []).some(p => p.arxivId === r.arxivId)
+              return (
+                <div key={r.arxivId} className="px-4 py-3 flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{r.title}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 truncate">{r.authors.join(', ')} · {r.published}</div>
+                  </div>
+                  <a href={r.url} target="_blank" rel="noreferrer" aria-label="打开原文" className="p-1.5 text-muted-foreground/60 hover:text-primary"><ExternalLink className="size-4" /></a>
+                  <Button size="sm" variant="outline" disabled={inLibrary} onClick={() => create.mutate({ title: r.title, authors: r.authors.join(', '), arxivId: r.arxivId, url: r.url, status: 'want', rating: null, note: null }, { onSuccess: () => toast.success('已收藏') })}>
+                    <Plus className="size-3.5 mr-1" />{inLibrary ? '已收藏' : '收藏'}
+                  </Button>
                 </div>
-                <a href={r.url} target="_blank" rel="noreferrer" aria-label="打开原文" className="p-1.5 text-muted-foreground/60 hover:text-primary"><ExternalLink className="size-4" /></a>
-                <Button size="sm" variant="outline" onClick={() => create.mutate({ title: r.title, authors: r.authors.join(', '), arxivId: r.arxivId, url: r.url, status: 'want', rating: null, note: null }, { onSuccess: () => toast.success('已收藏') })}>
-                  <Plus className="size-3.5 mr-1" />收藏
-                </Button>
-              </div>
-            ))}
+              )
+            })}
           </div>
-        )}
+        ) : searched ? <p className="text-sm text-muted-foreground py-8 text-center">没有找到相关论文，换个关键词试试</p>
+        : null}
 
       {isLoading ? <Skeleton className="h-24 w-full" />
         : shown.length === 0 ? <p className="text-sm text-muted-foreground py-8 text-center flex flex-col items-center gap-2"><Library className="size-8 text-muted-foreground/40" />库里还没有论文</p>

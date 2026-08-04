@@ -14,7 +14,12 @@ export function parseArxivXml(xml: string): ArxivResult[] {
   }
   return out
 }
-function clean(s: string) { return s.replace(/\s+/g, ' ').trim() }
+function clean(s: string) {
+  return s
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ').trim()
+}
 
 export async function searchArxiv(query: string, max = 8): Promise<ArxivResult[]> {
   const r = await fetch(`https://export.arxiv.org/api/query?search_query=${encodeURIComponent(query)}&start=0&max_results=${max}&sortBy=submittedDate&sortOrder=descending`)
