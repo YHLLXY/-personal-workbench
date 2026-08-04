@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Newspaper, ArrowRight } from 'lucide-react'
+import { Newspaper, ArrowRight, Sparkles } from 'lucide-react'
 import { loadHot, type HotItem } from '../../lib/hot'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useNotes } from './api'
 
 export function HotCard() {
   const [items, setItems] = useState<HotItem[]>([])
@@ -20,6 +21,27 @@ export function HotCard() {
             <span className="text-accent font-bold text-xs w-4 shrink-0">{i + 1}</span>
             <span className="truncate">{it.title}</span>
           </a>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function NotesCard() {
+  const { data: notes } = useNotes()
+  const recent = (notes ?? []).slice(0, 3)
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm"><Sparkles className="size-4 text-primary" strokeWidth={1.7} />灵感速记</CardTitle>
+        <Link to="/notes" className="text-xs text-muted-foreground hover:text-primary"><ArrowRight className="size-3.5" /></Link>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {recent.length === 0 ? <p className="text-xs text-muted-foreground py-2">暂无速记</p> : recent.map(n => (
+          <div key={n.id} className="text-xs text-muted-foreground truncate">
+            {n.tag && <span className="inline-block bg-accent/25 text-accent-foreground rounded px-1.5 mr-1.5 text-[10px]">{n.tag}</span>}
+            {n.content}
+          </div>
         ))}
       </CardContent>
     </Card>

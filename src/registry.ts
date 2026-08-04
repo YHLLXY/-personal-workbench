@@ -1,8 +1,8 @@
-import { BookOpen, CheckCircle2, LayoutDashboard, Library, Newspaper, Timer, type LucideIcon } from 'lucide-react'
+import { BookOpen, CheckCircle2, LayoutDashboard, Library, Newspaper, Sparkles, Timer, type LucideIcon } from 'lucide-react'
 import { lazy, type ComponentType } from 'react'
 import { TodayTasksCard } from './modules/overview/cards'
 import { ExamsCard, FocusCard } from './modules/study/cards'
-import { HotCard } from './modules/news/cards'
+import { HotCard, NotesCard } from './modules/news/cards'
 
 export interface HomeCardDef {
   id: string
@@ -77,6 +77,11 @@ export const modules: ModuleDef[] = [
       {
         id: 'papers', name: '论文资料库', icon: Library, path: '/papers',
         component: lazy(() => import('./modules/news/papers')),
+      },
+      {
+        id: 'notes', name: '灵感速记', icon: Sparkles, path: '/notes',
+        component: lazy(() => import('./modules/news/notes')),
+        homeCard: { id: 'home-notes', span: '12', mobileOrder: -1, desktopOrder: 5, component: NotesCard },
       },
     ],
   },
