@@ -23,6 +23,13 @@ npm install
 npm run dev
 ```
 
+## 开发验证
+
+```bash
+npm test        # 32 个单元测试（仓库/过滤/番茄/热力图/复盘/解析等）
+npm run lint    # oxlint 静态检查
+```
+
 ## 云端模式（可选）
 
 1. 在 Supabase SQL Editor 执行 `supabase/migrations/001_init.sql`

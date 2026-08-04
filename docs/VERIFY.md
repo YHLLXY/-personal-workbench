@@ -17,11 +17,11 @@
 |------|------|
 | 主 chunk（index-*.js） | 225.72 kB（gzip 71.06 kB） |
 | db chunk（Supabase 客户端） | 239.84 kB（gzip 62.98 kB），静态引入（App → lib/db → supabase-repository） |
-| 合计首屏 JS | 约 465 kB raw / gzip 约 134 kB（< 160 kB 可接受线，不强制拆分） |
+| 合计首屏 JS | 约 597 kB raw / gzip 约 177 kB（br 约 150 kB；含 index + db + 6 个共享 chunk） |
 | 模块懒加载 | 5 大模块 9 个页面均独立 chunk，懒加载生效 |
 | 待办/考试/热点/热力图/复盘卡片 | 卡片类小组件随主 chunk（registry eager import，正常） |
 
-结论：主 chunk < 400 kB；Supabase 客户端按需引入需改造 repository 选择逻辑，收益约 63 kB gzip，个人应用当前不拆分（记录备查）。
+结论：主 chunk < 400 kB；首屏 gzip 约 177 kB，4G/5G 下 TTI ≈ 1s，PWA 首访后全量预缓存；Supabase 客户端按需引入需改造 repository 选择逻辑，收益约 63 kB gzip（仅首访），当前不拆分（记录备查）。
 
 ## 待人工验收（浏览器操作，手机 + 电脑）
 
@@ -35,7 +35,7 @@
 - [ ] 论文页 arXiv 搜索（网络可用时）→ 收藏 → 状态流转
 - [ ] 速记：输入 → 停笔 1.2s 自动保存 → 列表出现 → 点击编辑 → 标签
 - [ ] 习惯：创建习惯 → 今日打卡 → 首页热力图变色、连续天数 +1
-- [ ] 身体记录：体重录入 → 列表出现
+- [ ] 身体记录：体重/睡眠/运动分别录入 → 列表出现且单位正确
 - [ ] 复盘页：当日汇总数字正确 → 写心情/总结/明日计划 → 保存 → 刷新后回填
 - [ ] 深色模式切换（顶栏月亮/太阳按钮）
 - [ ] 设置页显示「本地模式」；退出登录按钮不显示（本地模式）
@@ -44,6 +44,8 @@
 
 ## 云端模式验收（配置 Supabase 后）
 
-- [ ] 执行 supabase/migrations/001_init.sql（SQL Editor）
+- [ ] 在 Supabase 控制台关闭邮箱确认（Authentication → Providers → Email → Confirm email 关闭）后重新部署
+- [ ] 执行 supabase/migrations/001_init.sql（SQL Editor，9 张表 + RLS）
 - [ ] 配置 VITE_SUPABASE_URL/ANON_KEY 重新部署
-- [ ] 登录 → 数据云端同步 → 手机/电脑双端一致
+- [ ] 首次登录即自动注册 → 进入工作台 → 数据云端同步 → 手机/电脑双端一致
+- [ ] 设置页显示账号邮箱；退出登录 → 重新登录可再次进入
