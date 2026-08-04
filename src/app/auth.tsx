@@ -11,7 +11,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isCloudMode) return
     const sb = getSupabaseClient()
-    sb.auth.getSession().then(({ data }) => setState({ user: data.session?.user ? { email: data.session.user.email ?? '' } : null, loading: false }))
+    sb.auth.getSession().then(({ data }) => setState({ user: data.session?.user ? { email: data.session.user.email ?? '' } : null, loading: false })).catch(() => setState({ user: null, loading: false }))
     const { data: sub } = sb.auth.onAuthStateChange((_e, session) => setState({ user: session?.user ? { email: session.user.email ?? '' } : null, loading: false }))
     return () => sub.subscription.unsubscribe()
   }, [])

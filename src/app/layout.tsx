@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Search, Settings, Moon, Sun, Plus } from 'lucide-react'
 import { modules } from '@/registry'
@@ -6,6 +7,7 @@ import { useTheme } from './theme'
 import { useAuth } from './auth'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 
 /** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」（后续模块注册后自动增加） */
 const MOBILE_TABS = [
@@ -96,7 +98,9 @@ export function Shell() {
 
         {/* 内容 */}
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-4 md:py-6 pb-32 md:pb-6">
-          <Outlet />
+          <Suspense fallback={<div className="space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
 

@@ -15,16 +15,31 @@ export default function AuthPage() {
   async function submit(e: FormEvent) {
     e.preventDefault(); setBusy(true)
     try {
-      const { error } = await getSupabaseClient().auth.signInWithPassword({ email, password })
+      const sb = getSupabaseClient()
+      const { error } = await sb.auth.signInWithPassword({ email, password })
       if (error) {
-        // 用户不存在则注册（关闭邮箱验证后可直接登录态）
-        if (error.message.includes('Invalid login credentials')) {
-          const { error: signUpErr } = await getSupabaseClient().auth.signUp({ email, password })
-          if (signUpErr) throw signUpErr
-          toast.success('账号已创建，欢迎使用！')
+        // 防枚举：用户不存在与密码错误都返回 invalid_credentials
+        if (error.code === 'invalid_credentials' || error.message.includes('Invalid login credentials')) {
+          const { data: signUpData, error: signUpErr } = await sb.auth.signUp({ email, password })
+          if (signUpErr) {
+            if (signUpErr.code === 'user_already_exists' || signUpErr.message.includes('User already registered')) {
+              toast.error('账号已存在，密码不正确')
+              return
+            }
+            throw signUpErr
+          }
+          if (signUpData.session) {           // 邮箱验证关闭：直接登录态
+            toast.success('账号已创建，欢迎使用！')
+            navigate('/')
+          } else {                            // 邮箱验证开启：无会话，提示验证
+            toast.success('注册成功！请前往邮箱完成验证后登录')
+            return
+          }
         } else throw error
-      } else toast.success('欢迎回来！')
-      navigate('/')
+      } else {
+        toast.success('欢迎回来！')
+        navigate('/')
+      }
     } catch (err) { toast.error('登录失败：' + (err instanceof Error ? err.message : '未知错误')) }
     finally { setBusy(false) }
   }
