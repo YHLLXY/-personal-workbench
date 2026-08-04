@@ -1,12 +1,17 @@
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Star, ArrowRight } from 'lucide-react'
 import { useTasks, todayTasks } from './api'
+import { useFocusToday, useExamsSoon, daysUntil } from '../study/api'
 import { todayStr } from '@/lib/db/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MobileHomeEntries } from '@/components/mobile-entries'
 
 export default function OverviewHome() {
   const { data: tasks, isLoading: tl } = useTasks()
+  const { data: focus } = useFocusToday()
+  const { data: exams } = useExamsSoon()
+  const todayMinutes = focus?.minutes ?? 0
+  const nextExam = exams?.[0]
   const list = todayTasks(tasks ?? [], todayStr()).slice(0, 5)
   const focusList = (tasks ?? []).filter(t => t.focus && t.status !== 'done').slice(0, 3)
 
@@ -15,8 +20,7 @@ export default function OverviewHome() {
       {/* KPI 条 */}
       <div className="grid grid-cols-3 gap-2">
         <Kpi label="今日待办" value={`${list.filter(t => t.status !== 'done').length}`} unit="项" />
-        {/* TODO M3: 接入 useFocusToday（专注时长） */}
-        <Kpi label="专注时长" value="0" unit="h" />
+        <Kpi label="专注时长" value={`${Math.floor(todayMinutes / 60)}:${String(todayMinutes % 60).padStart(2, '0')}`} unit="h" />
         {/* TODO M5: 接入 useHabitStats（连续打卡） */}
         <Kpi label="连续打卡" value="0" unit="天" />
       </div>
@@ -45,7 +49,13 @@ export default function OverviewHome() {
             </div>
           ))}
       </div>
-      {/* TODO M3: 最近考试卡片（useExamsSoon + daysUntil） */}
+      {/* 最近考试 */}
+      {nextExam && (
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="text-xs text-muted-foreground">最近考试</div>
+          <div className="text-2xl font-extrabold font-numeric mt-1">{daysUntil(nextExam.examDate)}<span className="text-sm font-normal text-muted-foreground ml-1">天后 · {nextExam.title}</span></div>
+        </div>
+      )}
       {/* TODO M5: 习惯热力图（useHeatCells） */}
       {/* 快捷入口 */}
       <MobileHomeEntries />

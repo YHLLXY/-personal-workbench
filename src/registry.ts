@@ -1,6 +1,7 @@
-import { CheckCircle2, LayoutDashboard, type LucideIcon } from 'lucide-react'
+import { BookOpen, CheckCircle2, LayoutDashboard, type LucideIcon } from 'lucide-react'
 import { lazy, type ComponentType } from 'react'
 import { TodayTasksCard } from './modules/overview/cards'
+import { ExamsCard } from './modules/study/cards'
 
 export interface HomeCardDef {
   id: string
@@ -46,6 +47,16 @@ export const modules: ModuleDef[] = [
         id: 'tasks', name: '今日待办', icon: CheckCircle2, path: '/tasks',
         component: lazy(() => import('./modules/overview/today-tasks')),
         homeCard: { id: 'home-tasks', span: '5', mobileOrder: 1, desktopOrder: 1, component: TodayTasksCard },
+      },
+    ],
+  },
+  {
+    id: 'study', name: '学习与科研', icon: BookOpen,
+    children: [
+      {
+        id: 'study-manager', name: '学习管理', icon: BookOpen, path: '/study',
+        component: lazy(() => import('./modules/study/study-manager')),
+        homeCard: { id: 'home-exams', span: '3', mobileOrder: 2, desktopOrder: 2, component: ExamsCard },
       },
     ],
   },
