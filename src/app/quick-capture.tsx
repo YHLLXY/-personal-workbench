@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { useUiStore } from './store'
@@ -24,12 +24,18 @@ export function QuickCapture() {
   const [content, setContent] = useState('')
   const qc = useQueryClient()
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [setOpen])
+
   const addTask = useMutation({ mutationFn: () => repository.createTask({ title, dueDate: todayStr() }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['tasks'] }); toast.success('任务已添加'); reset() }, onError: () => toast.error('添加失败') })
   const addNote = useMutation({ mutationFn: () => repository.createNote(content), onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); toast.success('已记下'); reset() }, onError: () => toast.error('保存失败') })
   const addLog = useMutation({
     mutationFn: async () => {
       // 优化：日志列表只查一次（计划原文在循环内重复查询，属低效写法）
-      const habits = await repository.listHabits()
+      const habits = (await repository.listHabits()).filter(h => h.active)
       const logs = await repository.listHabitLogs()
       const today = todayStr()
       for (const h of habits) {
@@ -47,7 +53,7 @@ export function QuickCapture() {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={() => setOpen(false)}>
-      <div className="w-full sm:max-w-md bg-card rounded-t-2xl sm:rounded-2xl border border-border shadow-xl p-4 pb-6" onClick={e => e.stopPropagation()}>
+      <div className="w-full sm:max-w-md bg-card rounded-t-2xl sm:rounded-2xl border border-border shadow-xl p-4 pb-[max(env(safe-area-inset-bottom),1.5rem)]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center mb-4">
           <div className="flex gap-1 bg-muted rounded-lg p-1">
             {TABS.map(t => (

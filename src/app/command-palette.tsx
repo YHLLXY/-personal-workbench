@@ -14,12 +14,12 @@ export function CommandPalette() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setOpen(!open) }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setOpen(v => !v) }
       if (e.key === 'Escape') setOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, setOpen])
+  }, [setOpen])
 
   const items = useMemo(() => {
     const nav = allSubModules.filter(s => s.name.includes(q) || s.path.includes(q)).map(s => ({ id: 'go:' + s.id, label: `前往 ${s.name}`, icon: s.icon, run: () => { navigate(s.path); setOpen(false) } }))
