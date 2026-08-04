@@ -1,8 +1,9 @@
-import { BookOpen, CheckCircle2, LayoutDashboard, Library, Newspaper, Sparkles, Timer, type LucideIcon } from 'lucide-react'
+import { BookOpen, CheckCircle2, HeartPulse, LayoutDashboard, Library, Newspaper, Sparkles, Timer, type LucideIcon } from 'lucide-react'
 import { lazy, type ComponentType } from 'react'
 import { TodayTasksCard } from './modules/overview/cards'
 import { ExamsCard, FocusCard } from './modules/study/cards'
 import { HotCard, NotesCard } from './modules/news/cards'
+import { HeatmapCard } from './modules/health/cards'
 
 export interface HomeCardDef {
   id: string
@@ -82,6 +83,16 @@ export const modules: ModuleDef[] = [
         id: 'notes', name: '灵感速记', icon: Sparkles, path: '/notes',
         component: lazy(() => import('./modules/news/notes')),
         homeCard: { id: 'home-notes', span: '12', mobileOrder: -1, desktopOrder: 5, component: NotesCard },
+      },
+    ],
+  },
+  {
+    id: 'health', name: '健康', icon: HeartPulse,
+    children: [
+      {
+        id: 'health', name: '运动健康', icon: HeartPulse, path: '/health',
+        component: lazy(() => import('./modules/health/health')),
+        homeCard: { id: 'home-heatmap', span: '7', mobileOrder: 4, desktopOrder: 6, component: HeatmapCard },
       },
     ],
   },
