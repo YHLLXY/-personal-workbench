@@ -11,9 +11,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'pwa-192x192.png', 'pwa-512x512.png', 'maskable-icon-512x512.png', 'apple-touch-icon-180x180.png'],
+      includeManifestIcons: false,
       manifest: {
-        name: '我的工作台',
+        name: '个人工作台',
         short_name: '工作台',
         description: '个人专属工作台：学习、资讯、健康、复盘一站式管理',
         theme_color: '#5B8A72',
