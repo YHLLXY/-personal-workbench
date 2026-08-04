@@ -9,6 +9,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { todayStr } from '@/lib/db/types'
 import { cn } from '@/lib/utils'
+import { taskKeys } from '@/modules/overview/api'
+import { noteKeys } from '@/modules/news/api'
+import { habitLogKeys } from '@/modules/health/api'
 
 const TABS = [
   { id: 'task', label: '任务' },
@@ -30,8 +33,8 @@ export function QuickCapture() {
     return () => window.removeEventListener('keydown', onKey)
   }, [setOpen])
 
-  const addTask = useMutation({ mutationFn: () => repository.createTask({ title, dueDate: todayStr() }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['tasks'] }); toast.success('任务已添加'); reset() }, onError: () => toast.error('添加失败') })
-  const addNote = useMutation({ mutationFn: () => repository.createNote(content), onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); toast.success('已记下'); reset() }, onError: () => toast.error('保存失败') })
+  const addTask = useMutation({ mutationFn: () => repository.createTask({ title, dueDate: todayStr() }), onSuccess: () => { qc.invalidateQueries({ queryKey: taskKeys.all }); toast.success('任务已添加'); reset() }, onError: () => toast.error('添加失败') })
+  const addNote = useMutation({ mutationFn: () => repository.createNote(content), onSuccess: () => { qc.invalidateQueries({ queryKey: noteKeys.all }); toast.success('已记下'); reset() }, onError: () => toast.error('保存失败') })
   const addLog = useMutation({
     mutationFn: async () => {
       // 优化：日志列表只查一次（计划原文在循环内重复查询，属低效写法）
@@ -44,7 +47,7 @@ export function QuickCapture() {
         else await repository.setHabitLog(h.id, today, 1)
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['habitLogs'] }); toast.success('今日习惯已打卡'); reset() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: habitLogKeys.all }); toast.success('今日习惯已打卡'); reset() },
     onError: () => toast.error('打卡失败'),
   })
 
