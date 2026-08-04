@@ -5,9 +5,6 @@ import { todayStr } from '@/lib/db/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MobileHomeEntries } from '@/components/mobile-entries'
 
-/** 桌面端首页卡片（span 7）——占位导出，注册表引用 */
-export function OverviewHomeCard() { return <div className="hidden" aria-hidden /> }
-
 export default function OverviewHome() {
   const { data: tasks, isLoading: tl } = useTasks()
   const list = todayTasks(tasks ?? [], todayStr()).slice(0, 5)
