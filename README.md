@@ -1,32 +1,45 @@
-# React + TypeScript + Vite
+# 🧭 个人工作台
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+个人专属工作台：总览、学习、资讯、健康、复盘一站式管理。手机（PWA）+ 电脑双端，莫兰迪淡雅配色。
 
-Currently, two official plugins are available:
+## 功能
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| 主模块 | 子模块 |
+|--------|--------|
+| 总览与设计 | 工作台总览（首页仪表盘）、今日待办（今日焦点） |
+| 学习与科研 | 学习管理（考试倒计时）、番茄钟（专注记录） |
+| 资讯与资料 | 今日热点（多源聚合）、论文资料库（arXiv）、灵感速记（自动保存） |
+| 健康 | 习惯打卡（热力图）、体重/睡眠/运动记录 |
+| 复盘 | 今日复盘（当日数据自动汇总） |
 
-## React Compiler
+## 技术栈
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+React 19 · Vite · TypeScript · Tailwind CSS v4 · shadcn/ui · Lucide · Supabase · TanStack Query · Vercel
 
-## Expanding the Oxlint configuration
+## 本地运行
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## 云端模式（可选）
+
+1. 在 Supabase SQL Editor 执行 `supabase/migrations/001_init.sql`
+2. 复制项目的 URL 与 anon key 到 `.env`（参考 `.env.example`）
+3. 重新构建部署，数据自动云端同步
+
+## 部署
+
+```bash
+vercel --prod
+```
+环境变量：`VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`（不配则本地模式）。
+
+## 验证
+
+自动化验证与人工验收清单见 [docs/VERIFY.md](docs/VERIFY.md)。
+
+## 更新日志
+
+- 2026-08-04 v1.0.0 首个版本：5 大主模块 + PWA + 双端适配
