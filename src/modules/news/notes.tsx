@@ -27,9 +27,9 @@ export default function Notes() {
       </div>
 
       {showNew && (
-        <NoteEditor note={null} onDone={() => setParams({}, { replace: true })} />
+        <NoteEditor key="new" note={null} onDone={() => setParams({}, { replace: true })} />
       )}
-      {editing && <NoteEditor note={editing} onDone={() => setEditing(null)} />}
+      {editing && <NoteEditor key={editing.id} note={editing} onDone={() => { setEditing(null); setParams({}, { replace: true }) }} />}
 
       {isLoading ? <Skeleton className="h-24 w-full" />
         : (notes ?? []).length === 0 && !showNew ? (
