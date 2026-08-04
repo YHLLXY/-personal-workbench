@@ -1,4 +1,5 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { getSupabaseClient } from './supabase-client'
 import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review } from './types'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
@@ -18,8 +19,8 @@ function reviewFromRow(r: Row): Review { return { id: String(r.id), reviewDate: 
 
 export class SupabaseRepository implements WorkbenchRepository {
   private sb: SupabaseClient
-  constructor(url: string, anonKey: string) {
-    this.sb = createClient(url, anonKey)
+  constructor() {
+    this.sb = getSupabaseClient()
   }
   get client() { return this.sb }
 

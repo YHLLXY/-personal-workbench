@@ -9,5 +9,5 @@ const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefine
 export const isCloudMode = Boolean(supabaseUrl && supabaseAnon)
 
 export const repository: WorkbenchRepository = isCloudMode
-  ? new SupabaseRepository(supabaseUrl!, supabaseAnon!)
+  ? new SupabaseRepository()
   : new LocalRepository()

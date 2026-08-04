@@ -1,5 +1,5 @@
-import type { LucideIcon } from 'lucide-react'
-import type { ComponentType } from 'react'
+import { LayoutDashboard, type LucideIcon } from 'lucide-react'
+import { lazy, type ComponentType } from 'react'
 
 export interface HomeCardDef {
   id: string
@@ -32,9 +32,18 @@ export interface ModuleDef {
 }
 
 /** 模块注册表：侧边栏 / 底部 Tab / 路由 / 首页卡片 全部由它生成。
- *  当前为空数组——各模块在后续任务中逐步注册：
- *  Task 6 注册 overview（home 占位组件）、Task 9+ 注册各自模块。 */
-export const modules: ModuleDef[] = []
+ *  模块在各自任务中逐步注册：Task 6 已注册 overview；Task 9+ 注册其余模块。 */
+export const modules: ModuleDef[] = [
+  {
+    id: 'overview', name: '总览与设计', icon: LayoutDashboard,
+    children: [
+      {
+        id: 'home', name: '工作台总览', icon: LayoutDashboard, path: '/',
+        component: lazy(() => import('./app/home')),
+      },
+    ],
+  },
+]
 
 /** 全部子模块扁平化 */
 export const allSubModules: SubModuleDef[] = modules.flatMap(m => m.children)

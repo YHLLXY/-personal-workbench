@@ -3,6 +3,7 @@ import { Search, Settings, Moon, Sun, Plus } from 'lucide-react'
 import { modules } from '@/registry'
 import { useUiStore } from './store'
 import { useTheme } from './theme'
+import { useAuth } from './auth'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
@@ -14,6 +15,7 @@ const MOBILE_TABS = [
 
 export function Shell() {
   const { theme, toggle } = useTheme()
+  const { user } = useAuth()
   const setPaletteOpen = useUiStore(s => s.setPaletteOpen)
   const setCaptureOpen = useUiStore(s => s.setCaptureOpen)
   const navigate = useNavigate()
@@ -88,7 +90,7 @@ export function Shell() {
             {theme === 'light' ? <Moon className="size-4" /> : <Sun className="size-4" />}
           </Button>
           <div className="size-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center text-xs font-bold">
-            我 {/* TODO Task 6 接入 useAuth 显示邮箱首字母 */}
+            {user ? user.email?.[0]?.toUpperCase() ?? '我' : '我'}
           </div>
         </header>
 

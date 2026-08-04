@@ -31,7 +31,7 @@ import { SupabaseRepository } from '../src/lib/db/supabase-repository'
 
 describe('SupabaseRepository', () => {
   let repo: SupabaseRepository
-  beforeEach(() => { insertCalls.length = 0; repo = new SupabaseRepository('https://x.supabase.co', 'anon-key') })
+  beforeEach(() => { insertCalls.length = 0; repo = new SupabaseRepository() })
 
   it('createPaper 载荷使用 snake_case 列名', async () => {
     await repo.createPaper({ title: 't', authors: 'a', arxivId: '2401.1', url: 'https://arxiv.org/abs/2401.1', status: 'want', rating: null, note: null })
