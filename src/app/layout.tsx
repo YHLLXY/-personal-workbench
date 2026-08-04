@@ -8,6 +8,8 @@ import { useAuth } from './auth'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CommandPalette } from './command-palette'
+import { QuickCapture } from './quick-capture'
 
 /** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」（后续模块注册后自动增加） */
 const MOBILE_TABS = [
@@ -121,6 +123,9 @@ export function Shell() {
         className="md:hidden fixed bottom-20 right-4 z-30 size-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 flex items-center justify-center">
         <Plus className="size-5" />
       </button>
+
+      <CommandPalette />
+      <QuickCapture />
     </div>
   )
 }
