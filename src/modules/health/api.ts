@@ -9,7 +9,8 @@ export const healthKeys = { all: ['healthLogs'] as const }
 
 export function useHabits() { return useQuery({ queryKey: habitKeys.all, queryFn: () => repository.listHabits() }) }
 export function useHabitMutations() {
-  const qc = useQueryClient(); const inv = () => qc.invalidateQueries({ queryKey: habitKeys.all })
+  // deleteHabit 会级联删除 habitLogs，需连同日志缓存一起失效，避免热力图/连续天数残留已删习惯的日期
+  const qc = useQueryClient(); const inv = () => { qc.invalidateQueries({ queryKey: habitKeys.all }); qc.invalidateQueries({ queryKey: habitLogKeys.all }) }
   return {
     create: useMutation({ mutationFn: (input: { name: string; icon?: string; color?: string; targetPerDay?: number }) => repository.createHabit(input), onSuccess: inv }),
     remove: useMutation({ mutationFn: (id: string) => repository.deleteHabit(id), onSuccess: inv }),

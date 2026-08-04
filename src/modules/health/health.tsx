@@ -44,7 +44,8 @@ function CheckinPanel() {
             <span className="text-lg">{h.icon}</span>
             <span className="text-sm flex-1">{h.name}</span>
             <span className="text-xs text-muted-foreground font-numeric">{done}/{h.targetPerDay}</span>
-            <button onClick={() => { const next = done >= h.targetPerDay ? 0 : done + 1; setLog.mutate({ habitId: h.id, date: today, count: next }, { onSuccess: () => next === 0 && toast.success(`已取消「${h.name}」`) }) }}
+            {/* 多目标习惯打满后，点按逐步撤销（减 1）而非清零，避免误触丢全天记录 */}
+            <button onClick={() => { const next = done >= h.targetPerDay ? done - 1 : done + 1; setLog.mutate({ habitId: h.id, date: today, count: next }, { onSuccess: () => next === 0 && toast.success(`已取消「${h.name}」`) }) }}
               aria-label={`打卡 ${h.name}`}
               className={cn('size-6 rounded-full border-[1.5px] flex items-center justify-center transition-colors', done > 0 ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40 text-muted-foreground hover:border-primary')}>
               {done > 0 ? <Flame className="size-3.5" /> : <Plus className="size-3.5" />}
@@ -62,16 +63,16 @@ function RecordsPanel() {
   const [type, setType] = useState<'weight' | 'sleep' | 'exercise'>('weight')
   const [value, setValue] = useState('')
 
-  const records = (logs ?? []).sort((a, b) => b.logDate.localeCompare(a.logDate))
+  const records = [...(logs ?? [])].sort((a, b) => b.logDate.localeCompare(a.logDate))
 
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
         {([['weight', '体重'], ['sleep', '睡眠'], ['exercise', '运动']] as const).map(([t, label]) => (
-          <button key={t} onClick={() => setType(t)} className={cn('text-xs px-3 py-1.5 rounded-full border', type === t ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground')}>{label}</button>
+          <button key={t} onClick={() => { setType(t); setValue('') }} className={cn('text-xs px-3 py-1.5 rounded-full border', type === t ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground')}>{label}</button>
         ))}
-        <Input type="number" step="0.1" value={value} onChange={e => setValue(e.target.value)} placeholder={type === 'weight' ? 'kg' : type === 'sleep' ? '小时' : '分钟'} className="w-24 h-8 text-sm ml-auto" />
-        <Button size="sm" disabled={!value} onClick={() => { create.mutate({ logDate: todayStr(), type, value: Number(value) }, { onSuccess: () => { setValue(''); toast.success('已记录') } }) }}>记录</Button>
+        <Input type="number" step="0.1" min="0" max={type === 'sleep' ? 24 : undefined} value={value} onChange={e => setValue(e.target.value)} placeholder={type === 'weight' ? 'kg' : type === 'sleep' ? '小时' : '分钟'} className="w-24 h-8 text-sm ml-auto" />
+        <Button size="sm" disabled={!value || Number(value) <= 0} onClick={() => { create.mutate({ logDate: todayStr(), type, value: Number(value) }, { onSuccess: () => { setValue(''); toast.success('已记录') } }) }}>记录</Button>
       </div>
       <div className="bg-card border border-border rounded-2xl divide-y divide-border/70">
         {records.length === 0 ? <p className="text-sm text-muted-foreground py-8 text-center">还没有身体记录</p> : records.slice(0, 20).map(r => (
