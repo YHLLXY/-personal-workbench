@@ -12,10 +12,12 @@ export default function Hot() {
 
   async function load(refresh = false) {
     setLoading(true)
-    const res = await loadHot(refresh)
-    setItems(res.items); setFromCache(res.fromCache); setLoading(false)
-    if (res.items.length === 0) toast.error('热点源暂不可用，请稍后重试')
-    else if (refresh) toast.success('已刷新')
+    try {
+      const res = await loadHot(refresh)
+      setItems(res.items); setFromCache(res.fromCache)
+      if (res.items.length === 0) toast.error('热点源暂不可用，请稍后重试')
+      else if (refresh) toast.success(res.fromCache ? '网络不可用，已显示缓存' : '已刷新')
+    } catch { toast.error('加载失败，请重试') } finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
 
