@@ -4,6 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  color-scheme: light;
   --background: #F8F6F2;        /* 米白底 */
   --foreground: #3E4C59;        /* 深灰蓝文字 */
   --card: #FFFFFF;
@@ -27,6 +28,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: #262B28;
   --foreground: #E8E6E0;
   --card: #2E3430;
@@ -40,9 +42,9 @@
   --muted: #343B36;
   --muted-foreground: #A8B0A9;
   --accent: #B3A47F;
-  --accent-foreground: #F2EBDC;
+  --accent-foreground: #1E2B23;
   --destructive: #D98A7D;
-  --destructive-foreground: #FFFFFF;
+  --destructive-foreground: #1E2B23;
   --border: #3D453F;
   --input: #434C45;
   --ring: #8FBCA2;
