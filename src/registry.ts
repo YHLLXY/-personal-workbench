@@ -103,7 +103,7 @@ export const modules: ModuleDef[] = [
       {
         id: 'review', name: '今日复盘', icon: RotateCcw, path: '/review',
         component: lazy(() => import('./modules/review/review')),
-        homeCard: { id: 'home-review', span: '5', mobileOrder: 5, desktopOrder: 7, component: ReviewCard },
+        homeCard: { id: 'home-review', span: '12', mobileOrder: 5, desktopOrder: 7, component: ReviewCard },
       },
     ],
   },
