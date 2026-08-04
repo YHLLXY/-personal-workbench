@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { CalendarClock, ArrowRight } from 'lucide-react'
-import { useExams, daysUntil } from './api'
+import { CalendarClock, ArrowRight, Timer } from 'lucide-react'
+import { useExams, useFocusToday, daysUntil } from './api'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -24,6 +24,26 @@ export function ExamsCard() {
               </div>
             )
           })}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function FocusCard() {
+  const { data, isLoading } = useFocusToday()
+  const m = data?.minutes ?? 0
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm"><Timer className="size-4 text-primary" strokeWidth={1.7} />今日专注</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? <Skeleton className="h-10 w-full" /> : (
+          <>
+            <div className="text-3xl font-extrabold font-numeric">{Math.floor(m / 60)}<span className="text-sm font-normal text-muted-foreground ml-1">小时</span> {m % 60}<span className="text-sm font-normal text-muted-foreground ml-1">分</span></div>
+            <div className="text-xs text-muted-foreground mt-1">{data?.count ?? 0} 个番茄完成</div>
+          </>
+        )}
       </CardContent>
     </Card>
   )
