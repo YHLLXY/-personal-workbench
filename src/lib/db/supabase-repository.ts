@@ -69,7 +69,11 @@ export class SupabaseRepository implements WorkbenchRepository {
   async deleteNote(id: string) { const { error } = await this.sb.from('wb_notes').delete().eq('id', id); if (error) throw error }
 
   async listPapers() { const { data, error } = await this.sb.from('wb_papers').select('*').order('created_at', { ascending: false }); if (error) throw error; return (data ?? []).map(paperFromRow) }
-  async createPaper(input: Omit<Paper, 'id' | 'createdAt'>) { const { data, error } = await this.sb.from('wb_papers').insert({ ...input, id: genId() }).select().single(); if (error) throw error; return paperFromRow(data) }
+  async createPaper(input: Omit<Paper, 'id' | 'createdAt'>) {
+    // 注意：wb_papers 列名为 arxiv_id（snake_case），不能直接展开 input（含 camelCase 的 arxivId 会触发 PGRST204）
+    const { data, error } = await this.sb.from('wb_papers').insert({ title: input.title, authors: input.authors, arxiv_id: input.arxivId, url: input.url, status: input.status, rating: input.rating, note: input.note, id: genId() }).select().single()
+    if (error) throw error; return paperFromRow(data)
+  }
   async updatePaper(id: string, p: Partial<Paper>) { const { data, error } = await this.sb.from('wb_papers').update({ title: p.title, authors: p.authors, arxiv_id: p.arxivId, url: p.url, status: p.status, rating: p.rating, note: p.note }).eq('id', id).select().single(); if (error) throw error; return paperFromRow(data) }
   async deletePaper(id: string) { const { error } = await this.sb.from('wb_papers').delete().eq('id', id); if (error) throw error }
 
