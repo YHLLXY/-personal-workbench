@@ -2,6 +2,14 @@
 
 个人专属工作台：总览、学习、资讯、健康、复盘一站式管理。手机（PWA）+ 电脑双端，莫兰迪淡雅配色。
 
+## 在线访问
+
+**正式网址**：<https://personal-workbench-lilac.vercel.app/>
+
+- 首次使用：输入邮箱 + 密码点「进入工作台」即自动注册，无需提前注册
+- 数据云端同步（Supabase）：换设备用同一账号登录，数据自动一致
+- ⚠️ **认准域名**：正式网址固定为 `personal-workbench-lilac.vercel.app`。Vercel 每次部署还会生成 `personal-workbench-<随机串>-yhllxys-projects.vercel.app` 样式的临时链接（带随机串），**不要使用**——临时链接可能停留在旧版本，子路由会 404/被 Vercel 拦截
+
 ## 功能
 
 | 主模块 | 子模块 |
