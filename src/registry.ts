@@ -1,5 +1,6 @@
-import { LayoutDashboard, type LucideIcon } from 'lucide-react'
+import { CheckCircle2, LayoutDashboard, type LucideIcon } from 'lucide-react'
 import { lazy, type ComponentType } from 'react'
+import { TodayTasksCard } from './modules/overview/cards'
 
 export interface HomeCardDef {
   id: string
@@ -40,6 +41,11 @@ export const modules: ModuleDef[] = [
       {
         id: 'home', name: '工作台总览', icon: LayoutDashboard, path: '/',
         component: lazy(() => import('./app/home')),
+      },
+      {
+        id: 'tasks', name: '今日待办', icon: CheckCircle2, path: '/tasks',
+        component: lazy(() => import('./modules/overview/today-tasks')),
+        homeCard: { id: 'home-tasks', span: '5', mobileOrder: 1, desktopOrder: 1, component: TodayTasksCard },
       },
     ],
   },
