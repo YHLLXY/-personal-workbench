@@ -1,10 +1,17 @@
 import * as React from "react"
+import { Field } from "@base-ui/react/field"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+function Select(props: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  return (
+    <Field.Root className="contents">
+      <SelectPrimitive.Root {...props} />
+    </Field.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
