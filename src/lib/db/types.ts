@@ -1,0 +1,78 @@
+export interface Task {
+  id: string
+  title: string
+  focus: boolean
+  priority: 'high' | 'medium' | 'low'
+  status: 'todo' | 'doing' | 'done' | 'someday'
+  dueDate: string | null   // YYYY-MM-DD
+  tags: string[]
+  sort: number
+  completedAt: string | null
+  createdAt: string        // ISO
+}
+export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; tags?: string[] }
+
+export interface Habit { id: string; name: string; icon: string; color: string; targetPerDay: number; active: boolean; createdAt: string }
+export interface HabitLog { id: string; habitId: string; logDate: string; count: number }
+
+export interface FocusSession { id: string; startAt: string; minutes: number; note: string | null }
+
+export interface Exam { id: string; title: string; examDate: string; subject: string | null; note: string | null; createdAt: string }
+export interface ExamInput { title: string; examDate: string; subject?: string | null; note?: string | null }
+
+export interface Note { id: string; content: string; tag: string | null; archived: boolean; createdAt: string; updatedAt: string }
+
+export interface Paper { id: string; title: string; authors: string; arxivId: string | null; url: string | null; status: 'want' | 'reading' | 'done'; rating: number | null; note: string | null; createdAt: string }
+
+export interface HealthLog { id: string; logDate: string; type: 'weight' | 'sleep' | 'exercise'; value: number }
+export interface HealthLogInput { logDate: string; type: HealthLog['type']; value: number }
+
+export interface Review { id: string; reviewDate: string; mood: number; summary: string; planTomorrow: string; updatedAt: string }
+
+export interface WorkbenchRepository {
+  listTasks(): Promise<Task[]>
+  createTask(input: TaskInput): Promise<Task>
+  updateTask(id: string, patch: Partial<Task>): Promise<Task>
+  deleteTask(id: string): Promise<void>
+
+  listHabits(): Promise<Habit[]>
+  createHabit(input: { name: string; icon?: string; color?: string; targetPerDay?: number }): Promise<Habit>
+  updateHabit(id: string, patch: Partial<Habit>): Promise<Habit>
+  deleteHabit(id: string): Promise<void>
+  listHabitLogs(): Promise<HabitLog[]>
+  setHabitLog(habitId: string, logDate: string, count: number): Promise<void>
+
+  listFocusSessions(): Promise<FocusSession[]>
+  createFocusSession(minutes: number, note?: string): Promise<FocusSession>
+
+  listExams(): Promise<Exam[]>
+  createExam(input: ExamInput): Promise<Exam>
+  updateExam(id: string, patch: Partial<Exam>): Promise<Exam>
+  deleteExam(id: string): Promise<void>
+
+  listNotes(): Promise<Note[]>
+  createNote(content: string, tag?: string | null): Promise<Note>
+  updateNote(id: string, patch: Partial<Note>): Promise<Note>
+  deleteNote(id: string): Promise<void>
+
+  listPapers(): Promise<Paper[]>
+  createPaper(input: Omit<Paper, 'id' | 'createdAt'>): Promise<Paper>
+  updatePaper(id: string, patch: Partial<Paper>): Promise<Paper>
+  deletePaper(id: string): Promise<void>
+
+  listHealthLogs(): Promise<HealthLog[]>
+  createHealthLog(input: HealthLogInput): Promise<HealthLog>
+  deleteHealthLog(id: string): Promise<void>
+
+  listReviews(): Promise<Review[]>
+  upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string }): Promise<Review>
+}
+
+/** 通用 ID 生成 */
+export function genId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+export function todayStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
