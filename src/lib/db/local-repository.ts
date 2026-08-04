@@ -23,8 +23,17 @@ export class LocalRepository implements WorkbenchRepository {
     return insert<Task>('tasks', { id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', dueDate: input.dueDate ?? null, tags: input.tags ?? [], sort: Date.now(), completedAt: null, createdAt: new Date().toISOString() })
   }
   async updateTask(id: string, p: Partial<Task>) {
-    const completedAt = p.status === undefined ? p.completedAt : p.status === 'done' ? new Date().toISOString() : null
-    return patch<Task>('tasks', id, { ...p, completedAt })
+    const rows = read<Task>('tasks')
+    const i = rows.findIndex(r => r.id === id)
+    if (i < 0) throw new Error(`not found: ${id}`)
+    const completedAt = p.status === 'done'
+      ? new Date().toISOString()
+      : p.status !== undefined ? null
+      : p.completedAt !== undefined ? p.completedAt
+      : rows[i].completedAt ?? null
+    rows[i] = { ...rows[i], ...p, completedAt }
+    write('tasks', rows)
+    return rows[i]
   }
   async deleteTask(id: string) { remove('tasks', id) }
 

@@ -33,4 +33,24 @@ describe('LocalRepository', () => {
     expect(rs).toHaveLength(1)
     expect(rs[0].summary).toBe('很好')
   })
+
+  it('重命名已完成任务不丢失 completedAt', async () => {
+    const t = await repo.createTask({ title: 'x' })
+    const done = await repo.updateTask(t.id, { status: 'done' })
+    const renamed = await repo.updateTask(done.id, { title: 'y' })
+    expect(renamed.completedAt).toBe(done.completedAt)
+  })
+
+  it('取消完成状态清空 completedAt', async () => {
+    const t = await repo.createTask({ title: 'x' })
+    const done = await repo.updateTask(t.id, { status: 'done' })
+    const todo = await repo.updateTask(done.id, { status: 'todo' })
+    expect(todo.completedAt).toBeNull()
+  })
+
+  it('删除任务', async () => {
+    const t = await repo.createTask({ title: 'x' })
+    await repo.deleteTask(t.id)
+    expect(await repo.listTasks()).toHaveLength(0)
+  })
 })
