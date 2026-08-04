@@ -15,12 +15,15 @@ export function ExamsCard() {
       </CardHeader>
       <CardContent className="space-y-2">
         {isLoading ? <Skeleton className="h-16 w-full" /> : sorted.length === 0 ? <p className="text-xs text-muted-foreground py-2">暂无考试安排</p>
-          : sorted.map(e => (
-            <div key={e.id} className="flex items-baseline justify-between text-sm">
-              <span className="truncate">{e.title}</span>
-              <span className="text-xs text-muted-foreground shrink-0 ml-2 font-numeric">{daysUntil(e.examDate) >= 0 ? `${daysUntil(e.examDate)} 天后` : '已结束'}</span>
-            </div>
-          ))}
+          : sorted.map(e => {
+            const d = daysUntil(e.examDate)
+            return (
+              <div key={e.id} className="flex items-baseline justify-between text-sm">
+                <span className="truncate">{e.title}</span>
+                <span className="text-xs text-muted-foreground shrink-0 ml-2 font-numeric">{d >= 0 ? `${d} 天后` : '已结束'}</span>
+              </div>
+            )
+          })}
       </CardContent>
     </Card>
   )

@@ -34,7 +34,7 @@ export default function StudyManager() {
             <div key={e.id} className="bg-card border border-border rounded-2xl p-4 flex items-start gap-3">
               <div className={cn('rounded-xl px-3 py-2 text-center min-w-[64px]', urgent ? 'bg-destructive/10' : 'bg-primary/10')}>
                 <div className={cn('text-2xl font-extrabold font-numeric', urgent ? 'text-destructive' : 'text-primary')}>{d < 0 ? '已过' : d}</div>
-                <div className="text-[10px] text-muted-foreground">天后</div>
+                {d >= 0 && <div className="text-[10px] text-muted-foreground">天后</div>}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm truncate">{e.title}</div>

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { repository } from '../../lib/db'
-import { todayStr } from '../../lib/db/types'
+import { localDateOfISO, todayStr } from '../../lib/db/types'
 import type { Exam, ExamInput } from '../../lib/db/types'
 
 export const examKeys = { all: ['exams'] as const }
@@ -25,7 +25,7 @@ export function useFocusSessions() { return useQuery({ queryKey: focusKeys.all, 
 export function useFocusToday() {
   return useQuery({ queryKey: focusKeys.all, queryFn: () => repository.listFocusSessions(), select: sessions => {
     const today = todayStr()
-    const list = sessions.filter(s => s.startAt.slice(0, 10) === today)
+    const list = sessions.filter(s => localDateOfISO(s.startAt) === today)
     return { minutes: list.reduce((sum, s) => sum + s.minutes, 0), count: list.length }
   } })
 }

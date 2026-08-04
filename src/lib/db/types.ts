@@ -76,3 +76,8 @@ export function todayStr(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+/** ISO 时间戳 → 本地日期（YYYY-MM-DD）。startAt/completedAt 存的是 UTC ISO 字符串，不能 slice(0,10) 与本地日期比较 */
+export function localDateOfISO(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
