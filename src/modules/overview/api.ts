@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { repository } from '../../lib/db'
 import type { Task, TaskInput } from '../../lib/db/types'
 
@@ -12,7 +13,7 @@ export function useTaskMutations() {
   const qc = useQueryClient()
   const invalidate = () => qc.invalidateQueries({ queryKey: taskKeys.all })
   return {
-    create: useMutation({ mutationFn: (input: TaskInput) => repository.createTask(input), onSuccess: invalidate }),
+    create: useMutation({ mutationFn: (input: TaskInput) => repository.createTask(input), onSuccess: invalidate, onError: () => toast.error('添加失败') }),
     update: useMutation({
       mutationFn: ({ id, patch }: { id: string; patch: Partial<Task> }) => repository.updateTask(id, patch),
       onMutate: async ({ id, patch }) => {

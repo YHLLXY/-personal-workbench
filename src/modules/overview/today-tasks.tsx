@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/empty-state'
 
 export default function TodayTasks() {
-  const { data: tasks, isLoading } = useTasks()
+  const { data: tasks, isLoading, isError } = useTasks()
   const { update, remove } = useTaskMutations()
   const [dialogOpen, setDialogOpen] = useState(false)
   const today = todayStr()
@@ -26,11 +26,13 @@ export default function TodayTasks() {
       </div>
       {isLoading ? (
         <div className="space-y-2"><Skeleton className="h-14 w-full" /><Skeleton className="h-14 w-full" /></div>
+      ) : isError ? (
+        <p className="text-sm text-destructive py-10 text-center">加载失败，请重试</p>
       ) : list.length === 0 ? (
         <EmptyState icon="✓" title="今天没有待办" desc="点击右上角新建，或按 ⌘K 快速添加" />
       ) : (
         <div className="space-y-1.5">
-          {list.map(t => <TaskItem key={t.id} task={t} onToggle={() => update.mutate({ id: t.id, patch: { status: t.status === 'done' ? 'todo' : 'done' } })} onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus } })} onEdit={() => {}} onDelete={() => remove.mutate(t.id)} />)}
+          {list.map(t => <TaskItem key={t.id} task={t} onToggle={() => update.mutate({ id: t.id, patch: { status: t.status === 'done' ? 'todo' : 'done' } })} onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus } })} onEdit={() => {/* TODO 编辑对话框（后续版本） */}} onDelete={() => remove.mutate(t.id)} />)}
         </div>
       )}
       <TaskDialog open={dialogOpen} onOpenChange={setDialogOpen} />

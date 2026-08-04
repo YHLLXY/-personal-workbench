@@ -23,7 +23,7 @@ export function TaskItem({ task, onToggle, onFocus, onEdit, onDelete }: {
       <button onClick={onFocus} aria-label="设为今日焦点" className={cn('shrink-0 text-muted-foreground/50 hover:text-primary transition-colors', task.focus && 'text-primary')}>
         <Star className="size-4" strokeWidth={1.7} fill={task.focus ? 'currentColor' : 'none'} />
       </button>
-      <button onClick={onDelete} aria-label="删除" className="shrink-0 text-muted-foreground/50 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100">
+      <button onClick={onDelete} aria-label="删除" className="shrink-0 text-muted-foreground/50 hover:text-destructive transition-colors md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100">
         <Trash2 className="size-4" strokeWidth={1.7} />
       </button>
     </div>

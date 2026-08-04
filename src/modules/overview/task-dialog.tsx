@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,8 @@ export function TaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const [title, setTitle] = useState('')
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium')
   const [focus, setFocus] = useState(false)
+
+  useEffect(() => { if (open) { setTitle(''); setPriority('medium'); setFocus(false) } }, [open])
 
   function submit() {
     if (!title.trim()) return
