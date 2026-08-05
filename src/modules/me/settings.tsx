@@ -10,7 +10,7 @@ import { isCloudMode, repository } from '@/lib/db'
 import { getSupabaseClient } from '@/lib/db/supabase-client'
 import { AVATAR_COLORS } from '@/lib/profile'
 import { buildBackup, validateBackup, formatBytes } from '@/lib/backup'
-import { taskCompletionRate, totalFocusMinutes, formatMinutes } from '@/lib/stats'
+import { taskCompletionRate, totalFocusMinutes, formatMinutes, activeNoteCount } from '@/lib/stats'
 import { streakFromLogDates } from '@/lib/heatmap'
 import { useTasks } from '@/modules/overview/api'
 import { useFocusSessions } from '@/modules/study/api'
@@ -97,7 +97,7 @@ function StatsGrid() {
     { label: '连续打卡', value: `${streak}`, sub: '天' },
     { label: '专注总时长', value: formatMinutes(totalFocusMinutes(sessions ?? [])), sub: '番茄钟累计' },
     { label: '复盘次数', value: `${reviews?.length ?? 0}`, sub: '篇' },
-    { label: '笔记数', value: `${(notes ?? []).length}`, sub: '未归档' },
+    { label: '笔记数', value: `${activeNoteCount(notes ?? [])}`, sub: '未归档' },
     { label: '资料库', value: `${papers?.length ?? 0}`, sub: '论文与文案' },
   ]
   return (
@@ -160,7 +160,8 @@ function DataSection() {
       qc.invalidateQueries()
       toast.success('导入成功，数据已恢复')
     } catch (err) {
-      toast.error(`导入失败：${err instanceof Error ? err.message : '未知错误'}`)
+      const isQuota = err instanceof DOMException && err.name === 'QuotaExceededError'
+      toast.error(isQuota ? '存储空间不足，建议清理由旧数据或改用云端模式' : `导入失败：${err instanceof Error ? err.message : '未知错误'}`)
     }
   }
 
