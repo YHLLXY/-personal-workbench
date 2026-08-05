@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput } from './types'
+import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables } from './types'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
 type Row = Record<string, unknown>
@@ -33,6 +33,31 @@ function folderFromRow(r: Row): Folder {
 }
 function healthFromRow(r: Row): HealthLog { return { id: String(r.id), logDate: String(r.log_date), type: r.type as HealthLog['type'], value: Number(r.value) } }
 function reviewFromRow(r: Row): Review { return { id: String(r.id), reviewDate: String(r.review_date), mood: Number(r.mood), summary: String(r.summary), planTomorrow: String(r.plan_tomorrow), updatedAt: String(r.updated_at) } }
+
+function taskToRow(t: Task) { return { id: t.id, title: t.title, focus: t.focus, priority: t.priority, status: t.status, due_date: t.dueDate, tags: t.tags, sort: t.sort, completed_at: t.completedAt, created_at: t.createdAt } }
+function habitToRow(h: Habit) { return { id: h.id, name: h.name, icon: h.icon, color: h.color, target_per_day: h.targetPerDay, active: h.active, created_at: h.createdAt } }
+function logToRow(l: HabitLog) { return { id: l.id, habit_id: l.habitId, log_date: l.logDate, count: l.count } }
+function focusToRow(s: FocusSession) { return { id: s.id, start_at: s.startAt, minutes: s.minutes, note: s.note } }
+function examToRow(e: Exam) { return { id: e.id, title: e.title, exam_date: e.examDate, subject: e.subject, note: e.note, created_at: e.createdAt } }
+function noteToRow(n: Note) { return { id: n.id, content: n.content, tag: n.tag, archived: n.archived, created_at: n.createdAt, updated_at: n.updatedAt } }
+function paperToRow(p: Paper) { return { id: p.id, title: p.title, authors: p.authors, arxiv_id: p.arxivId, url: p.url, status: p.status, rating: p.rating, note: p.note, created_at: p.createdAt, type: p.type ?? 'paper', folder_id: p.folderId ?? null, tags: p.tags ?? [], content: p.content ?? null, summary: p.summary ?? null, keywords: p.keywords ?? [], source: p.source ?? null } }
+function folderToRow(f: Folder) { return { id: f.id, name: f.name, parent_id: f.parentId, sort: f.sort } }
+function healthToRow(l: HealthLog) { return { id: l.id, log_date: l.logDate, type: l.type, value: l.value } }
+function reviewToRow(r: Review) { return { id: r.id, review_date: r.reviewDate, mood: r.mood, summary: r.summary, plan_tomorrow: r.planTomorrow, updated_at: r.updatedAt } }
+
+/** 表名映射（备份表 -> Supabase 表） */
+const TABLES: Record<keyof BackupTables, string> = {
+  tasks: 'wb_tasks', habits: 'wb_habits', habitLogs: 'wb_habit_logs', focusSessions: 'wb_focus_sessions',
+  exams: 'wb_exams', notes: 'wb_notes', papers: 'wb_papers', folders: 'wb_folders',
+  healthLogs: 'wb_health_logs', reviews: 'wb_reviews',
+}
+
+const toRows: { [K in keyof BackupTables]: (rows: BackupTables[K]) => Record<string, unknown>[] } = {
+  tasks: rs => rs.map(taskToRow), habits: rs => rs.map(habitToRow), habitLogs: rs => rs.map(logToRow),
+  focusSessions: rs => rs.map(focusToRow), exams: rs => rs.map(examToRow), notes: rs => rs.map(noteToRow),
+  papers: rs => rs.map(paperToRow), folders: rs => rs.map(folderToRow), healthLogs: rs => rs.map(healthToRow),
+  reviews: rs => rs.map(reviewToRow),
+}
 
 export class SupabaseRepository implements WorkbenchRepository {
   private sb: SupabaseClient
@@ -138,5 +163,33 @@ export class SupabaseRepository implements WorkbenchRepository {
     // 注意：迁移中 id 无默认值，insert 载荷必须带 id（质量审阅发现 I-2 修正）
     const { data, error } = await this.sb.from('wb_reviews').upsert({ id: genId(), review_date: reviewDate, ...patch }, { onConflict: 'user_id,review_date' }).select().single()
     if (error) throw error; return reviewFromRow(data)
+  }
+
+  async exportAll() {
+    const [tasks, habits, habitLogs, focusSessions, exams, notes, papers, folders, healthLogs, reviews] = await Promise.all([
+      this.listTasks(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
+      this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(),
+    ])
+    return { tasks, habits, habitLogs, focusSessions, exams, notes, papers, folders, healthLogs, reviews }
+  }
+
+  async importAll(tables: BackupTables) {
+    // 逐表独立 try：失败表报错，其余表保持已写入（幂等可重入）
+    const errors: string[] = []
+    await Promise.all((Object.keys(TABLES) as (keyof BackupTables)[]).map(async key => {
+      const rows = (toRows[key] as (items: any[]) => Record<string, unknown>[])(tables[key])
+      try {
+        // RLS 已限定 user_id = auth.uid()，delete().neq('id','') 安全清空本用户全部行
+        const { error: delErr } = await this.sb.from(TABLES[key]).delete().neq('id', '')
+        if (delErr) throw delErr
+        if (rows.length > 0) {
+          const { error: upErr } = await this.sb.from(TABLES[key]).upsert(rows)
+          if (upErr) throw upErr
+        }
+      } catch (err) {
+        errors.push(`${key}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }))
+    if (errors.length > 0) throw new Error(`部分表导入失败：${errors.join('；')}`)
   }
 }
