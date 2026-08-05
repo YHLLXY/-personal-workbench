@@ -8,7 +8,7 @@ function setPlatform(p: string) {
 }
 
 describe('OnboardingOverlay', () => {
-  beforeEach(() => { localStorage.clear(); setPlatform('MacIntel') })
+  beforeEach(() => { localStorage.clear(); setPlatform('MacIntel'); useUiStore.setState({ onboardingActive: false }) })
 
   it('首次进入显示第一步，逐步到「开始使用」后写入 localStorage 并消失', () => {
     render(<OnboardingOverlay />)
@@ -28,6 +28,20 @@ describe('OnboardingOverlay', () => {
     fireEvent.click(screen.getByText('跳过'))
     expect(screen.queryByText('欢迎使用工作台')).not.toBeInTheDocument()
     expect(localStorage.getItem('wb-onboarded')).toBe('1')
+  })
+
+  it('完成引导后（不卸载）重置 onboardingActive', () => {
+    render(<OnboardingOverlay />)
+    expect(useUiStore.getState().onboardingActive).toBe(true)
+    fireEvent.click(screen.getByText('跳过'))
+    expect(screen.queryByText('欢迎使用工作台')).not.toBeInTheDocument()
+    expect(useUiStore.getState().onboardingActive).toBe(false)
+  })
+
+  it('已引导用户挂载时不置 onboardingActive', () => {
+    localStorage.setItem('wb-onboarded', '1')
+    render(<OnboardingOverlay />)
+    expect(useUiStore.getState().onboardingActive).toBe(false)
   })
 
   it('卸载（完成/跳过）后重置 onboardingActive', () => {

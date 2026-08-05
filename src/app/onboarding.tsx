@@ -19,9 +19,10 @@ export function OnboardingOverlay() {
   const [step, setStep] = useState(0)
   const setOnboardingActive = useUiStore(s => s.setOnboardingActive)
   useEffect(() => {
+    if (!visible) return
     setOnboardingActive(true)
     return () => setOnboardingActive(false)
-  }, [setOnboardingActive])
+  }, [visible, setOnboardingActive])
   if (!visible) return null
   const paletteShortcut = formatShortcut(HOTKEYS.find(h => h.id === 'palette')!)
   const last = step === STEPS.length - 1
