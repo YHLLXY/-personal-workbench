@@ -1,5 +1,6 @@
 import { homeCards } from '@/registry'
 import OverviewHome from '@/modules/overview/overview-home'
+import { OverviewSummary } from '@/modules/overview/overview-summary'
 
 const SPAN_CLASS: Record<string, string> = {
   '3': 'md:col-span-3',
@@ -15,6 +16,10 @@ export default function Home() {
     <div className="mx-auto max-w-7xl">
       {/* 移动端专属视图（组件根自带 md:hidden） */}
       <OverviewHome />
+      {/* 桌面端今日概览条 */}
+      <div className="mb-4 hidden md:block">
+        <OverviewSummary />
+      </div>
       {/* 桌面端卡片网格 */}
       <div className="hidden md:grid grid-cols-12 gap-3 md:gap-4 auto-rows-min">
         {cards.map(c => (
