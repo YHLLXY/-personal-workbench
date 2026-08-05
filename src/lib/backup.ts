@@ -20,7 +20,7 @@ export function buildBackup(tables: BackupTables, mode: 'local' | 'cloud'): Back
 
 /** 导入前校验：app 防误导入他应用文件；version 可解析；10 张表均为数组 */
 export function validateBackup(raw: unknown): { ok: true; tables: BackupTables } | { ok: false; reason: 'not-workbench' | 'corrupt' } {
-  if (!raw || typeof raw !== 'object') return { ok: false, reason: 'corrupt' }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, reason: 'corrupt' }
   const obj = raw as Record<string, unknown>
   if (obj.app !== BACKUP_APP) return { ok: false, reason: 'not-workbench' }
   if (typeof obj.version !== 'number' || !obj.tables || typeof obj.tables !== 'object') return { ok: false, reason: 'corrupt' }

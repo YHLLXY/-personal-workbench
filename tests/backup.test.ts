@@ -41,6 +41,7 @@ describe('backup', () => {
     expect(validateBackup({ app: BACKUP_APP, version: 1 })).toEqual({ ok: false, reason: 'corrupt' })
     expect(validateBackup({ app: BACKUP_APP, version: 1, tables: { tasks: 'oops' } })).toEqual({ ok: false, reason: 'corrupt' })
     expect(validateBackup('not an object')).toEqual({ ok: false, reason: 'corrupt' })
+    expect(validateBackup([1, 2, 3])).toEqual({ ok: false, reason: 'corrupt' })
   })
 
   it('version 非数字 → corrupt', () => {
