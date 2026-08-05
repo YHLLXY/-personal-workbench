@@ -44,8 +44,20 @@
 
 ## 云端模式验收（配置 Supabase 后）
 
-- [ ] 在 Supabase 控制台关闭邮箱确认（Authentication → Providers → Email → Confirm email 关闭）后重新部署
-- [ ] 执行 supabase/migrations/001_init.sql（SQL Editor，9 张表 + RLS）
-- [ ] 配置 VITE_SUPABASE_URL/ANON_KEY 重新部署
+- [x] 在 Supabase 控制台关闭邮箱确认（Authentication → Providers → Email → Confirm email 关闭）后重新部署
+- [x] 执行 supabase/migrations/001_init.sql（SQL Editor，9 张表 + RLS）
+- [x] 配置 VITE_SUPABASE_URL/ANON_KEY 重新部署
 - [ ] 首次登录即自动注册 → 进入工作台 → 数据云端同步 → 手机/电脑双端一致
 - [ ] 设置页显示账号邮箱；退出登录 → 重新登录可再次进入
+
+## v1.2 产品级升级验收（个人中心 / 数据安全 / 总览聚合）
+
+- [ ] 个人中心：改昵称/头像色（本地模式 localStorage 生效；云模式重登后仍在）
+- [ ] 导出：本地模式下载 JSON，检查含 10 张表（tasks…reviews）
+- [ ] 导入：改数据 → 导入备份 → 数据还原；导入损坏文件 → 明确报错
+- [ ] 迁移：本地导出 → （云端模式）导入 → 数据在云
+- [ ] 修改密码（云模式）：改后旧密码失效，需重新登录
+- [ ] 今日概览条四格数据与各模块一致，点击跳转正确
+- [ ] 本周趋势卡：7 天双柱正确、空数据文案、移动端底部可见
+- [ ] 移动端：个人中心布局、概览条、趋势卡正常
+- [ ] 现有 6 模块功能无回归
