@@ -13,7 +13,9 @@ export function totalFocusMinutes(sessions: FocusSession[]): number {
 
 export function formatMinutes(totalMinutes: number): string {
   if (totalMinutes < 60) return `${totalMinutes} 分钟`
-  return `${(totalMinutes / 60).toFixed(1)} 小时`
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  return m === 0 ? `${h} 小时` : `${h} 小时 ${m} 分钟`
 }
 
 export function activeNoteCount(notes: Note[]): number {

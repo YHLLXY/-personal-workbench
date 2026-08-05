@@ -18,7 +18,9 @@ describe('stats', () => {
     ]
     expect(totalFocusMinutes(sessions)).toBe(75)
     expect(totalFocusMinutes([])).toBe(0)
-    expect(formatMinutes(75)).toBe('1.3 小时')
+    expect(formatMinutes(75)).toBe('1 小时 15 分钟')
+    expect(formatMinutes(60)).toBe('1 小时')
+    expect(formatMinutes(59)).toBe('59 分钟')
     expect(formatMinutes(45)).toBe('45 分钟')
     expect(formatMinutes(0)).toBe('0 分钟')
   })
