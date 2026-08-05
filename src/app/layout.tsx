@@ -1,6 +1,6 @@
 import { Suspense } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Search, Settings, Moon, Sun, Plus } from 'lucide-react'
+import { Search, Settings, Moon, Sun, Plus, Monitor } from 'lucide-react'
 import { modules } from '@/registry'
 import { useUiStore } from './store'
 import { useTheme } from './theme'
@@ -19,7 +19,7 @@ const MOBILE_TABS = [
 ]
 
 export function Shell() {
-  const { theme, toggle } = useTheme()
+  const { theme, resolvedTheme, toggle } = useTheme()
   const { user } = useAuth()
   const setPaletteOpen = useUiStore(s => s.setPaletteOpen)
   const setCaptureOpen = useUiStore(s => s.setCaptureOpen)
@@ -91,8 +91,8 @@ export function Shell() {
           <Button variant="ghost" size="icon" className="sm:hidden" aria-label="搜索" onClick={() => setPaletteOpen(true)}>
             <Search className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" aria-label="切换主题" onClick={toggle}>
-            {theme === 'light' ? <Moon className="size-4" /> : <Sun className="size-4" />}
+          <Button variant="ghost" size="icon" aria-label={`切换主题（当前：${theme === 'system' ? '跟随系统' : theme === 'dark' ? '深色' : '浅色'}）`} onClick={toggle}>
+            {theme === 'system' ? <Monitor className="size-4" /> : resolvedTheme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </Button>
           <div className="size-8 rounded-full text-white flex items-center justify-center text-xs font-bold"
             style={{ backgroundColor: user?.avatarColor ?? AVATAR_COLORS[0] }}>
