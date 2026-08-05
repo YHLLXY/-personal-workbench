@@ -24,7 +24,7 @@ function Probe() {
 describe('useGlobalHotkeys', () => {
   beforeEach(() => {
     setPlatform('Win32')
-    useUiStore.setState({ paletteOpen: false, captureOpen: false, captureTab: 'task', shortcutsOpen: false })
+    useUiStore.setState({ paletteOpen: false, captureOpen: false, captureTab: 'task', shortcutsOpen: false, onboardingActive: false })
   })
 
   it('Ctrl+K 切换命令面板', () => {
@@ -61,6 +61,13 @@ describe('useGlobalHotkeys', () => {
   it('无修饰键的普通按键不触发', () => {
     render(<MemoryRouter><Probe /></MemoryRouter>)
     fireEvent.keyDown(window, { key: 'n' })
+    expect(screen.getByTestId('state').textContent).toBe('false|false|task')
+  })
+
+  it('引导进行中快捷键不触发', () => {
+    useUiStore.setState({ onboardingActive: true })
+    render(<MemoryRouter><Probe /></MemoryRouter>)
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'k' })
     expect(screen.getByTestId('state').textContent).toBe('false|false|task')
   })
 

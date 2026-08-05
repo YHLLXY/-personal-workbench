@@ -12,6 +12,7 @@ export function useGlobalHotkeys() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (useUiStore.getState().onboardingActive) return
       const hk = matchHotkey(e)
       if (!hk) return
       e.preventDefault()

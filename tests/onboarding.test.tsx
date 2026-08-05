@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { OnboardingOverlay } from '../src/app/onboarding'
+import { useUiStore } from '../src/app/store'
 
 function setPlatform(p: string) {
   Object.defineProperty(window.navigator, 'platform', { value: p, configurable: true })
@@ -27,6 +28,13 @@ describe('OnboardingOverlay', () => {
     fireEvent.click(screen.getByText('跳过'))
     expect(screen.queryByText('欢迎使用工作台')).not.toBeInTheDocument()
     expect(localStorage.getItem('wb-onboarded')).toBe('1')
+  })
+
+  it('卸载（完成/跳过）后重置 onboardingActive', () => {
+    const { unmount } = render(<OnboardingOverlay />)
+    expect(useUiStore.getState().onboardingActive).toBe(true)
+    unmount()
+    expect(useUiStore.getState().onboardingActive).toBe(false)
   })
 
   it('已完成引导的不再显示', () => {
