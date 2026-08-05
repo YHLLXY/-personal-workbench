@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CommandPalette } from './command-palette'
 import { QuickCapture } from './quick-capture'
+import { ShortcutsDialog } from './shortcuts-dialog'
 import { useGlobalHotkeys } from './hotkeys'
 
 /** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」（后续模块注册后自动增加） */
@@ -131,6 +132,7 @@ export function Shell() {
 
       <CommandPalette />
       <QuickCapture />
+      <ShortcutsDialog />
     </div>
   )
 }
