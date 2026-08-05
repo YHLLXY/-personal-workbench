@@ -22,7 +22,20 @@ export interface ExamInput { title: string; examDate: string; subject?: string |
 
 export interface Note { id: string; content: string; tag: string | null; archived: boolean; createdAt: string; updatedAt: string }
 
-export interface Paper { id: string; title: string; authors: string; arxivId: string | null; url: string | null; status: 'want' | 'reading' | 'done'; rating: number | null; note: string | null; createdAt: string }
+export interface Paper {
+  id: string; title: string; authors: string; arxivId: string | null; url: string | null; status: 'want' | 'reading' | 'done'; rating: number | null; note: string | null; createdAt: string
+  // v1.1 资料库扩展（可选——兼容旧数据与旧调用）
+  type?: 'paper' | 'note'
+  folderId?: string | null
+  tags?: string[]
+  content?: string | null
+  summary?: string | null
+  keywords?: string[]
+  source?: string | null
+}
+
+export interface Folder { id: string; name: string; parentId: string | null; sort: number }
+export interface FolderInput { name: string; parentId?: string | null }
 
 export interface HealthLog { id: string; logDate: string; type: 'weight' | 'sleep' | 'exercise'; value: number }
 export interface HealthLogInput { logDate: string; type: HealthLog['type']; value: number }
@@ -59,6 +72,12 @@ export interface WorkbenchRepository {
   createPaper(input: Omit<Paper, 'id' | 'createdAt'>): Promise<Paper>
   updatePaper(id: string, patch: Partial<Paper>): Promise<Paper>
   deletePaper(id: string): Promise<void>
+
+  listFolders(): Promise<Folder[]>
+  createFolder(input: FolderInput): Promise<Folder>
+  updateFolder(id: string, patch: Partial<Pick<Folder, 'name' | 'sort'>>): Promise<Folder>
+  deleteFolder(id: string): Promise<void>
+  moveFolder(id: string, newParentId: string | null): Promise<Folder>
 
   listHealthLogs(): Promise<HealthLog[]>
   createHealthLog(input: HealthLogInput): Promise<HealthLog>
