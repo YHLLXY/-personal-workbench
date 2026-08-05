@@ -146,14 +146,18 @@ export class LocalRepository implements WorkbenchRepository {
       ]
       for (const [key, rows] of entries) localStorage.setItem(PREFIX + key, JSON.stringify(rows))
     } catch (err) {
-      // 回滚：清除全部 wb: 前缀 key，恢复快照
-      const toRemove: string[] = []
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i)
-        if (k && k.startsWith(PREFIX)) toRemove.push(k)
+      // 回滚：清除全部 wb: 前缀 key，恢复快照（恢复失败仅记录，不掩盖原始错误）
+      try {
+        const toRemove: string[] = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i)
+          if (k && k.startsWith(PREFIX)) toRemove.push(k)
+        }
+        for (const k of toRemove) localStorage.removeItem(k)
+        for (const [k, v] of snapshot) localStorage.setItem(k, v)
+      } catch (restoreErr) {
+        console.error('导入失败后快照恢复失败', restoreErr)
       }
-      for (const k of toRemove) localStorage.removeItem(k)
-      for (const [k, v] of snapshot) localStorage.setItem(k, v)
       throw err
     }
   }
