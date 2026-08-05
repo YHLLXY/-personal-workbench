@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBackup, validateBackup, formatBytes, BACKUP_APP, BACKUP_VERSION } from '../src/lib/backup'
+import { buildBackup, validateBackup, formatBytes, backupFileName, BACKUP_APP, BACKUP_VERSION } from '../src/lib/backup'
 import type { BackupTables } from '../src/lib/db/types'
 
 const sample: BackupTables = {
@@ -52,5 +52,10 @@ describe('backup', () => {
     expect(formatBytes(512)).toBe('512 B')
     expect(formatBytes(2048)).toBe('2.0 KB')
     expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MB')
+  })
+
+  it('backupFileName 生成 YYYYMMDD 文件名', () => {
+    const d = new Date(2026, 7, 5) // 2026-08-05
+    expect(backupFileName(d)).toBe('workbench-backup-20260805.json')
   })
 })

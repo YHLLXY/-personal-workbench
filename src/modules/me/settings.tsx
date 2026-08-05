@@ -9,7 +9,7 @@ import { useAuth } from '@/app/auth'
 import { isCloudMode, repository } from '@/lib/db'
 import { getSupabaseClient } from '@/lib/db/supabase-client'
 import { AVATAR_COLORS } from '@/lib/profile'
-import { buildBackup, validateBackup, formatBytes } from '@/lib/backup'
+import { validateBackup, formatBytes, downloadBackupFile } from '@/lib/backup'
 import { taskCompletionRate, totalFocusMinutes, formatMinutes, activeNoteCount } from '@/lib/stats'
 import { streakFromLogDates } from '@/lib/heatmap'
 import { useTasks } from '@/modules/overview/api'
@@ -129,17 +129,7 @@ function DataSection() {
 
   async function handleExport() {
     try {
-      const tables = await repository.exportAll()
-      const file = buildBackup(tables, isCloudMode ? 'cloud' : 'local')
-      const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      const d = new Date()
-      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
-      a.href = url
-      a.download = `workbench-backup-${stamp}.json`
-      a.click()
-      URL.revokeObjectURL(url)
+      await downloadBackupFile()
       toast.success('已导出备份文件')
     } catch (err) {
       toast.error(`导出失败：${err instanceof Error ? err.message : '未知错误'}`)

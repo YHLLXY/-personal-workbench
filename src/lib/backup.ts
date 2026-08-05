@@ -1,4 +1,5 @@
 import type { BackupTables } from './db/types'
+import { repository, isCloudMode } from './db'
 
 export const BACKUP_APP = 'personal-workbench'
 export const BACKUP_VERSION = 1
@@ -33,4 +34,23 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** 备份文件名：workbench-backup-YYYYMMDD.json */
+export function backupFileName(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `workbench-backup-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.json`
+}
+
+/** 导出全部 10 张表并触发浏览器下载；失败抛错由调用方提示 */
+export async function downloadBackupFile(): Promise<void> {
+  const tables = await repository.exportAll()
+  const file = buildBackup(tables, isCloudMode ? 'cloud' : 'local')
+  const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = backupFileName()
+  a.click()
+  URL.revokeObjectURL(url)
 }
