@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review } from './types'
+import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput } from './types'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
 type Row = Record<string, unknown>
@@ -13,7 +13,24 @@ function logFromRow(r: Row): HabitLog { return { id: String(r.id), habitId: Stri
 function focusFromRow(r: Row): FocusSession { return { id: String(r.id), startAt: String(r.start_at), minutes: Number(r.minutes), note: r.note as string | null } }
 function examFromRow(r: Row): Exam { return { id: String(r.id), title: String(r.title), examDate: String(r.exam_date), subject: r.subject as string | null, note: r.note as string | null, createdAt: String(r.created_at) } }
 function noteFromRow(r: Row): Note { return { id: String(r.id), content: String(r.content), tag: r.tag as string | null, archived: Boolean(r.archived), createdAt: String(r.created_at), updatedAt: String(r.updated_at) } }
-function paperFromRow(r: Row): Paper { return { id: String(r.id), title: String(r.title), authors: String(r.authors), arxivId: r.arxiv_id as string | null, url: r.url as string | null, status: r.status as Paper['status'], rating: r.rating as number | null, note: r.note as string | null, createdAt: String(r.created_at) } }
+function paperFromRow(r: Row): Paper {
+  return {
+    id: String(r.id), title: String(r.title), authors: String(r.authors),
+    arxivId: r.arxiv_id as string | null, url: r.url as string | null,
+    status: r.status as Paper['status'], rating: r.rating as number | null,
+    note: r.note as string | null, createdAt: String(r.created_at),
+    type: (r.type as Paper['type']) ?? 'paper',
+    folderId: r.folder_id as string | null,
+    tags: (r.tags as string[]) ?? [],
+    content: r.content as string | null,
+    summary: r.summary as string | null,
+    keywords: (r.keywords as string[]) ?? [],
+    source: r.source as string | null,
+  }
+}
+function folderFromRow(r: Row): Folder {
+  return { id: String(r.id), name: String(r.name), parentId: r.parent_id as string | null, sort: Number(r.sort ?? 0) }
+}
 function healthFromRow(r: Row): HealthLog { return { id: String(r.id), logDate: String(r.log_date), type: r.type as HealthLog['type'], value: Number(r.value) } }
 function reviewFromRow(r: Row): Review { return { id: String(r.id), reviewDate: String(r.review_date), mood: Number(r.mood), summary: String(r.summary), planTomorrow: String(r.plan_tomorrow), updatedAt: String(r.updated_at) } }
 
@@ -72,11 +89,45 @@ export class SupabaseRepository implements WorkbenchRepository {
   async listPapers() { const { data, error } = await this.sb.from('wb_papers').select('*').order('created_at', { ascending: false }); if (error) throw error; return (data ?? []).map(paperFromRow) }
   async createPaper(input: Omit<Paper, 'id' | 'createdAt'>) {
     // 注意：wb_papers 列名为 arxiv_id（snake_case），不能直接展开 input（含 camelCase 的 arxivId 会触发 PGRST204）
-    const { data, error } = await this.sb.from('wb_papers').insert({ title: input.title, authors: input.authors, arxiv_id: input.arxivId, url: input.url, status: input.status, rating: input.rating, note: input.note, id: genId() }).select().single()
+    const { data, error } = await this.sb.from('wb_papers').insert({
+      title: input.title, authors: input.authors, arxiv_id: input.arxivId, url: input.url,
+      status: input.status, rating: input.rating, note: input.note,
+      type: input.type ?? 'paper', folder_id: input.folderId ?? null,
+      tags: input.tags ?? [], content: input.content ?? null,
+      summary: input.summary ?? null, keywords: input.keywords ?? [], source: input.source ?? null,
+      id: genId(),
+    }).select().single()
     if (error) throw error; return paperFromRow(data)
   }
-  async updatePaper(id: string, p: Partial<Paper>) { const { data, error } = await this.sb.from('wb_papers').update({ title: p.title, authors: p.authors, arxiv_id: p.arxivId, url: p.url, status: p.status, rating: p.rating, note: p.note }).eq('id', id).select().single(); if (error) throw error; return paperFromRow(data) }
+  async updatePaper(id: string, p: Partial<Paper>) {
+    const { data, error } = await this.sb.from('wb_papers').update({
+      title: p.title, authors: p.authors, arxiv_id: p.arxivId, url: p.url,
+      status: p.status, rating: p.rating, note: p.note,
+      type: p.type, folder_id: p.folderId, tags: p.tags, content: p.content,
+      summary: p.summary, keywords: p.keywords, source: p.source,
+    }).eq('id', id).select().single(); if (error) throw error; return paperFromRow(data)
+  }
   async deletePaper(id: string) { const { error } = await this.sb.from('wb_papers').delete().eq('id', id); if (error) throw error }
+
+  async listFolders() { const { data, error } = await this.sb.from('wb_folders').select('*').order('sort'); if (error) throw error; return (data ?? []).map(folderFromRow) }
+  async createFolder(input: FolderInput) {
+    const { data, error } = await this.sb.from('wb_folders').insert({ id: genId(), name: input.name, parent_id: input.parentId ?? null }).select().single()
+    if (error) throw error; return folderFromRow(data)
+  }
+  async updateFolder(id: string, p: Partial<Pick<Folder, 'name' | 'sort'>>) {
+    const { data, error } = await this.sb.from('wb_folders').update({ name: p.name, sort: p.sort }).eq('id', id).select().single()
+    if (error) throw error; return folderFromRow(data)
+  }
+  async deleteFolder(id: string) {
+    const { error: delErr } = await this.sb.from('wb_folders').delete().eq('id', id)
+    if (delErr) throw delErr
+    const { error: upErr } = await this.sb.from('wb_papers').update({ folder_id: null }).eq('folder_id', id)
+    if (upErr) throw upErr
+  }
+  async moveFolder(id: string, newParentId: string | null) {
+    const { data, error } = await this.sb.from('wb_folders').update({ parent_id: newParentId }).eq('id', id).select().single()
+    if (error) throw error; return folderFromRow(data)
+  }
 
   async listHealthLogs() { const { data, error } = await this.sb.from('wb_health_logs').select('*').order('log_date', { ascending: false }); if (error) throw error; return (data ?? []).map(healthFromRow) }
   async createHealthLog(input: HealthLogInput) { const { data, error } = await this.sb.from('wb_health_logs').insert({ id: genId(), log_date: input.logDate, type: input.type, value: input.value }).select().single(); if (error) throw error; return healthFromRow(data) }
