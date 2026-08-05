@@ -1,4 +1,4 @@
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review } from './types'
+import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput } from './types'
 
 const PREFIX = 'wb:'
 function read<T>(key: string): T[] {
@@ -71,10 +71,43 @@ export class LocalRepository implements WorkbenchRepository {
   }
   async deleteNote(id: string) { remove('notes', id) }
 
-  async listPapers() { return read<Paper>('papers') }
-  async createPaper(input: Omit<Paper, 'id' | 'createdAt'>) { return insert<Paper>('papers', { ...input, id: genId(), createdAt: new Date().toISOString() }) }
+  async listPapers() {
+    // 兼容 v1.0 旧数据：新字段补默认值，读取不崩溃
+    return read<Paper>('papers').map(p => ({
+      type: 'paper' as const, folderId: null, tags: [], keywords: [], content: null, summary: null, source: null,
+      ...p,
+    }))
+  }
+  async createPaper(input: Omit<Paper, 'id' | 'createdAt'>) {
+    return insert<Paper>('papers', { ...input, type: input.type ?? 'paper', folderId: input.folderId ?? null, tags: input.tags ?? [], keywords: input.keywords ?? [], content: input.content ?? null, summary: input.summary ?? null, source: input.source ?? null, id: genId(), createdAt: new Date().toISOString() })
+  }
   async updatePaper(id: string, p: Partial<Paper>) { return patch<Paper>('papers', id, p) }
   async deletePaper(id: string) { remove('papers', id) }
+
+  async listFolders() { return read<Folder>('folders') }
+  async createFolder(input: FolderInput) {
+    return insert<Folder>('folders', { id: genId(), name: input.name, parentId: input.parentId ?? null, sort: Date.now() })
+  }
+  async updateFolder(id: string, p: Partial<Pick<Folder, 'name' | 'sort'>>) { return patch<Folder>('folders', id, p) }
+  async deleteFolder(id: string) {
+    // 防误删：资料移入未分类，子文件夹一并删除（级联子树）
+    const folders = read<Folder>('folders')
+    const children = new Set([id])
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const f of folders) if (children.has(f.parentId ?? '') && !children.has(f.id)) { children.add(f.id); grew = true }
+    }
+    write('folders', folders.filter(f => !children.has(f.id)))
+    // 该文件夹子树下的资料全部移到未分类
+    const papers = read<Paper>('papers')
+    for (const p of papers) if (p.folderId && children.has(p.folderId)) p.folderId = null
+    write('papers', papers)
+  }
+  async moveFolder(id: string, newParentId: string | null) {
+    if (newParentId === id) throw new Error('不能移动到自身')
+    return patch<Folder>('folders', id, { parentId: newParentId })
+  }
 
   async listHealthLogs() { return read<HealthLog>('healthLogs') }
   async createHealthLog(input: HealthLogInput) { return insert<HealthLog>('healthLogs', { id: genId(), ...input }) }
