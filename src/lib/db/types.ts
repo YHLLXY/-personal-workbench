@@ -87,6 +87,20 @@ export interface WorkbenchRepository {
   upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string }): Promise<Review>
 }
 
+/** 备份的 10 张表数据（导出/导入闭环的载体） */
+export interface BackupTables {
+  tasks: Task[]
+  habits: Habit[]
+  habitLogs: HabitLog[]
+  focusSessions: FocusSession[]
+  exams: Exam[]
+  notes: Note[]
+  papers: Paper[]
+  folders: Folder[]
+  healthLogs: HealthLog[]
+  reviews: Review[]
+}
+
 /** 通用 ID 生成 */
 export function genId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`

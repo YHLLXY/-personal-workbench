@@ -1,0 +1,36 @@
+import type { BackupTables } from './db/types'
+
+export const BACKUP_APP = 'personal-workbench'
+export const BACKUP_VERSION = 1
+
+/** 备份文件（导出下载 / 导入校验的载体） */
+export interface BackupFile {
+  app: typeof BACKUP_APP
+  version: number
+  exportedAt: string
+  mode: 'local' | 'cloud'
+  tables: BackupTables
+}
+
+const TABLE_KEYS = ['tasks', 'habits', 'habitLogs', 'focusSessions', 'exams', 'notes', 'papers', 'folders', 'healthLogs', 'reviews'] as const
+
+export function buildBackup(tables: BackupTables, mode: 'local' | 'cloud'): BackupFile {
+  return { app: BACKUP_APP, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), mode, tables }
+}
+
+/** 导入前校验：app 防误导入他应用文件；version 可解析；10 张表均为数组 */
+export function validateBackup(raw: unknown): { ok: true; tables: BackupTables } | { ok: false; reason: 'not-workbench' | 'corrupt' } {
+  if (!raw || typeof raw !== 'object') return { ok: false, reason: 'corrupt' }
+  const obj = raw as Record<string, unknown>
+  if (obj.app !== BACKUP_APP) return { ok: false, reason: 'not-workbench' }
+  if (typeof obj.version !== 'number' || !obj.tables || typeof obj.tables !== 'object') return { ok: false, reason: 'corrupt' }
+  const tables = obj.tables as Record<string, unknown>
+  for (const k of TABLE_KEYS) if (!Array.isArray(tables[k])) return { ok: false, reason: 'corrupt' }
+  return { ok: true, tables: tables as unknown as BackupTables }
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
