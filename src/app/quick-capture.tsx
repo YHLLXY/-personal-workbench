@@ -29,7 +29,9 @@ export function QuickCapture() {
   const qc = useQueryClient()
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !useUiStore.getState().paletteOpen) setOpen(false)
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [setOpen])

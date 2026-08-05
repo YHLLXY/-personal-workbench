@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useGlobalHotkeys } from '../src/app/hotkeys'
 import { useUiStore } from '../src/app/store'
+import { QuickCapture } from '../src/app/quick-capture'
+import { CommandPalette } from '../src/app/command-palette'
+import { ThemeProvider } from '../src/app/theme'
 
 /** 固定平台：jsdom platform 为空（默认 Windows 分支），Mac 机跑测试也保持一致 */
 function setPlatform(p: string) {
@@ -58,5 +62,23 @@ describe('useGlobalHotkeys', () => {
     render(<MemoryRouter><Probe /></MemoryRouter>)
     fireEvent.keyDown(window, { key: 'n' })
     expect(screen.getByTestId('state').textContent).toBe('false|false|task')
+  })
+
+  it('Esc 只关闭最上层（命令面板），不关闭其下的快速捕获', () => {
+    useUiStore.setState({ paletteOpen: true, captureOpen: true, captureTab: 'task', shortcutsOpen: false })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>
+          <ThemeProvider>
+            <QuickCapture />
+            <CommandPalette />
+          </ThemeProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(useUiStore.getState().paletteOpen).toBe(false)
+    expect(useUiStore.getState().captureOpen).toBe(true)
   })
 })
