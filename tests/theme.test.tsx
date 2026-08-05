@@ -10,7 +10,10 @@ function makeMatchMedia(initialDark: boolean) {
     get matches() { return dark },
     media: '(prefers-color-scheme: dark)',
     addEventListener: (_: string, cb: (e: { matches: boolean }) => void) => { listeners.push(cb) },
-    removeEventListener: () => {},
+    removeEventListener: (_: string, cb: (e: { matches: boolean }) => void) => {
+      const i = listeners.indexOf(cb)
+      if (i >= 0) listeners.splice(i, 1)
+    },
   }
   return {
     mql,

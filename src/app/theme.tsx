@@ -38,6 +38,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [theme])
 
   useEffect(() => {
+    setResolvedTheme(resolve(theme))
+  }, [theme])
+
+  useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
     const mql = window.matchMedia(MEDIA)
     const onChange = () => setResolvedTheme(theme === 'system' ? (mql.matches ? 'dark' : 'light') : theme)
@@ -47,15 +51,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t)
-    setResolvedTheme(resolve(t))
   }, [])
 
   const toggle = useCallback(() => {
-    setThemeState(prev => {
-      const next: Theme = prev === 'light' ? 'dark' : prev === 'dark' ? 'system' : 'light'
-      setResolvedTheme(resolve(next))
-      return next
-    })
+    setThemeState(prev => (prev === 'light' ? 'dark' : prev === 'dark' ? 'system' : 'light'))
   }, [])
 
   return (
