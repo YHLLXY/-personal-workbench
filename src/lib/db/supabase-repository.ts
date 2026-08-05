@@ -59,6 +59,10 @@ const toRows: { [K in keyof BackupTables]: (rows: BackupTables[K]) => Record<str
   reviews: rs => rs.map(reviewToRow),
 }
 
+function toSnake<K extends keyof BackupTables>(key: K, rows: BackupTables[K]): Record<string, unknown>[] {
+  return toRows[key](rows)
+}
+
 export class SupabaseRepository implements WorkbenchRepository {
   private sb: SupabaseClient
   constructor() {
@@ -177,17 +181,21 @@ export class SupabaseRepository implements WorkbenchRepository {
     // 逐表独立 try：失败表报错，其余表保持已写入（幂等可重入）
     const errors: string[] = []
     await Promise.all((Object.keys(TABLES) as (keyof BackupTables)[]).map(async key => {
-      const rows = (toRows[key] as (items: any[]) => Record<string, unknown>[])(tables[key])
+      const rows = toSnake(key, tables[key])
       try {
         // RLS 已限定 user_id = auth.uid()，delete().neq('id','') 安全清空本用户全部行
         const { error: delErr } = await this.sb.from(TABLES[key]).delete().neq('id', '')
-        if (delErr) throw delErr
-        if (rows.length > 0) {
-          const { error: upErr } = await this.sb.from(TABLES[key]).upsert(rows)
-          if (upErr) throw upErr
-        }
+        if (delErr) throw new Error(`清空失败: ${delErr.message}`)
       } catch (err) {
-        errors.push(`${key}: ${err instanceof Error ? err.message : String(err)}`)
+        errors.push(`${key}（清空）: ${err instanceof Error ? err.message : String(err)}`)
+        return
+      }
+      if (rows.length === 0) return
+      try {
+        const { error: upErr } = await this.sb.from(TABLES[key]).upsert(rows)
+        if (upErr) throw new Error(`写入失败: ${upErr.message}`)
+      } catch (err) {
+        errors.push(`${key}（写入）: ${err instanceof Error ? err.message : String(err)}`)
       }
     }))
     if (errors.length > 0) throw new Error(`部分表导入失败：${errors.join('；')}`)

@@ -29,7 +29,7 @@ const { insertCalls, upsertCalls, deleteCalls, mockTable, setRows } = vi.hoisted
         // 同时支持 importAll 的 delete().neq('id','') 与现有 deleteTask 的 delete().eq('id', x)
         return {
           neq: (col: string, val: unknown) => { rec.column = col; rec.value = val; return Promise.resolve({ error: null }) },
-          eq: (_col: string, _val: unknown) => Promise.resolve({ error: null }),
+          eq: (col: string, val: unknown) => { rec.column = col; rec.value = val; return Promise.resolve({ error: null }) },
         }
       }),
       eq: vi.fn().mockReturnThis(),
@@ -116,6 +116,8 @@ describe('SupabaseRepository', () => {
       // tasks 表 upsert 载荷是 snake_case 列名
       const tasksUpsert = upsertCalls.find(u => u.table === 'wb_tasks')
       expect(tasksUpsert?.payload).toEqual([{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
+      // 只有 tasks 有数据 → 只有 1 次 upsert（其余 9 张空表只清空不写入）
+      expect(upsertCalls.length).toBe(1)
     })
   })
 })
