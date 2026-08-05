@@ -14,7 +14,7 @@ import { taskCompletionRate, totalFocusMinutes, formatMinutes } from '@/lib/stat
 import { streakFromLogDates } from '@/lib/heatmap'
 import { useTasks } from '@/modules/overview/api'
 import { useFocusSessions } from '@/modules/study/api'
-import { useHabits, useHabitLogs } from '@/modules/health/api'
+import { useHabitLogs } from '@/modules/health/api'
 import { useReviews } from '@/modules/review/api'
 import { useNotes, usePapers } from '@/modules/news/api'
 
@@ -41,7 +41,12 @@ function ProfileCard() {
   const [saving, setSaving] = useState(false)
   const initial = ((user?.nickname || user?.email || '我')[0] ?? '我').toUpperCase()
 
+  useEffect(() => {
+    setNickname(user?.nickname ?? '')
+  }, [user?.nickname])
+
   function save(next: { nickname?: string; avatarColor?: string }) {
+    if (saving) return
     setSaving(true)
     updateProfile(next)
       .then(() => toast.success('已保存'))
@@ -68,8 +73,8 @@ function ProfileCard() {
         <div className="mb-1.5 text-[10px] text-muted-foreground">头像颜色</div>
         <div className="flex gap-1.5">
           {AVATAR_COLORS.map(c => (
-            <button key={c} aria-label={`头像颜色 ${c}`} onClick={() => save({ avatarColor: c })}
-              className={`size-6 rounded-full transition-transform hover:scale-110 ${user?.avatarColor === c ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+            <button key={c} aria-label={`头像颜色 ${c}`} onClick={() => save({ avatarColor: c })} disabled={saving}
+              className={`size-6 rounded-full transition-transform hover:scale-110 ${user?.avatarColor === c ? 'ring-2 ring-primary ring-offset-2' : ''} disabled:opacity-50`}
               style={{ backgroundColor: c }} />
           ))}
         </div>
@@ -80,7 +85,6 @@ function ProfileCard() {
 
 function StatsGrid() {
   const { data: tasks } = useTasks()
-  const { data: _habits } = useHabits()
   const { data: logs } = useHabitLogs()
   const { data: sessions } = useFocusSessions()
   const { data: reviews } = useReviews()
@@ -208,6 +212,10 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (open) { setPw(''); setPw2('') }
+  }, [open])
 
   async function submit() {
     if (pw.length < 6) { toast.error('密码至少 6 位'); return }
