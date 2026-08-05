@@ -5,6 +5,7 @@ import { modules } from '@/registry'
 import { useUiStore } from './store'
 import { useTheme } from './theme'
 import { useAuth } from './auth'
+import { AVATAR_COLORS } from '../lib/profile'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -94,7 +95,7 @@ export function Shell() {
             {theme === 'light' ? <Moon className="size-4" /> : <Sun className="size-4" />}
           </Button>
           <div className="size-8 rounded-full text-white flex items-center justify-center text-xs font-bold"
-            style={{ backgroundColor: user?.avatarColor ?? '#7D8CA3' }}>
+            style={{ backgroundColor: user?.avatarColor ?? AVATAR_COLORS[0] }}>
             {(user?.nickname || user?.email || '我')[0]?.toUpperCase()}
           </div>
         </header>

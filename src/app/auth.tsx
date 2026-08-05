@@ -25,7 +25,7 @@ function userFromSession(
   user: { email?: string | null; user_metadata?: Record<string, unknown> } | null | undefined,
 ): AuthUser | null {
   if (!user) return null
-  const meta = user.user_metadata as Record<string, unknown> | undefined
+  const meta = user.user_metadata
   return {
     email: user.email ?? '',
     nickname: typeof meta?.nickname === 'string' ? meta.nickname : '',
