@@ -77,7 +77,7 @@ export const modules: ModuleDef[] = [
         homeCard: { id: 'home-hot', span: '5', mobileOrder: -1, desktopOrder: 4, component: HotCard },
       },
       {
-        id: 'papers', name: '论文资料库', icon: Library, path: '/papers',
+        id: 'papers', name: '资料库', icon: Library, path: '/papers',
         component: lazy(() => import('./modules/news/papers')),
       },
       {

@@ -1,108 +1,180 @@
-import { useState, type FormEvent } from 'react'
-import { Search, Plus, ExternalLink, Trash2, Library } from 'lucide-react'
-import { searchArxiv, type ArxivResult } from '../../lib/arxiv'
-import { usePapers, usePaperMutations } from './api'
+import { useMemo, useState } from 'react'
+import { Search, Plus, Film, FileText, Trash2, FolderTree as FolderTreeIcon, Library } from 'lucide-react'
+import { usePapers, usePaperMutations, useFolders, useFolderMutations } from './api'
+import { FolderTree } from './folder-tree'
+import { PaperDetail } from './paper-detail'
+import { AddPaper } from './add-paper'
+import { AddNote } from './add-note'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { Paper } from '@/lib/db/types'
 
 const STATUS_LABEL = { want: '想读', reading: '在读', done: '读完' } as const
+const TYPE_LABEL = { all: '全部', paper: '论文', note: '文案' } as const
+/** 'all' = 全部资料；'__none__' = 未分类；其他 = 文件夹 id */
+type FolderFilter = 'all' | '__none__' | string
 
 export default function Papers() {
   const { data: papers, isLoading } = usePapers()
-  const { create, update, remove } = usePaperMutations()
+  const { update, remove } = usePaperMutations()
+  const { data: folders } = useFolders()
+  const { create: createFolder } = useFolderMutations()
+  const [folderFilter, setFolderFilter] = useState<FolderFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | Paper['status']>('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'paper' | 'note'>('all')
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<ArxivResult[]>([])
-  const [searching, setSearching] = useState(false)
-  const [searched, setSearched] = useState(false)
-  const [filter, setFilter] = useState<'all' | Paper['status']>('all')
+  const [selected, setSelected] = useState<Paper | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [addPaperOpen, setAddPaperOpen] = useState(false)
+  const [addNoteOpen, setAddNoteOpen] = useState(false)
+  const [treeOpen, setTreeOpen] = useState(false)
 
-  async function doSearch(e: FormEvent) {
-    e.preventDefault(); if (!query.trim()) return
-    setSearching(true)
-    try { setResults(await searchArxiv(query)); setSearched(true) }
-    catch { toast.error('搜索失败，请稍后重试') }
-    finally { setSearching(false) }
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return (papers ?? []).filter(p => {
+      if (folderFilter === 'all') { /* 全部 */ }
+      else if (folderFilter === '__none__') { if (p.folderId != null) return false }
+      else if (p.folderId !== folderFilter) return false
+      if (statusFilter !== 'all' && p.status !== statusFilter) return false
+      if (typeFilter !== 'all' && (p.type ?? 'paper') !== typeFilter) return false
+      if (q) {
+        const hay = [p.title, p.authors, p.content ?? '', (p.keywords ?? []).join(' ')].join(' ').toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+  }, [papers, folderFilter, statusFilter, typeFilter, query])
+
+  function newFolderFromMenu() {
+    const name = window.prompt('新建文件夹名称')
+    if (!name?.trim()) return
+    createFolder.mutate({ name: name.trim() }, { onSuccess: () => toast.success('已创建') })
   }
 
-  const shown = (papers ?? []).filter(p => filter === 'all' || p.status === filter)
-
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between mb-4">
+    <div className="mx-auto max-w-5xl">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-bold">论文资料库</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">从 arXiv 检索并收藏感兴趣的论文</p>
+          <h1 className="text-xl font-bold">资料库</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">论文与视频文案，统一收纳</p>
         </div>
-        <Select value={filter} onValueChange={v => setFilter(v as typeof filter)}>
-          <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部</SelectItem>
-            <SelectItem value="want">想读</SelectItem>
-            <SelectItem value="reading">在读</SelectItem>
-            <SelectItem value="done">读完</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
+            <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部状态</SelectItem>
+              <SelectItem value="want">想读</SelectItem>
+              <SelectItem value="reading">在读</SelectItem>
+              <SelectItem value="done">读完</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={typeFilter} onValueChange={v => setTypeFilter(v as typeof typeFilter)}>
+            <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(['all', 'paper', 'note'] as const).map(t => <SelectItem key={t} value={t}>{TYPE_LABEL[t]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger>
+              <Button size="sm"><Plus className="size-4" />新建</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={newFolderFromMenu}><FolderTreeIcon className="size-4" />新建文件夹</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAddPaperOpen(true)}><FileText className="size-4" />添加论文</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAddNoteOpen(true)}><Film className="size-4" />添加文案笔记</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
-      <form onSubmit={doSearch} className="flex gap-2 mb-5">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="arXiv 搜索：如 LLM safety" className="pl-9" />
-        </div>
-        <Button type="submit" disabled={searching || !query.trim()}>{searching ? '搜索中…' : '搜索'}</Button>
-      </form>
+      <div className="flex gap-4">
+        {/* 桌面端左栏：文件夹树 */}
+        <aside className="hidden w-56 shrink-0 md:block">
+          <FolderTree folders={folders ?? []} selectedId={folderFilter === 'all' ? null : folderFilter} onSelect={id => setFolderFilter(id ?? 'all')} />
+        </aside>
 
-      {searching ? <div className="space-y-2"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div>
-        : results.length > 0 ? (
-          <div className="bg-card border border-border rounded-2xl divide-y divide-border/70 mb-6">
-            {results.map(r => {
-              const inLibrary = (papers ?? []).some(p => p.arxivId === r.arxivId)
-              return (
-                <div key={r.arxivId} className="px-4 py-3 flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{r.title}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5 truncate">{r.authors.join(', ')} · {r.published}</div>
-                  </div>
-                  <a href={r.url} target="_blank" rel="noreferrer" aria-label="打开原文" className="p-1.5 text-muted-foreground/60 hover:text-primary"><ExternalLink className="size-4" /></a>
-                  <Button size="sm" variant="outline" disabled={inLibrary} onClick={() => create.mutate({ title: r.title, authors: r.authors.join(', '), arxivId: r.arxivId, url: r.url, status: 'want', rating: null, note: null }, { onSuccess: () => toast.success('已收藏') })}>
-                    <Plus className="size-3.5 mr-1" />{inLibrary ? '已收藏' : '收藏'}
-                  </Button>
+        <div className="min-w-0 flex-1">
+          {/* 移动端：文件夹树收进 Sheet */}
+          <div className="mb-3 flex items-center gap-2 md:hidden">
+            <Sheet open={treeOpen} onOpenChange={setTreeOpen}>
+              <SheetTrigger>
+                <Button variant="outline" size="sm"><FolderTreeIcon className="size-3.5" />文件夹</Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-72">
+                <SheetTitle>文件夹</SheetTitle>
+                <div className="p-3 pt-1">
+                  <FolderTree folders={folders ?? []} selectedId={folderFilter === 'all' ? null : folderFilter} onSelect={id => { setFolderFilter(id ?? 'all'); setTreeOpen(false) }} />
                 </div>
-              )
-            })}
+              </SheetContent>
+            </Sheet>
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索标题 / 作者 / 关键词 / 内容" className="pl-9" />
+            </div>
           </div>
-        ) : searched ? <p className="text-sm text-muted-foreground py-8 text-center">没有找到相关论文，换个关键词试试</p>
-        : null}
 
-      {isLoading ? <Skeleton className="h-24 w-full" />
-        : shown.length === 0 ? <p className="text-sm text-muted-foreground py-8 text-center flex flex-col items-center gap-2"><Library className="size-8 text-muted-foreground/40" />库里还没有论文</p>
-        : <div className="bg-card border border-border rounded-2xl divide-y divide-border/70">
-            {shown.map(p => (
-              <div key={p.id} className="px-4 py-3 flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <a href={p.url ?? `https://arxiv.org/abs/${p.arxivId}`} target="_blank" rel="noreferrer" className="text-sm font-medium truncate hover:text-primary">{p.title}</a>
-                    {p.arxivId && <span className="text-[10px] text-muted-foreground shrink-0">{p.arxivId}</span>}
+          {/* 桌面端搜索框 */}
+          <div className="relative mb-3 hidden md:block">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索标题 / 作者 / 关键词 / 内容" className="pl-9" />
+          </div>
+
+          {isLoading ? <div className="space-y-2"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div>
+            : (papers ?? []).length === 0 ? (
+              <p className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
+                <Library className="size-8 text-muted-foreground/40" />还没有资料——从导入第一篇论文或第一条文案开始
+              </p>
+            ) : shown.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">没有匹配的资料</p>
+            ) : (
+              <div className="divide-y divide-border/70 rounded-2xl border border-border bg-card">
+                {shown.map(p => (
+                  <div key={p.id} className="flex items-start gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { setSelected(p); setDetailOpen(true) }}>
+                      <div className="flex items-center gap-2">
+                        {p.type === 'note' ? <Film className="size-4 shrink-0 text-muted-foreground" /> : <FileText className="size-4 shrink-0 text-muted-foreground" />}
+                        <span className="truncate text-sm font-medium hover:text-primary">{p.title}</span>
+                        {p.arxivId && <span className="shrink-0 text-[10px] text-muted-foreground">{p.arxivId}</span>}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">{p.authors || p.source || (p.type === 'note' ? '文案笔记' : '')}</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(p.tags ?? []).slice(0, 2).map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <div onClick={e => e.stopPropagation()}>
+                        <Select value={p.status} onValueChange={v => update.mutate({ id: p.id, patch: { status: v as Paper['status'] } })}>
+                          <SelectTrigger className={cn('h-8 w-20 text-xs', p.status === 'reading' && 'text-primary')}><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {(['want', 'reading', 'done'] as const).map(s => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <button
+                        onClick={() => { if (window.confirm('删除该资料？此操作不可恢复')) remove.mutate(p.id) }}
+                        aria-label="删除"
+                        className="p-1.5 text-muted-foreground/60 hover:text-destructive"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5 truncate">{p.authors}</div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Select value={p.status} onValueChange={v => update.mutate({ id: p.id, patch: { status: v as Paper['status'] } })}>
-                    <SelectTrigger className={cn('w-20 h-8 text-xs', p.status === 'reading' && 'text-primary')}><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {(['want', 'reading', 'done'] as const).map(s => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <button onClick={() => remove.mutate(p.id)} aria-label="删除" className="p-1.5 text-muted-foreground/60 hover:text-destructive"><Trash2 className="size-4" /></button>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>}
+            )}
+        </div>
+      </div>
+
+      <PaperDetail paper={selected} open={detailOpen} onOpenChange={setDetailOpen} />
+      <AddPaper open={addPaperOpen} onOpenChange={setAddPaperOpen} defaultFolderId={folderFilter === 'all' || folderFilter === '__none__' ? null : folderFilter} />
+      <AddNote open={addNoteOpen} onOpenChange={setAddNoteOpen} defaultFolderId={folderFilter === 'all' || folderFilter === '__none__' ? null : folderFilter} />
     </div>
   )
 }
