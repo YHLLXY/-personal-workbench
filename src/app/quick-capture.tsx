@@ -22,7 +22,8 @@ const TABS = [
 export function QuickCapture() {
   const open = useUiStore(s => s.captureOpen)
   const setOpen = useUiStore(s => s.setCaptureOpen)
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('task')
+  const tab = useUiStore(s => s.captureTab)
+  const setTab = useUiStore(s => s.setCaptureTab)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const qc = useQueryClient()

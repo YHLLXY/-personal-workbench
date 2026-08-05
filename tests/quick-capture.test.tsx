@@ -13,7 +13,7 @@ function renderCapture() {
 }
 
 describe('QuickCapture', () => {
-  beforeEach(() => { localStorage.clear(); useUiStore.setState({ captureOpen: true, paletteOpen: false }) })
+  beforeEach(() => { localStorage.clear(); useUiStore.setState({ captureOpen: true, paletteOpen: false, captureTab: 'task', shortcutsOpen: false }) })
 
   it('Escape 关闭面板', () => {
     renderCapture()
