@@ -32,10 +32,17 @@ describe('matchHotkey', () => {
   it('未知按键返回 null', () => {
     expect(matchHotkey(ev({ metaKey: true, key: 'z' }), true)).toBeNull()
   })
+  it('修饰键未按下时不匹配', () => {
+    expect(matchHotkey(ev({ key: 'k' }), true)).toBeNull()
+  })
 })
 
 describe('formatShortcut', () => {
-  const hk = (id: string) => HOTKEYS.find(h => h.id === id)!
+  const hk = (id: string) => {
+    const found = HOTKEYS.find(h => h.id === id)
+    if (!found) throw new Error(`unknown hotkey id: ${id}`)
+    return found
+  }
   it('Mac：⌘N 与 ⌘⇧N', () => {
     expect(formatShortcut(hk('new-task'), true)).toBe('⌘N')
     expect(formatShortcut(hk('new-note'), true)).toBe('⌘⇧N')

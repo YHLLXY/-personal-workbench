@@ -1,19 +1,19 @@
-/** 全局快捷键表与匹配/格式化工具（纯函数，可测） */
+/** 全局快捷键表与匹配/格式化工具（纯函数，可测）。
+ *  所有快捷键均依赖 ⌘/Ctrl 修饰键，matchHotkey 内部根据平台判断 metaKey 或 ctrlKey。 */
 
 export interface Hotkey {
   id: string
   key: string        // 单字符，匹配时统一 toLowerCase
-  mod: boolean       // Mac = ⌘(metaKey)，Windows = Ctrl(ctrlKey)
   shift: boolean
   description: string
 }
 
 export const HOTKEYS: Hotkey[] = [
-  { id: 'palette', key: 'k', mod: true, shift: false, description: '打开命令面板' },
-  { id: 'new-task', key: 'n', mod: true, shift: false, description: '新建任务' },
-  { id: 'new-note', key: 'n', mod: true, shift: true, description: '新建速记' },
-  { id: 'checkin', key: 'x', mod: true, shift: true, description: '今日全部打卡' },
-  { id: 'settings', key: ',', mod: true, shift: false, description: '打开设置' },
+  { id: 'palette', key: 'k', shift: false, description: '打开命令面板' },
+  { id: 'new-task', key: 'n', shift: false, description: '新建任务' },
+  { id: 'new-note', key: 'n', shift: true, description: '新建速记' },
+  { id: 'checkin', key: 'x', shift: true, description: '今日全部打卡' },
+  { id: 'settings', key: ',', shift: false, description: '打开设置' },
 ]
 
 export function isMacPlatform(): boolean {

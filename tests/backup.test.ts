@@ -58,4 +58,7 @@ describe('backup', () => {
     const d = new Date(2026, 7, 5) // 2026-08-05
     expect(backupFileName(d)).toBe('workbench-backup-20260805.json')
   })
+  it('backupFileName 单月单日补零', () => {
+    expect(backupFileName(new Date(2026, 0, 1))).toBe('workbench-backup-20260101.json')
+  })
 })
