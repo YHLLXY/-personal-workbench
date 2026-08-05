@@ -93,8 +93,9 @@ export function Shell() {
           <Button variant="ghost" size="icon" aria-label="切换主题" onClick={toggle}>
             {theme === 'light' ? <Moon className="size-4" /> : <Sun className="size-4" />}
           </Button>
-          <div className="size-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center text-xs font-bold">
-            {user ? user.email?.[0]?.toUpperCase() ?? '我' : '我'}
+          <div className="size-8 rounded-full text-white flex items-center justify-center text-xs font-bold"
+            style={{ backgroundColor: user?.avatarColor ?? '#7D8CA3' }}>
+            {(user?.nickname || user?.email || '我')[0]?.toUpperCase()}
           </div>
         </header>
 
