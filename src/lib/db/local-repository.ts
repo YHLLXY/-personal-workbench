@@ -1,4 +1,4 @@
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput } from './types'
+import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables } from './types'
 
 const PREFIX = 'wb:'
 function read<T>(key: string): T[] {
@@ -120,5 +120,41 @@ export class LocalRepository implements WorkbenchRepository {
     if (i >= 0) { rows[i] = { ...rows[i], ...patch, updatedAt: new Date().toISOString() }; write('reviews', rows); return rows[i] }
     const r: Review = { id: genId(), reviewDate, mood: patch.mood ?? 3, summary: patch.summary ?? '', planTomorrow: patch.planTomorrow ?? '', updatedAt: new Date().toISOString() }
     return insert<Review>('reviews', r)
+  }
+
+  async exportAll() {
+    const [tasks, habits, habitLogs, focusSessions, exams, notes, papers, folders, healthLogs, reviews] = await Promise.all([
+      this.listTasks(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
+      this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(),
+    ])
+    return { tasks, habits, habitLogs, focusSessions, exams, notes, papers, folders, healthLogs, reviews }
+  }
+
+  async importAll(tables: BackupTables) {
+    // 快照旧数据（仅 wb: 前缀，不动其他应用 key）
+    const snapshot = new Map<string, string>()
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(PREFIX)) snapshot.set(k, localStorage.getItem(k) ?? '')
+    }
+    try {
+      const entries: Array<[string, unknown[]]> = [
+        ['tasks', tables.tasks], ['habits', tables.habits], ['habitLogs', tables.habitLogs],
+        ['focusSessions', tables.focusSessions], ['exams', tables.exams], ['notes', tables.notes],
+        ['papers', tables.papers], ['folders', tables.folders], ['healthLogs', tables.healthLogs],
+        ['reviews', tables.reviews],
+      ]
+      for (const [key, rows] of entries) localStorage.setItem(PREFIX + key, JSON.stringify(rows))
+    } catch (err) {
+      // 回滚：清除全部 wb: 前缀 key，恢复快照
+      const toRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (k && k.startsWith(PREFIX)) toRemove.push(k)
+      }
+      for (const k of toRemove) localStorage.removeItem(k)
+      for (const [k, v] of snapshot) localStorage.setItem(k, v)
+      throw err
+    }
   }
 }

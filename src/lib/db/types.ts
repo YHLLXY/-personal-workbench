@@ -85,6 +85,9 @@ export interface WorkbenchRepository {
 
   listReviews(): Promise<Review[]>
   upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string }): Promise<Review>
+
+  exportAll(): Promise<BackupTables>
+  importAll(tables: BackupTables): Promise<void>
 }
 
 /** 备份的 10 张表数据（导出/导入闭环的载体） */

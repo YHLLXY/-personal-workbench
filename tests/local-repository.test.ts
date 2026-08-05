@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { LocalRepository } from '../src/lib/db/local-repository'
 
 describe('LocalRepository', () => {
@@ -101,5 +101,67 @@ describe('LocalRepository', () => {
       expect(papers[0].keywords).toEqual([])
       expect(papers[0].content).toBeNull()
     })
+  })
+})
+
+describe('exportAll / importAll', () => {
+  let repo: LocalRepository
+  beforeEach(() => { localStorage.clear(); repo = new LocalRepository() })
+
+  it('exportAll 导出 10 张表，往返 importAll 后数据一致', async () => {
+    const t = await repo.createTask({ title: '备份我' })
+    const h = await repo.createHabit({ name: '喝水' })
+    await repo.setHabitLog(h.id, '2026-08-05', 2)
+    await repo.createFocusSession(25, '深度工作')
+    await repo.createExam({ title: '期末', examDate: '2026-09-01' })
+    await repo.createNote('灵感')
+    await repo.createPaper({ title: '论文', authors: 'a', arxivId: null, url: null, status: 'want', rating: null, note: null })
+    await repo.createFolder({ name: '机器学习' })
+    await repo.createHealthLog({ logDate: '2026-08-05', type: 'sleep', value: 7.5 })
+    await repo.upsertReview('2026-08-05', { mood: 4 })
+
+    const tables = await repo.exportAll()
+    expect(Object.keys(tables).sort()).toEqual(
+      ['tasks', 'habits', 'habitLogs', 'focusSessions', 'exams', 'notes', 'papers', 'folders', 'healthLogs', 'reviews'].sort(),
+    )
+
+    localStorage.clear()
+    const fresh = new LocalRepository()
+    await fresh.importAll(tables)
+
+    expect(await fresh.listTasks()).toEqual(await repo.listTasks())
+    expect(await fresh.listHabits()).toEqual(await repo.listHabits())
+    expect(await fresh.listHabitLogs()).toEqual(await repo.listHabitLogs())
+    expect(await fresh.listFocusSessions()).toEqual(await repo.listFocusSessions())
+    expect(await fresh.listExams()).toEqual(await repo.listExams())
+    expect(await fresh.listNotes()).toEqual(await repo.listNotes())
+    expect(await fresh.listPapers()).toEqual(await repo.listPapers())
+    expect(await fresh.listFolders()).toEqual(await repo.listFolders())
+    expect(await fresh.listHealthLogs()).toEqual(await repo.listHealthLogs())
+    expect(await fresh.listReviews()).toEqual(await repo.listReviews())
+    expect(t.id).toBe((await fresh.listTasks())[0].id)
+  })
+
+  it('importAll 覆盖式替换旧数据', async () => {
+    await repo.createTask({ title: '旧任务' })
+    await repo.importAll({ tasks: [{ id: 'n1', title: '新任务', focus: false, priority: 'low', status: 'todo', dueDate: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [] })
+    const tasks = await repo.listTasks()
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0].title).toBe('新任务')
+  })
+
+  it('写入中途失败（QuotaExceededError）时回滚旧数据', async () => {
+    await repo.createTask({ title: '旧任务' })
+    const before = await repo.exportAll()
+    // 写入第 2 个 key（wb:habits）时抛 QuotaExceededError，模拟超限；其余 key 走真实实现
+    const realSetItem = Storage.prototype.setItem
+    const spy = vi.spyOn(Storage.prototype, 'setItem')
+    spy.mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key === 'wb:habits') throw new DOMException('quota', 'QuotaExceededError')
+      realSetItem.call(this, key, value)
+    })
+    await expect(repo.importAll({ tasks: [], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [] })).rejects.toThrow()
+    spy.mockRestore()
+    expect(await repo.exportAll()).toEqual(before)
   })
 })
