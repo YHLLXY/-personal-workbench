@@ -5,6 +5,7 @@ import { ExamsCard, FocusCard } from './modules/study/cards'
 import { HotCard, NotesCard } from './modules/news/cards'
 import { HeatmapCard } from './modules/health/cards'
 import { ReviewCard } from './modules/review/cards'
+import { WeeklyTrendCard } from './modules/overview/weekly-trend'
 
 export interface HomeCardDef {
   id: string
@@ -45,6 +46,7 @@ export const modules: ModuleDef[] = [
       {
         id: 'home', name: '工作台总览', icon: LayoutDashboard, path: '/',
         component: lazy(() => import('./app/home')),
+        homeCard: { id: 'home-trend', span: '5', mobileOrder: -1, desktopOrder: 8, component: WeeklyTrendCard },
       },
       {
         id: 'tasks', name: '今日待办', icon: CheckCircle2, path: '/tasks',

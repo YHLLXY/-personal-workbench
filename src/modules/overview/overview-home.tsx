@@ -7,6 +7,7 @@ import { useHeatCells } from '../health/api'
 import { todayStr } from '@/lib/db/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MobileHomeEntries } from '@/components/mobile-entries'
+import { WeeklyTrendCard } from './weekly-trend'
 
 export default function OverviewHome() {
   const { data: tasks, isLoading: tl } = useTasks()
@@ -58,6 +59,7 @@ export default function OverviewHome() {
       </div>
       {/* 快捷入口 */}
       <MobileHomeEntries />
+      <WeeklyTrendCard />
     </div>
   )
 }
