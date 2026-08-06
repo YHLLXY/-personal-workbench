@@ -1,4 +1,4 @@
-import type { HotSource } from './sources'
+import type { HotSource } from './sources.ts'
 
 export interface FetchAllOptions { timeoutMs?: number; perSource?: number; maxTotal?: number }
 export interface FetchedItem { title: string; source: string; url: string; category: string }

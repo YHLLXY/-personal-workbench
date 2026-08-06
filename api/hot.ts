@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { SOURCES } from './sources'
-import { fetchAll } from './fetch-all'
+import { SOURCES } from './sources.ts'
+import { fetchAll } from './fetch-all.ts'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {

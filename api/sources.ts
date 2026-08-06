@@ -1,4 +1,4 @@
-import { parseRssXml, type RawItem } from './rss-parse'
+import { parseRssXml, type RawItem } from './rss-parse.ts'
 
 export type HotCategory = 'tech' | 'academic' | 'zh'
 export interface HotSourceMeta { id: string; name: string; category: HotCategory; experimental?: boolean }
