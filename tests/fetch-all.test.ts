@@ -33,7 +33,7 @@ describe('fetchAll', () => {
     expect(out.length).toBe(1)
   })
   it('超时中止：fetch 一直挂起时在 timeoutMs 后返回空', async () => {
-    const hanging: HotSource = { id: 'h', name: 'h', category: 'tech', fetch: vi.fn((signal?: AbortSignal) => new Promise((_res, rej) => {
+    const hanging: HotSource = { id: 'h', name: 'h', category: 'tech', fetch: vi.fn((signal?: AbortSignal) => new Promise<never>((_res, rej) => {
       signal?.addEventListener('abort', () => rej(new Error('aborted')))
     })) }
     const out = await fetchAll([hanging], { timeoutMs: 100 })
