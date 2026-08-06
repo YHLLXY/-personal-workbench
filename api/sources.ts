@@ -6,12 +6,12 @@ export interface HotSource extends HotSourceMeta { fetch: (signal?: AbortSignal)
 
 async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const r = await fetch(url, { signal, headers: { 'user-agent': 'personal-workbench/1.0' } })
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  if (!r.ok) throw new Error(`HTTP ${r.status} ${url}`)
   return r.json() as Promise<T>
 }
 async function fetchRss(url: string, signal?: AbortSignal, max = 8): Promise<RawItem[]> {
   const r = await fetch(url, { signal, headers: { 'user-agent': 'personal-workbench/1.0' } })
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  if (!r.ok) throw new Error(`HTTP ${r.status} ${url}`)
   return parseRssXml(await r.text()).slice(0, max)
 }
 
@@ -53,19 +53,17 @@ export const SOURCES: HotSource[] = [
   { id: 'arxiv-se', name: 'arXiv cs.SE', category: 'academic', fetch: s => fetchRss('https://export.arxiv.org/rss/cs.SE', s) },
   { id: 'arxiv-math', name: 'arXiv math.IT', category: 'academic', fetch: s => fetchRss('https://export.arxiv.org/rss/math.IT', s) },
   { id: 'jiqizhixin', name: '机器之心', category: 'academic', fetch: s => fetchRss('https://www.jiqizhixin.com/rss', s) },
+  { id: 'arxiv-cr', name: 'arXiv cs.CR', category: 'academic', fetch: s => fetchRss('https://export.arxiv.org/rss/cs.CR', s) },
 
   // ===== 中文社区 zh =====
   { id: 'bbc-zh', name: 'BBC 中文', category: 'zh', experimental: true, fetch: s => fetchRss('https://feeds.bbci.co.uk/zhongwen/simp/rss.xml', s) },
   { id: 'huxiu', name: '虎嗅', category: 'zh', experimental: true, fetch: s => fetchRss('https://www.huxiu.com/rss/0.xml', s) },
   { id: 'douban-movie', name: '豆瓣新片', category: 'zh', experimental: true, fetch: s => fetchRss('https://www.douban.com/feed/review/movie', s) },
   { id: 'douban-book', name: '豆瓣书评', category: 'zh', experimental: true, fetch: s => fetchRss('https://www.douban.com/feed/review/book', s) },
-  { id: 'zhihu-hot', name: '知乎热榜', category: 'zh', experimental: true, fetch: async (s) => {
-    const j = await fetchJson<{ data: { target: { title: string } }[] }>('https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=10', s)
-    return (j.data ?? []).slice(0, 8).map(it => ({ title: `知乎: ${it.target.title}`, url: 'https://www.zhihu.com/hot' }))
-  } },
-  { id: 'ruanyf-weekly', name: '阮一峰周刊', category: 'tech', experimental: true, fetch: async (s) => {
+  { id: 'zaobao-zh', name: '联合早报', category: 'zh', fetch: s => fetchRss('https://www.zaobao.com.sg/rss.xml', s) },
+{ id: 'ruanyf-weekly', name: '阮一峰周刊', category: 'tech', experimental: true, fetch: async (s) => {
     const j = await fetchJson<{ title: string; html_url: string }[]>('https://api.github.com/repos/ruanyf/weekly/issues?state=open&per_page=1', s)
-    return (j ?? []).slice(0, 1).map(it => ({ title: `阮一峰周刊: ${it.title}`, url: it.html_url }))
+    return (j ?? []).slice(0, 1).map(it => ({ title: `阮一峰周刊: ${it.title ?? ''}`, url: it.html_url }))
   } },
 ]
 
