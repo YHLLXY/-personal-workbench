@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SOURCES, STABLE_SOURCES, type HotCategory } from '../api/sources'
+import { SOURCES, STABLE_SOURCES, type HotCategory } from '../api/hot'
 
 describe('SOURCES 源库', () => {
   it('id 全局唯一', () => {

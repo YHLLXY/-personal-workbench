@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseRssXml } from '../api/rss-parse'
+import { parseRssXml } from '../api/hot'
 
 describe('parseRssXml', () => {
   it('解析 RSS 2.0 的 item title/link', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchAll } from '../api/fetch-all'
-import type { HotSource } from '../api/sources'
+import { fetchAll } from '../api/hot'
+import type { HotSource } from '../api/hot'
 
 const src = (id: string, rows: { title: string; url: string }[] = []): HotSource =>
   ({ id, name: id, category: 'tech', fetch: vi.fn(async () => rows) })
