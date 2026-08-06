@@ -30,4 +30,21 @@ describe('parseRssXml', () => {
     const xml = `<rss><channel><item><title>\n  Space Title  </title><link> https://a.com/s </link></item></channel></rss>`
     expect(parseRssXml(xml)).toEqual([{ title: 'Space Title', url: 'https://a.com/s' }])
   })
+  it('CDATA 内容原样保留（其中的 &amp; 不解码）', () => {
+    const xml = `<rss><channel><item><title><![CDATA[代码 &amp; 咖啡]]></title><link>https://a.com/c</link></item></channel></rss>`
+    expect(parseRssXml(xml)[0].title).toBe('代码 &amp; 咖啡')
+  })
+  it('越界数字实体不崩溃，替换为 U+FFFD', () => {
+    const xml = `<rss><channel><item><title>x&#1114112;y&#999999999999;z</title><link>https://a.com/e</link></item></channel></rss>`
+    expect(() => parseRssXml(xml)).not.toThrow()
+    expect(parseRssXml(xml)[0].title).toBe('x�y�z')
+  })
+  it('十六进制实体解码且越界防护', () => {
+    const xml = `<rss><channel><item><title>&#x41;&#x10FFFF;&#x110000;</title><link>https://a.com/f</link></item></channel></rss>`
+    expect(parseRssXml(xml)[0].title).toBe('A\u{10FFFF}�')
+  })
+  it('带属性的标签正常解析', () => {
+    const xml = `<rss><channel><item><title xml:lang="en">Attr</title><link rel="alternate">https://a.com/g</link></item></channel></rss>`
+    expect(parseRssXml(xml)).toEqual([{ title: 'Attr', url: 'https://a.com/g' }])
+  })
 })
