@@ -1,4 +1,4 @@
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables } from './types'
+import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables, type Subscriptions } from './types'
 
 const PREFIX = 'wb:'
 function read<T>(key: string): T[] {
@@ -160,5 +160,20 @@ export class LocalRepository implements WorkbenchRepository {
       }
       throw err
     }
+  }
+
+  async getSubscriptions(): Promise<Subscriptions> {
+    try {
+      const raw = localStorage.getItem('wb:subscriptions')
+      if (!raw) return { sourceIds: [], topics: [] }
+      const p = JSON.parse(raw) as Partial<Subscriptions>
+      return {
+        sourceIds: Array.isArray(p.sourceIds) ? p.sourceIds : [],
+        topics: Array.isArray(p.topics) ? p.topics : [],
+      }
+    } catch { return { sourceIds: [], topics: [] } }
+  }
+  async saveSubscriptions(s: Subscriptions) {
+    localStorage.setItem('wb:subscriptions', JSON.stringify(s))
   }
 }

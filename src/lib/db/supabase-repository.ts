@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables } from './types'
+import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables, type Subscriptions } from './types'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
 type Row = Record<string, unknown>
@@ -199,5 +199,19 @@ export class SupabaseRepository implements WorkbenchRepository {
       }
     }))
     if (errors.length > 0) throw new Error(`部分表导入失败：${errors.join('；')}`)
+  }
+
+  async getSubscriptions(): Promise<Subscriptions> {
+    const { data, error } = await this.sb.from('wb_subscriptions').select('*').maybeSingle()
+    if (error) throw error
+    if (!data) return { sourceIds: [], topics: [] }
+    return { sourceIds: (data.source_ids as string[]) ?? [], topics: (data.topics as string[]) ?? [] }
+  }
+  async saveSubscriptions(s: Subscriptions) {
+    // upsert 需带 user_id 才能命中 onConflict（主键 user_id）；RLS insert with check 放行本人
+    const { data: user } = await this.sb.auth.getUser()
+    const { error } = await this.sb.from('wb_subscriptions')
+      .upsert({ user_id: user.user?.id ?? '', source_ids: s.sourceIds, topics: s.topics, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    if (error) throw error
   }
 }

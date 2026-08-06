@@ -42,6 +42,9 @@ export interface HealthLogInput { logDate: string; type: HealthLog['type']; valu
 
 export interface Review { id: string; reviewDate: string; mood: number; summary: string; planTomorrow: string; updatedAt: string }
 
+/** 今日热点订阅配置：空 sourceIds = 订阅全部源 */
+export interface Subscriptions { sourceIds: string[]; topics: string[] }
+
 export interface WorkbenchRepository {
   listTasks(): Promise<Task[]>
   createTask(input: TaskInput): Promise<Task>
@@ -87,6 +90,8 @@ export interface WorkbenchRepository {
   upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string }): Promise<Review>
 
   exportAll(): Promise<BackupTables>
+  getSubscriptions(): Promise<Subscriptions>
+  saveSubscriptions(s: Subscriptions): Promise<void>
   importAll(tables: BackupTables): Promise<void>
 }
 
