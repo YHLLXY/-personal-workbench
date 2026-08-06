@@ -43,7 +43,7 @@ export default function Hot() {
         <div>
           <h1 className="text-xl font-bold">今日热点</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {res?.fromCache ? '缓存数据 · ' : ''}{fetchedAt ? `更新于 ${fetchedAt}` : '加载中…'}
+            {res?.fromCache ? '缓存数据 · ' : ''}{fetchedAt ? `更新于 ${fetchedAt} · 每 30 分钟自动刷新` : '加载中…'}
           </p>
         </div>
         <div className="flex items-center gap-2">
