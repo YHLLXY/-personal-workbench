@@ -25,7 +25,7 @@ describe('TaskDialog 提醒时间', () => {
       </QueryClientProvider>,
     )
     fireEvent.change(screen.getByPlaceholderText('任务内容'), { target: { value: '交报告' } })
-    fireEvent.change(screen.getByLabelText('提醒时间'), { target: { value: '09:30' } })
+    fireEvent.change(screen.getByLabelText(/提醒时间/), { target: { value: '09:30' } })
     fireEvent.click(screen.getByRole('button', { name: '添加' }))
     await waitFor(() => expect(repository.createTask).toHaveBeenCalledWith(expect.objectContaining({ dueTime: '09:30', dueDate: expect.any(String) })))
   })

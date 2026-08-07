@@ -42,8 +42,8 @@ export function TaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             </Button>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">提醒时间（可选，到点通知）</label>
-            <Input type="time" value={dueTime} onChange={e => setDueTime(e.target.value)} aria-label="提醒时间" />
+            <label htmlFor="task-due-time" className="text-xs text-muted-foreground">提醒时间（可选，到点通知）</label>
+            <Input id="task-due-time" type="time" value={dueTime} onChange={e => setDueTime(e.target.value)} />
           </div>
           <Button className="w-full" onClick={submit} disabled={!title.trim() || create.isPending}>添加</Button>
         </div>
