@@ -14,12 +14,13 @@ export function TaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const [title, setTitle] = useState('')
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium')
   const [focus, setFocus] = useState(false)
+  const [dueTime, setDueTime] = useState('')
 
-  useEffect(() => { if (open) { setTitle(''); setPriority('medium'); setFocus(false) } }, [open])
+  useEffect(() => { if (open) { setTitle(''); setPriority('medium'); setFocus(false); setDueTime('') } }, [open])
 
   function submit() {
     if (!title.trim()) return
-    create.mutate({ title: title.trim(), priority, focus, dueDate: todayStr() }, { onSuccess: () => { setTitle(''); onOpenChange(false); toast.success('已添加') } })
+    create.mutate({ title: title.trim(), priority, focus, dueDate: todayStr(), dueTime: dueTime || null }, { onSuccess: () => { setTitle(''); onOpenChange(false); toast.success('已添加') } })
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -39,6 +40,10 @@ export function TaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             <Button variant={focus ? 'default' : 'outline'} type="button" className="flex-1" onClick={() => setFocus(f => !f)}>
               <Star className={cn('size-3.5 mr-1.5', focus && 'fill-current')} strokeWidth={1.7} />{focus ? '今日焦点' : '设为焦点'}
             </Button>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">提醒时间（可选，到点通知）</label>
+            <Input type="time" value={dueTime} onChange={e => setDueTime(e.target.value)} aria-label="提醒时间" />
           </div>
           <Button className="w-full" onClick={submit} disabled={!title.trim() || create.isPending}>添加</Button>
         </div>
