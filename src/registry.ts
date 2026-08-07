@@ -1,5 +1,6 @@
-import { BookOpen, CheckCircle2, HeartPulse, LayoutDashboard, Library, Newspaper, RotateCcw, Sparkles, Timer, type LucideIcon } from 'lucide-react'
+import { Bell, BookOpen, CheckCircle2, HeartPulse, LayoutDashboard, Library, Newspaper, RotateCcw, Sparkles, Timer, type LucideIcon } from 'lucide-react'
 import { lazy, type ComponentType } from 'react'
+import { useReminderStore } from './modules/reminders/store'
 import { TodayTasksCard } from './modules/overview/cards'
 import { ExamsCard, FocusCard } from './modules/study/cards'
 import { HotCard, NotesCard } from './modules/news/cards'
@@ -52,6 +53,11 @@ export const modules: ModuleDef[] = [
         id: 'tasks', name: '今日待办', icon: CheckCircle2, path: '/tasks',
         component: lazy(() => import('./modules/overview/today-tasks')),
         homeCard: { id: 'home-tasks', span: '5', mobileOrder: 1, desktopOrder: 1, component: TodayTasksCard },
+      },
+      {
+        id: 'reminders', name: '提醒', icon: Bell, path: '/reminders',
+        component: lazy(() => import('./modules/reminders/reminders-center')),
+        badge: () => { const n = useReminderStore.getState().unread; return n > 0 ? String(n) : null },
       },
     ],
   },
