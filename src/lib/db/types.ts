@@ -5,20 +5,29 @@ export interface Task {
   priority: 'high' | 'medium' | 'low'
   status: 'todo' | 'doing' | 'done' | 'someday'
   dueDate: string | null   // YYYY-MM-DD
+  dueTime: string | null  // HH:mm 可选，到期提醒时间
   tags: string[]
   sort: number
   completedAt: string | null
   createdAt: string        // ISO
 }
-export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; tags?: string[] }
+export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; dueTime?: string | null; tags?: string[] }
 
 export interface Habit { id: string; name: string; icon: string; color: string; targetPerDay: number; active: boolean; createdAt: string }
 export interface HabitLog { id: string; habitId: string; logDate: string; count: number }
 
 export interface FocusSession { id: string; startAt: string; minutes: number; note: string | null }
 
-export interface Exam { id: string; title: string; examDate: string; subject: string | null; note: string | null; createdAt: string }
-export interface ExamInput { title: string; examDate: string; subject?: string | null; note?: string | null }
+export interface Exam {
+  id: string
+  title: string
+  examDate: string
+  examTime: string | null  // HH:mm 可选（考前 1 小时提醒必需）
+  subject: string | null
+  note: string | null
+  createdAt: string
+}
+export interface ExamInput { title: string; examDate: string; examTime?: string | null; subject?: string | null; note?: string | null }
 
 export interface Note { id: string; content: string; tag: string | null; archived: boolean; createdAt: string; updatedAt: string }
 
@@ -44,6 +53,20 @@ export interface Review { id: string; reviewDate: string; mood: number; summary:
 
 /** 今日热点订阅配置：空 sourceIds = 订阅全部源 */
 export interface Subscriptions { sourceIds: string[]; topics: string[] }
+
+export type ReminderKind = 'due' | 'exam-3d' | 'exam-1d' | 'exam-1h'
+export interface Reminder {
+  id: string
+  refType: 'task' | 'exam'
+  refId: string
+  kind: ReminderKind
+  scheduledAt: string   // UTC ISO
+  sentAt: string | null
+  dismissedAt: string | null
+  createdAt: string
+}
+export interface PushSubscriptionRow { id: string; endpoint: string; keysP256dh: string; keysAuth: string; userAgent: string | null; createdAt: string }
+export interface ChannelConfigs { serverchanKey: string | null }
 
 export interface WorkbenchRepository {
   listTasks(): Promise<Task[]>
@@ -92,6 +115,16 @@ export interface WorkbenchRepository {
   exportAll(): Promise<BackupTables>
   getSubscriptions(): Promise<Subscriptions>
   saveSubscriptions(s: Subscriptions): Promise<void>
+
+  listReminders(): Promise<Reminder[]>
+  dismissReminder(id: string): Promise<void>
+  restoreReminder(id: string): Promise<void>
+  listPushSubscriptions(): Promise<PushSubscriptionRow[]>
+  savePushSubscription(input: { endpoint: string; keysP256dh: string; keysAuth: string; userAgent?: string }): Promise<void>
+  removePushSubscription(endpoint: string): Promise<void>
+  getChannelConfigs(): Promise<ChannelConfigs>
+  saveChannelConfigs(c: ChannelConfigs): Promise<void>
+
   importAll(tables: BackupTables): Promise<void>
 }
 

@@ -1,4 +1,4 @@
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables, type Subscriptions } from './types'
+import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs } from './types'
 
 const PREFIX = 'wb:'
 function read<T>(key: string): T[] {
@@ -20,7 +20,7 @@ function remove(key: string, id: string) { write(key, read<{ id: string }>(key).
 export class LocalRepository implements WorkbenchRepository {
   async listTasks() { return read<Task>('tasks') }
   async createTask(input: TaskInput) {
-    return insert<Task>('tasks', { id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', dueDate: input.dueDate ?? null, tags: input.tags ?? [], sort: Date.now(), completedAt: null, createdAt: new Date().toISOString() })
+    return insert<Task>('tasks', { id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', dueDate: input.dueDate ?? null, dueTime: input.dueTime ?? null, tags: input.tags ?? [], sort: Date.now(), completedAt: null, createdAt: new Date().toISOString() })
   }
   async updateTask(id: string, p: Partial<Task>) {
     const rows = read<Task>('tasks')
@@ -57,7 +57,7 @@ export class LocalRepository implements WorkbenchRepository {
   }
 
   async listExams() { return read<Exam>('exams') }
-  async createExam(input: ExamInput) { return insert<Exam>('exams', { id: genId(), title: input.title, examDate: input.examDate, subject: input.subject ?? null, note: input.note ?? null, createdAt: new Date().toISOString() }) }
+  async createExam(input: ExamInput) { return insert<Exam>('exams', { id: genId(), title: input.title, examDate: input.examDate, examTime: input.examTime ?? null, subject: input.subject ?? null, note: input.note ?? null, createdAt: new Date().toISOString() }) }
   async updateExam(id: string, p: Partial<Exam>) { return patch<Exam>('exams', id, p) }
   async deleteExam(id: string) { remove('exams', id) }
 
@@ -176,4 +176,23 @@ export class LocalRepository implements WorkbenchRepository {
   async saveSubscriptions(s: Subscriptions) {
     localStorage.setItem('wb:subscriptions', JSON.stringify(s))
   }
+
+  async listReminders() { return read<Reminder>('reminders') }
+  async dismissReminder(id: string) { patch<Reminder>('reminders', id, { dismissedAt: new Date().toISOString() }) }
+  async restoreReminder(id: string) { patch<Reminder>('reminders', id, { dismissedAt: null }) }
+  async listPushSubscriptions() { return read<PushSubscriptionRow>('pushSubscriptions') }
+  async savePushSubscription(input: { endpoint: string; keysP256dh: string; keysAuth: string; userAgent?: string }) {
+    const rows = read<PushSubscriptionRow>('pushSubscriptions')
+    const i = rows.findIndex(r => r.endpoint === input.endpoint)
+    const row: PushSubscriptionRow = i >= 0
+      ? { ...rows[i], keysP256dh: input.keysP256dh, keysAuth: input.keysAuth, userAgent: input.userAgent ?? null }
+      : { id: genId(), endpoint: input.endpoint, keysP256dh: input.keysP256dh, keysAuth: input.keysAuth, userAgent: input.userAgent ?? null, createdAt: new Date().toISOString() }
+    if (i >= 0) rows[i] = row; else rows.unshift(row)
+    write('pushSubscriptions', rows)
+  }
+  async removePushSubscription(endpoint: string) { write('pushSubscriptions', read<PushSubscriptionRow>('pushSubscriptions').filter(r => r.endpoint !== endpoint)) }
+  async getChannelConfigs(): Promise<ChannelConfigs> {
+    try { const raw = localStorage.getItem('wb:channelConfigs'); if (!raw) return { serverchanKey: null }; const p = JSON.parse(raw) as Partial<ChannelConfigs>; return { serverchanKey: typeof p.serverchanKey === 'string' ? p.serverchanKey : null } } catch { return { serverchanKey: null } }
+  }
+  async saveChannelConfigs(c: ChannelConfigs) { localStorage.setItem('wb:channelConfigs', JSON.stringify(c)) }
 }

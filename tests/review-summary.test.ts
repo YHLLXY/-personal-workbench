@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { buildDailySummary } from '../src/lib/review-summary'
 import type { Task, HealthLog } from '../src/lib/db/types'
 
-function task(p: Partial<Task>): Task { return { id: 't', title: 'x', focus: false, priority: 'medium', status: 'todo', dueDate: null, tags: [], sort: 0, completedAt: null, createdAt: new Date(2026, 7, 4, 8, 0).toISOString(), ...p } }
+function task(p: Partial<Task>): Task { return { id: 't', title: 'x', focus: false, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 0, completedAt: null, createdAt: new Date(2026, 7, 4, 8, 0).toISOString(), ...p } }
 
 describe('buildDailySummary', () => {
   it('汇总当日完成任务/专注/打卡/健康', () => {

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { todayTasks } from '../src/modules/overview/api'
 import type { Task } from '../src/lib/db/types'
 
-function t(partial: Partial<Task>): Task { return { id: 'x', title: 't', focus: false, priority: 'medium', status: 'todo', dueDate: null, tags: [], sort: 0, completedAt: null, createdAt: '', ...partial } }
+function t(partial: Partial<Task>): Task { return { id: 'x', title: 't', focus: false, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 0, completedAt: null, createdAt: '', ...partial } }
 
 describe('todayTasks', () => {
   it('只显示今日到期或焦点任务', () => {

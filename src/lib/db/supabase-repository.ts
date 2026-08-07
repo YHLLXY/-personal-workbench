@@ -1,17 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables, type Subscriptions } from './types'
+import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind } from './types'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
 type Row = Record<string, unknown>
 
 function taskFromRow(r: Row): Task {
-  return { id: String(r.id), title: String(r.title), focus: Boolean(r.focus), priority: r.priority as Task['priority'], status: r.status as Task['status'], dueDate: r.due_date as string | null, tags: (r.tags as string[]) ?? [], sort: Number(r.sort ?? 0), completedAt: r.completed_at ? new Date(String(r.completed_at)).toISOString() : null, createdAt: String(r.created_at) }
+  return { id: String(r.id), title: String(r.title), focus: Boolean(r.focus), priority: r.priority as Task['priority'], status: r.status as Task['status'], dueDate: r.due_date as string | null, dueTime: r.due_time as string | null, tags: (r.tags as string[]) ?? [], sort: Number(r.sort ?? 0), completedAt: r.completed_at ? new Date(String(r.completed_at)).toISOString() : null, createdAt: String(r.created_at) }
 }
 function habitFromRow(r: Row): Habit { return { id: String(r.id), name: String(r.name), icon: String(r.icon), color: String(r.color), targetPerDay: Number(r.target_per_day), active: Boolean(r.active), createdAt: String(r.created_at) } }
 function logFromRow(r: Row): HabitLog { return { id: String(r.id), habitId: String(r.habit_id), logDate: String(r.log_date), count: Number(r.count) } }
 function focusFromRow(r: Row): FocusSession { return { id: String(r.id), startAt: String(r.start_at), minutes: Number(r.minutes), note: r.note as string | null } }
-function examFromRow(r: Row): Exam { return { id: String(r.id), title: String(r.title), examDate: String(r.exam_date), subject: r.subject as string | null, note: r.note as string | null, createdAt: String(r.created_at) } }
+function examFromRow(r: Row): Exam { return { id: String(r.id), title: String(r.title), examDate: String(r.exam_date), examTime: r.exam_time as string | null, subject: r.subject as string | null, note: r.note as string | null, createdAt: String(r.created_at) } }
 function noteFromRow(r: Row): Note { return { id: String(r.id), content: String(r.content), tag: r.tag as string | null, archived: Boolean(r.archived), createdAt: String(r.created_at), updatedAt: String(r.updated_at) } }
 function paperFromRow(r: Row): Paper {
   return {
@@ -33,12 +33,18 @@ function folderFromRow(r: Row): Folder {
 }
 function healthFromRow(r: Row): HealthLog { return { id: String(r.id), logDate: String(r.log_date), type: r.type as HealthLog['type'], value: Number(r.value) } }
 function reviewFromRow(r: Row): Review { return { id: String(r.id), reviewDate: String(r.review_date), mood: Number(r.mood), summary: String(r.summary), planTomorrow: String(r.plan_tomorrow), updatedAt: String(r.updated_at) } }
+function reminderFromRow(r: Row): Reminder {
+  return { id: String(r.id), refType: r.ref_type as Reminder['refType'], refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, dismissedAt: r.dismissed_at ? String(r.dismissed_at) : null, createdAt: String(r.created_at) }
+}
+function pushSubFromRow(r: Row): PushSubscriptionRow {
+  return { id: String(r.id), endpoint: String(r.endpoint), keysP256dh: String(r.keys_p256dh), keysAuth: String(r.keys_auth), userAgent: r.user_agent as string | null, createdAt: String(r.created_at) }
+}
 
-function taskToRow(t: Task) { return { id: t.id, title: t.title, focus: t.focus, priority: t.priority, status: t.status, due_date: t.dueDate, tags: t.tags, sort: t.sort, completed_at: t.completedAt, created_at: t.createdAt } }
+function taskToRow(t: Task) { return { id: t.id, title: t.title, focus: t.focus, priority: t.priority, status: t.status, due_date: t.dueDate, due_time: t.dueTime, tags: t.tags, sort: t.sort, completed_at: t.completedAt, created_at: t.createdAt } }
 function habitToRow(h: Habit) { return { id: h.id, name: h.name, icon: h.icon, color: h.color, target_per_day: h.targetPerDay, active: h.active, created_at: h.createdAt } }
 function logToRow(l: HabitLog) { return { id: l.id, habit_id: l.habitId, log_date: l.logDate, count: l.count } }
 function focusToRow(s: FocusSession) { return { id: s.id, start_at: s.startAt, minutes: s.minutes, note: s.note } }
-function examToRow(e: Exam) { return { id: e.id, title: e.title, exam_date: e.examDate, subject: e.subject, note: e.note, created_at: e.createdAt } }
+function examToRow(e: Exam) { return { id: e.id, title: e.title, exam_date: e.examDate, exam_time: e.examTime, subject: e.subject, note: e.note, created_at: e.createdAt } }
 function noteToRow(n: Note) { return { id: n.id, content: n.content, tag: n.tag, archived: n.archived, created_at: n.createdAt, updated_at: n.updatedAt } }
 function paperToRow(p: Paper) { return { id: p.id, title: p.title, authors: p.authors, arxiv_id: p.arxivId, url: p.url, status: p.status, rating: p.rating, note: p.note, created_at: p.createdAt, type: p.type ?? 'paper', folder_id: p.folderId ?? null, tags: p.tags ?? [], content: p.content ?? null, summary: p.summary ?? null, keywords: p.keywords ?? [], source: p.source ?? null } }
 function folderToRow(f: Folder) { return { id: f.id, name: f.name, parent_id: f.parentId, sort: f.sort } }
@@ -72,12 +78,12 @@ export class SupabaseRepository implements WorkbenchRepository {
 
   async listTasks() { const { data, error } = await this.sb.from('wb_tasks').select('*').order('sort', { ascending: false }); if (error) throw error; return (data ?? []).map(taskFromRow) }
   async createTask(input: TaskInput) {
-    const { data, error } = await this.sb.from('wb_tasks').insert({ id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', due_date: input.dueDate ?? null, tags: input.tags ?? [], sort: Date.now() }).select().single()
+    const { data, error } = await this.sb.from('wb_tasks').insert({ id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', due_date: input.dueDate ?? null, due_time: input.dueTime ?? null, tags: input.tags ?? [], sort: Date.now() }).select().single()
     if (error) throw error; return taskFromRow(data)
   }
   async updateTask(id: string, p: Partial<Task>) {
     // 注意：去掉冗余的 p.status !== 'done'（TS2367：第一分支已排除 'done'，后续比较类型无重叠；与 local-repository 逻辑一致）
-    const { data, error } = await this.sb.from('wb_tasks').update({ title: p.title, focus: p.focus, priority: p.priority, status: p.status, due_date: p.dueDate, tags: p.tags, sort: p.sort, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt }).eq('id', id).select().single()
+    const { data, error } = await this.sb.from('wb_tasks').update({ title: p.title, focus: p.focus, priority: p.priority, status: p.status, due_date: p.dueDate, due_time: p.dueTime, tags: p.tags, sort: p.sort, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt }).eq('id', id).select().single()
     if (error) throw error; return taskFromRow(data)
   }
   async deleteTask(id: string) { const { error } = await this.sb.from('wb_tasks').delete().eq('id', id); if (error) throw error }
@@ -106,8 +112,8 @@ export class SupabaseRepository implements WorkbenchRepository {
   }
 
   async listExams() { const { data, error } = await this.sb.from('wb_exams').select('*').order('exam_date'); if (error) throw error; return (data ?? []).map(examFromRow) }
-  async createExam(input: ExamInput) { const { data, error } = await this.sb.from('wb_exams').insert({ id: genId(), title: input.title, exam_date: input.examDate, subject: input.subject ?? null, note: input.note ?? null }).select().single(); if (error) throw error; return examFromRow(data) }
-  async updateExam(id: string, p: Partial<Exam>) { const { data, error } = await this.sb.from('wb_exams').update({ title: p.title, exam_date: p.examDate, subject: p.subject, note: p.note }).eq('id', id).select().single(); if (error) throw error; return examFromRow(data) }
+  async createExam(input: ExamInput) { const { data, error } = await this.sb.from('wb_exams').insert({ id: genId(), title: input.title, exam_date: input.examDate, exam_time: input.examTime ?? null, subject: input.subject ?? null, note: input.note ?? null }).select().single(); if (error) throw error; return examFromRow(data) }
+  async updateExam(id: string, p: Partial<Exam>) { const { data, error } = await this.sb.from('wb_exams').update({ title: p.title, exam_date: p.examDate, exam_time: p.examTime, subject: p.subject, note: p.note }).eq('id', id).select().single(); if (error) throw error; return examFromRow(data) }
   async deleteExam(id: string) { const { error } = await this.sb.from('wb_exams').delete().eq('id', id); if (error) throw error }
 
   async listNotes() { const { data, error } = await this.sb.from('wb_notes').select('*').order('updated_at', { ascending: false }); if (error) throw error; return (data ?? []).map(noteFromRow) }
@@ -213,6 +219,29 @@ export class SupabaseRepository implements WorkbenchRepository {
     const { data: user } = await this.sb.auth.getUser()
     const { error } = await this.sb.from('wb_subscriptions')
       .upsert({ user_id: user.user?.id ?? '', source_ids: s.sourceIds, topics: s.topics, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    if (error) throw error
+  }
+
+  async listReminders() { const { data, error } = await this.sb.from('wb_reminders').select('*').order('scheduled_at', { ascending: false }); if (error) throw error; return (data ?? []).map(reminderFromRow) }
+  async dismissReminder(id: string) { const { error } = await this.sb.from('wb_reminders').update({ dismissed_at: new Date().toISOString() }).eq('id', id); if (error) throw error }
+  async restoreReminder(id: string) { const { error } = await this.sb.from('wb_reminders').update({ dismissed_at: null }).eq('id', id); if (error) throw error }
+  async listPushSubscriptions() { const { data, error } = await this.sb.from('wb_push_subscriptions').select('*'); if (error) throw error; return (data ?? []).map(pushSubFromRow) }
+  async savePushSubscription(input: { endpoint: string; keysP256dh: string; keysAuth: string; userAgent?: string }) {
+    const { error } = await this.sb.from('wb_push_subscriptions')
+      .upsert({ id: genId(), endpoint: input.endpoint, keys_p256dh: input.keysP256dh, keys_auth: input.keysAuth, user_agent: input.userAgent ?? null }, { onConflict: 'user_id,endpoint' })
+    if (error) throw error
+  }
+  async removePushSubscription(endpoint: string) { const { error } = await this.sb.from('wb_push_subscriptions').delete().eq('endpoint', endpoint); if (error) throw error }
+  async getChannelConfigs(): Promise<ChannelConfigs> {
+    const { data, error } = await this.sb.from('wb_channel_configs').select('*').maybeSingle()
+    if (error) throw error
+    if (!data) return { serverchanKey: null }
+    return { serverchanKey: (data.serverchan_key as string | null) ?? null }
+  }
+  async saveChannelConfigs(c: ChannelConfigs) {
+    const { data: user } = await this.sb.auth.getUser()
+    const { error } = await this.sb.from('wb_channel_configs')
+      .upsert({ user_id: user.user?.id ?? '', serverchan_key: c.serverchanKey ?? null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
     if (error) throw error
   }
 }

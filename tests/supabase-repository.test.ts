@@ -2,26 +2,38 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 // vi.mock 工厂在模块导入期即执行（早于测试文件主体），故共享状态必须用 vi.hoisted 定义
-const { insertCalls, upsertCalls, deleteCalls, mockTable, setRows } = vi.hoisted(() => {
+const { insertCalls, upsertCalls, deleteCalls, updateCalls, mockTable, setRows } = vi.hoisted(() => {
   const insertCalls: Array<Record<string, unknown>> = []
   const upsertCalls: Array<{ table: string; payload: unknown }> = []
   const deleteCalls: Array<{ table: string; column: string; value: unknown }> = []
+  const updateCalls: Array<{ table: string; payload: Record<string, unknown>; where: { column: string; value: unknown } }> = []
   // select 链返回的行数据，按表名区分
   let rowsByName: Record<string, Array<Record<string, unknown>>> = {}
   function mockTable(name: string) {
     const rows = rowsByName[name] ?? []
     return {
-      // select('*').order(...) -> { data, error }（list 查询）；update().eq().select().single() 也走这里
+      // select('*').order(...) -> { data, error }（list 查询）；.maybeSingle() 用于 getChannelConfigs
       select: vi.fn(() => ({
         order: vi.fn(() => ({ data: rows, error: null })),
         single: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
+        maybeSingle: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
       })),
       // 链式调用：insert(payload).select().single() —— single() 解析为 { data, error }
       insert: vi.fn((payload: Record<string, unknown>) => {
         insertCalls.push(payload)
         return { select: vi.fn(() => ({ single: vi.fn().mockResolvedValue({ data: { ...payload }, error: null }) })) }
       }),
-      update: vi.fn().mockReturnThis(),
+      // update(payload).eq(col, val).select().single()：记录 where 条件供断言
+      update: vi.fn((payload: Record<string, unknown>) => {
+        const rec: { table: string; payload: Record<string, unknown>; where: { column: string; value: unknown } } = { table: name, payload, where: { column: '', value: null } }
+        updateCalls.push(rec)
+        return {
+          eq: (col: string, val: unknown) => {
+            rec.where = { column: col, value: val }
+            return { select: () => ({ single: vi.fn().mockResolvedValue({ data: { ...payload }, error: null }) }) }
+          },
+        }
+      }),
       upsert: vi.fn((payload: unknown) => {
         upsertCalls.push({ table: name, payload })
         // 链式对象：upsert().select().single()（upsertReview）与直接 await 解构 { error }（saveSubscriptions）都兼容
@@ -42,21 +54,21 @@ const { insertCalls, upsertCalls, deleteCalls, mockTable, setRows } = vi.hoisted
     }
   }
   return {
-    insertCalls, upsertCalls, deleteCalls,
+    insertCalls, upsertCalls, deleteCalls, updateCalls,
     mockTable,
     setRows: (name: string, r: Array<Record<string, unknown>>) => { rowsByName[name] = r },
   }
 })
 
 vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => ({ from: vi.fn((name: string) => mockTable(name)) }) as unknown as SupabaseClient),
+  createClient: vi.fn(() => ({ from: vi.fn((name: string) => mockTable(name)), auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } }, error: null }) } }) as unknown as SupabaseClient),
 }))
 
 import { SupabaseRepository } from '../src/lib/db/supabase-repository'
 
 describe('SupabaseRepository', () => {
   let repo: SupabaseRepository
-  beforeEach(() => { insertCalls.length = 0; upsertCalls.length = 0; deleteCalls.length = 0; repo = new SupabaseRepository() })
+  beforeEach(() => { insertCalls.length = 0; upsertCalls.length = 0; deleteCalls.length = 0; updateCalls.length = 0; repo = new SupabaseRepository() })
 
   it('upsertReview 载荷使用 snake_case 列名（plan_tomorrow，2026-08-08 线上保存失败回归）', async () => {
     await repo.upsertReview('2026-08-08', { mood: 4, summary: '今天不错', planTomorrow: '继续加油' })
@@ -123,7 +135,7 @@ describe('SupabaseRepository', () => {
 
     it('importAll 每表先 delete().neq(id) 清空再 upsert，载荷 snake_case', async () => {
       await repo.importAll({
-        tasks: [{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', dueDate: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }],
+        tasks: [{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }],
         habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [],
       })
       // 每张表都先清空
@@ -131,9 +143,72 @@ describe('SupabaseRepository', () => {
       expect(deleteCalls[0]).toEqual({ table: 'wb_tasks', column: 'id', value: '' })
       // tasks 表 upsert 载荷是 snake_case 列名
       const tasksUpsert = upsertCalls.find(u => u.table === 'wb_tasks')
-      expect(tasksUpsert?.payload).toEqual([{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
+      expect(tasksUpsert?.payload).toEqual([{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, due_time: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
       // 只有 tasks 有数据 → 只有 1 次 upsert（其余 9 张空表只清空不写入）
       expect(upsertCalls.length).toBe(1)
     })
+  })
+})
+
+describe('定时提醒（2026-08-08）', () => {
+  let repo: SupabaseRepository
+  beforeEach(() => { insertCalls.length = 0; upsertCalls.length = 0; deleteCalls.length = 0; updateCalls.length = 0; repo = new SupabaseRepository() })
+
+  it('taskFromRow 映射 dueTime（旧数据缺列时回落 null）', async () => {
+    setRows('wb_tasks', [{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: '2026-08-08', due_time: '09:30', tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
+    const tasks = await repo.listTasks()
+    expect(tasks[0].dueTime).toBe('09:30')
+  })
+
+  it('examFromRow 映射 examTime', async () => {
+    setRows('wb_exams', [{ id: 'e1', title: '四级', exam_date: '2026-08-10', exam_time: '09:00', subject: null, note: null, created_at: '2026-08-01T00:00:00.000Z' }])
+    const exams = await repo.listExams()
+    expect(exams[0].examTime).toBe('09:00')
+  })
+
+  it('listReminders 映射行（snake_case → camelCase）', async () => {
+    setRows('wb_reminders', [{ id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-08-08T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-08-08T00:00:00.000Z' }])
+    const reminders = await repo.listReminders()
+    expect(reminders[0]).toEqual({ id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: '2026-08-08T01:30:00.000Z', sentAt: null, dismissedAt: null, createdAt: '2026-08-08T00:00:00.000Z' })
+  })
+
+  it('dismissReminder 调 update 置 dismissed_at（非 null）', async () => {
+    await repo.dismissReminder('r1')
+    expect(updateCalls.length).toBe(1)
+    const call = updateCalls[0]
+    expect(call.table).toBe('wb_reminders')
+    expect(call.payload).toHaveProperty('dismissed_at')
+    expect(call.payload.dismissed_at).not.toBeNull()
+    expect(call.where).toEqual({ column: 'id', value: 'r1' })
+  })
+
+  it('savePushSubscription 载荷 snake_case 且带 id（endpoint 幂等）', async () => {
+    await repo.savePushSubscription({ endpoint: 'https://push.example/1', keysP256dh: 'p256', keysAuth: 'auth', userAgent: 'test' })
+    const payload = upsertCalls[0].payload as Record<string, unknown>
+    expect(payload).toHaveProperty('endpoint', 'https://push.example/1')
+    expect(payload).toHaveProperty('keys_p256dh', 'p256')
+    expect(payload).toHaveProperty('keys_auth', 'auth')
+    expect(payload).toHaveProperty('user_agent', 'test')
+    expect(payload).not.toHaveProperty('keysP256dh')
+    expect(payload).toHaveProperty('id')
+    expect(upsertCalls[0].table).toBe('wb_push_subscriptions')
+  })
+
+  it('removePushSubscription 按 endpoint 删除', async () => {
+    await repo.removePushSubscription('https://push.example/1')
+    expect(deleteCalls[0]).toEqual({ table: 'wb_push_subscriptions', column: 'endpoint', value: 'https://push.example/1' })
+  })
+
+  it('getChannelConfigs 无行时返回空配置', async () => {
+    const c = await repo.getChannelConfigs()
+    expect(c).toEqual({ serverchanKey: null })
+  })
+
+  it('saveChannelConfigs 载荷 snake_case 带 user_id', async () => {
+    await repo.saveChannelConfigs({ serverchanKey: 'SCUxxx' })
+    const payload = upsertCalls[0].payload as Record<string, unknown>
+    expect(payload).toHaveProperty('serverchan_key', 'SCUxxx')
+    expect(payload).toHaveProperty('user_id')
+    expect(payload).not.toHaveProperty('serverchanKey')
   })
 })

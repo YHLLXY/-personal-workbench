@@ -144,7 +144,7 @@ describe('exportAll / importAll', () => {
 
   it('importAll 覆盖式替换旧数据', async () => {
     await repo.createTask({ title: '旧任务' })
-    await repo.importAll({ tasks: [{ id: 'n1', title: '新任务', focus: false, priority: 'low', status: 'todo', dueDate: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [] })
+    await repo.importAll({ tasks: [{ id: 'n1', title: '新任务', focus: false, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [] })
     const tasks = await repo.listTasks()
     expect(tasks).toHaveLength(1)
     expect(tasks[0].title).toBe('新任务')

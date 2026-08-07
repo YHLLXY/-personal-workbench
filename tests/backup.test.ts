@@ -3,11 +3,11 @@ import { buildBackup, validateBackup, formatBytes, backupFileName, BACKUP_APP, B
 import type { BackupTables } from '../src/lib/db/types'
 
 const sample: BackupTables = {
-  tasks: [{ id: 't1', title: '写完计划', focus: true, priority: 'high', status: 'done', dueDate: '2026-08-05', tags: [], sort: 1, completedAt: '2026-08-05T08:00:00.000Z', createdAt: '2026-08-01T00:00:00.000Z' }],
+  tasks: [{ id: 't1', title: '写完计划', focus: true, priority: 'high', status: 'done', dueDate: '2026-08-05', dueTime: null, tags: [], sort: 1, completedAt: '2026-08-05T08:00:00.000Z', createdAt: '2026-08-01T00:00:00.000Z' }],
   habits: [{ id: 'h1', name: '喝水', icon: '💧', color: '#5B8A72', targetPerDay: 8, active: true, createdAt: '2026-08-01T00:00:00.000Z' }],
   habitLogs: [{ id: 'l1', habitId: 'h1', logDate: '2026-08-05', count: 3 }],
   focusSessions: [{ id: 'f1', startAt: '2026-08-05T09:00:00.000Z', minutes: 25, note: null }],
-  exams: [{ id: 'e1', title: '期末', examDate: '2026-09-01', subject: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' }],
+  exams: [{ id: 'e1', title: '期末', examDate: '2026-09-01', examTime: null, subject: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' }],
   notes: [{ id: 'n1', content: '灵感', tag: null, archived: false, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }],
   papers: [{ id: 'p1', title: '论文', authors: 'a', arxivId: null, url: null, status: 'want', rating: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' }],
   folders: [{ id: 'd1', name: '机器学习', parentId: null, sort: 1 }],
