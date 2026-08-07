@@ -53,11 +53,14 @@ export function computeReminders(tasks: TaskLike[], exams: ExamLike[], now: Date
     if (e.examDate < today) continue // 考试已过
     const base = shanghaiMs(e.examDate)
     if (!Number.isFinite(base)) continue // 坏格式日期跳过
-    out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-3d', scheduledAt: new Date(base - 3 * 86400_000 + TZ_MS).toISOString(), title: e.title }) // 考前3天 08:00
-    out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-1d', scheduledAt: new Date(base - 1 * 86400_000 + TZ_MS).toISOString(), title: e.title }) // 考前1天 08:00
+    // 考试节点是早晨 08:00 快照时刻：已过时刻的节点不生成（如临近考试才建提醒，补发过去节点只会造成「还有 3 天」噪音）；任务 due 节点保持补发语义不变
+    const d3 = new Date(base - 3 * 86400_000 + TZ_MS) // 考前3天 08:00
+    const d1 = new Date(base - 1 * 86400_000 + TZ_MS) // 考前1天 08:00
+    if (d3.getTime() > now.getTime()) out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-3d', scheduledAt: d3.toISOString(), title: e.title })
+    if (d1.getTime() > now.getTime()) out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-1d', scheduledAt: d1.toISOString(), title: e.title })
     if (e.examTime) {
-      const ms = shanghaiMs(e.examDate, e.examTime)
-      if (Number.isFinite(ms)) out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-1h', scheduledAt: new Date(ms - 3600_000).toISOString(), title: e.title }) // 考前1小时
+      const h1 = new Date(shanghaiMs(e.examDate, e.examTime) - 3600_000) // 考前1小时
+      if (h1.getTime() > now.getTime()) out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-1h', scheduledAt: h1.toISOString(), title: e.title })
     }
   }
   return out
@@ -82,6 +85,11 @@ export function reminderText(kind: ReminderKind, title: string, date: string, ti
     case 'exam-1d': return `考试「${title}」就在明天（${date}）`
     case 'exam-1h': return `考试「${title}」1 小时后开始（${date} ${time ?? ''}）`
   }
+}
+
+/** PostgREST 行 → 前端 Reminder（camelCase） */
+function reminderRowToClient(r: Record<string, unknown>) {
+  return { id: String(r.id), refType: r.ref_type as 'task' | 'exam', refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, dismissedAt: r.dismissed_at ? String(r.dismissed_at) : null, createdAt: String(r.created_at) }
 }
 
 // ========== 工具 ==========
@@ -183,7 +191,9 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
     const kind = row.kind as ReminderKind
     const refType = row.ref_type as 'task' | 'exam'
     const ref = refType === 'task' ? tasksById.get(String(row.ref_id)) : examsById.get(String(row.ref_id))
+    // 已完成任务 / 已删除引用：跳过（不发送，保留行——任务恢复后可继续提醒）
     if (!ref) { skipped++; continue }
+    if (refType === 'task' && (ref as TaskLike).status === 'done') { skipped++; continue }
     // refType 决定 ref 来自哪个 map，故按 refType 分支后安全断言具体类型
     const date = refType === 'task' ? String((ref as TaskLike).dueDate) : String((ref as ExamLike).examDate)
     const time = refType === 'task' ? String((ref as TaskLike).dueTime) : String((ref as ExamLike).examTime)
@@ -277,7 +287,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const result = await runCheck(sb, new Date())
       const { data, error } = await sb.from('wb_reminders').select('*').order('scheduled_at', { ascending: false })
       if (error) throw error // 瞬态失败不再静默返回空列表
-      return res.json({ ok: true, ...result, reminders: data ?? [], vapidPublicKey: process.env.VITE_VAPID_PUBLIC_KEY ?? null })
+      // 行需映射为 camelCase：前端 Reminder 形状消费（countUnread/横幅/列表均读 refType/scheduledAt/dismissedAt）
+      return res.json({ ok: true, ...result, reminders: (data ?? []).map(reminderRowToClient), vapidPublicKey: process.env.VITE_VAPID_PUBLIC_KEY ?? null })
     }
     if (entry === 'test') {
       const sb = await authUser(req)

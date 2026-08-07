@@ -44,22 +44,29 @@ describe('computeReminders', () => {
     expect(specs.every(s => s.userId === 'u1')).toBe(true)
   })
 
-  it('考试：-3d/-1d 固定 08:00 上海，-1h 需 examTime；已过考试跳过；spec 携带对应 userId', () => {
+  it('考试：-3d/-1d 固定 08:00 上海，-1h 需 examTime；已过考试与已过时刻节点跳过；spec 携带对应 userId', () => {
     const specs = computeReminders([], exams, NOW)
-    expect(specs).toHaveLength(5) // e1×3 + e3×2
+    expect(specs).toHaveLength(4) // e1×2（-3d 已过时刻跳过）+ e3×2
     const e1 = specs.filter(s => s.refId === 'e1')
     expect(e1.every(s => s.userId === 'u2')).toBe(true)
-    expect(e1.find(s => s.kind === 'exam-3d')?.scheduledAt).toBe('2026-08-07T00:00:00.000Z')  // 08-07 08:00 上海
+    expect(e1.find(s => s.kind === 'exam-3d')).toBeUndefined() // -3d = 08-07 08:00 上海，已过 NOW（08-08 12:00 上海）→ 不生成
     expect(e1.find(s => s.kind === 'exam-1d')?.scheduledAt).toBe('2026-08-09T00:00:00.000Z')  // 08-09 08:00 上海
     expect(e1.find(s => s.kind === 'exam-1h')?.scheduledAt).toBe('2026-08-10T00:00:00.000Z')  // 09:00-1h=08:00 上海
     expect(specs.some(s => s.refId === 'e2')).toBe(false)
     expect(specs.some(s => s.refId === 'e3' && s.kind === 'exam-1h')).toBe(false)
   })
 
-  it('考试当天（examDate === today）仍生成全部节点', () => {
+  it('考试当天：已过时刻的 -3d/-1d 跳过，未来 -1h 生成', () => {
     const specs = computeReminders([], [{ id: 'e4', userId: 'u3', title: '今天考', examDate: '2026-08-08', examTime: '14:00' }], NOW)
-    expect(specs).toHaveLength(3)
-    expect(specs.every(s => s.userId === 'u3')).toBe(true)
+    expect(specs).toHaveLength(1) // -3d/-1d（08-05/08-07 08:00 上海）已过 NOW；-1h（14:00−1h=13:00 上海）未来 → 仅生成
+    expect(specs[0]).toMatchObject({ userId: 'u3', refType: 'exam', refId: 'e4', kind: 'exam-1h', scheduledAt: '2026-08-08T05:00:00.000Z' })
+  })
+
+  it('考试节点已过时刻不生成（建「明天考」不触发虚假的考前 3 天）', () => {
+    // NOW = 2026-08-08 12:00 上海；考试 08-09（明天）→ -3d 节点（08-06 08:00 上海）已过 → 跳过；-1d 节点（08-08 08:00 上海）也已过 → 跳过；-1h（08-09 08:00 上海）未来 → 生成
+    const specs = computeReminders([], [{ id: 'e5', userId: 'u4', title: '明天考', examDate: '2026-08-09', examTime: '09:00' }], NOW)
+    expect(specs).toHaveLength(1)
+    expect(specs[0].kind).toBe('exam-1h')
   })
 
   it('坏格式日期（非 YYYY-MM-DD）输入被跳过：不抛错且不生成任何节点', () => {

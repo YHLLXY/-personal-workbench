@@ -163,6 +163,14 @@ describe('api/reminders 入口', () => {
     expect(res.statusCode).toBe(200)
     const body = res.body as { reminders: Array<Record<string, unknown>>; vapidPublicKey: string }
     expect(Array.isArray(body.reminders)).toBe(true)
+    // 行已映射为前端 Reminder 的 camelCase 形状（云端模式内层依赖此形状，snake_case 会导致 countUnread 恒 0 / 列表全显「已删除」）
+    const first = body.reminders[0] as Record<string, unknown>
+    expect(first).toHaveProperty('refType', 'task')
+    expect(first).toHaveProperty('refId', 't1')
+    expect(first).toHaveProperty('scheduledAt')
+    expect(first).toHaveProperty('dismissedAt')
+    expect(first).not.toHaveProperty('ref_type')
+    expect(first).not.toHaveProperty('scheduled_at')
     expect(body.vapidPublicKey).toBe(VAPID_PUB)
   })
 
@@ -202,6 +210,20 @@ describe('api/reminders 入口', () => {
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
     expect(res.statusCode).toBe(200)
     expect(state.sent.length).toBe(0)
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
+  })
+
+  it('check：已完成任务的到期提醒行不发送（skipped，保留行待任务恢复后继续提醒）', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '已完成', status: 'done', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 't', created_at: '2026-01-01T00:00:00.000Z' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    expect(res.statusCode).toBe(200)
+    const body = res.body as { sent: number; skipped: number }
+    expect(body.sent).toBe(0)
+    expect(body.skipped).toBe(1)
+    expect(state.sent.length).toBe(0) // 未调用 web-push
     expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
   })
 
