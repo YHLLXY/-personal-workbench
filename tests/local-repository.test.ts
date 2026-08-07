@@ -104,6 +104,82 @@ describe('LocalRepository', () => {
   })
 })
 
+describe('定时提醒（2026-08-08）', () => {
+  let repo: LocalRepository
+  beforeEach(() => { localStorage.clear(); repo = new LocalRepository() })
+
+  it('createTask 支持 dueTime 传入与缺省回落 null', async () => {
+    const withTime = await repo.createTask({ title: '定时提醒', dueTime: '09:30' })
+    expect(withTime.dueTime).toBe('09:30')
+    const without = await repo.createTask({ title: '无时间' })
+    expect(without.dueTime).toBeNull()
+  })
+
+  it('createExam 支持 examTime 传入与缺省回落 null', async () => {
+    const withTime = await repo.createExam({ title: '四级', examDate: '2026-08-10', examTime: '09:00' })
+    expect(withTime.examTime).toBe('09:00')
+    const without = await repo.createExam({ title: '六级', examDate: '2026-08-15' })
+    expect(without.examTime).toBeNull()
+  })
+
+  it('listReminders 初始为空，savePushSubscription 不影响（独立 key）', async () => {
+    expect(await repo.listReminders()).toEqual([])
+    await repo.savePushSubscription({ endpoint: 'https://push.example/1', keysP256dh: 'p256', keysAuth: 'auth', userAgent: 'test' })
+    expect(await repo.listReminders()).toEqual([])
+    expect(await repo.listPushSubscriptions()).toHaveLength(1)
+  })
+
+  it('savePushSubscription 同 endpoint 幂等更新（id/createdAt 不变，keys 更新，行数不增）', async () => {
+    await repo.savePushSubscription({ endpoint: 'https://push.example/1', keysP256dh: 'p256-old', keysAuth: 'auth-old', userAgent: 'v1' })
+    const first = (await repo.listPushSubscriptions())[0]
+    await repo.savePushSubscription({ endpoint: 'https://push.example/1', keysP256dh: 'p256-new', keysAuth: 'auth-new', userAgent: 'v2' })
+    const subs = await repo.listPushSubscriptions()
+    expect(subs).toHaveLength(1)
+    const updated = subs[0]
+    expect(updated.id).toBe(first.id)
+    expect(updated.createdAt).toBe(first.createdAt)
+    expect(updated.keysP256dh).toBe('p256-new')
+    expect(updated.keysAuth).toBe('auth-new')
+    expect(updated.userAgent).toBe('v2')
+  })
+
+  it('listPushSubscriptions 返回已存行（含 keys 与 userAgent 映射）', async () => {
+    await repo.savePushSubscription({ endpoint: 'https://push.example/1', keysP256dh: 'p256', keysAuth: 'auth' })
+    const subs = await repo.listPushSubscriptions()
+    expect(subs).toHaveLength(1)
+    expect(subs[0]).toMatchObject({ endpoint: 'https://push.example/1', keysP256dh: 'p256', keysAuth: 'auth', userAgent: null })
+    expect(subs[0].id).toBeTruthy()
+    expect(subs[0].createdAt).toBeTruthy()
+  })
+
+  it('removePushSubscription 按 endpoint 删除', async () => {
+    await repo.savePushSubscription({ endpoint: 'https://push.example/1', keysP256dh: 'p256', keysAuth: 'auth' })
+    await repo.savePushSubscription({ endpoint: 'https://push.example/2', keysP256dh: 'p256-2', keysAuth: 'auth-2' })
+    await repo.removePushSubscription('https://push.example/1')
+    const subs = await repo.listPushSubscriptions()
+    expect(subs).toHaveLength(1)
+    expect(subs[0].endpoint).toBe('https://push.example/2')
+  })
+
+  it('dismissReminder 置 dismissedAt（ISO 非 null），restoreReminder 置 null', async () => {
+    localStorage.setItem('wb:reminders', JSON.stringify([{ id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: '2026-08-08T01:30:00.000Z', sentAt: null, dismissedAt: null, createdAt: '2026-08-08T00:00:00.000Z' }]))
+    await repo.dismissReminder('r1')
+    const dismissed = (await repo.listReminders())[0]
+    expect(dismissed.dismissedAt).not.toBeNull()
+    expect(new Date(dismissed.dismissedAt as string).toISOString()).toBe(dismissed.dismissedAt)
+    await repo.restoreReminder('r1')
+    expect((await repo.listReminders())[0].dismissedAt).toBeNull()
+  })
+
+  it('getChannelConfigs 无配置返回 null，save 后返回，再 save null 覆盖', async () => {
+    expect(await repo.getChannelConfigs()).toEqual({ serverchanKey: null })
+    await repo.saveChannelConfigs({ serverchanKey: 'SCU123' })
+    expect(await repo.getChannelConfigs()).toEqual({ serverchanKey: 'SCU123' })
+    await repo.saveChannelConfigs({ serverchanKey: null })
+    expect(await repo.getChannelConfigs()).toEqual({ serverchanKey: null })
+  })
+})
+
 describe('exportAll / importAll', () => {
   let repo: LocalRepository
   beforeEach(() => { localStorage.clear(); repo = new LocalRepository() })

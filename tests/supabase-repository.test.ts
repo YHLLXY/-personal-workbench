@@ -12,8 +12,10 @@ const { insertCalls, upsertCalls, deleteCalls, updateCalls, mockTable, setRows }
   function mockTable(name: string) {
     const rows = rowsByName[name] ?? []
     return {
-      // select('*').order(...) -> { data, error }（list 查询）；.maybeSingle() 用于 getChannelConfigs
+      // select('*') 直接 await 或 .order(...) / .maybeSingle() 均返回 { data, error }（list 查询 / getChannelConfigs / listPushSubscriptions）
       select: vi.fn(() => ({
+        data: rows,
+        error: null,
         order: vi.fn(() => ({ data: rows, error: null })),
         single: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
         maybeSingle: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
@@ -154,7 +156,7 @@ describe('定时提醒（2026-08-08）', () => {
   let repo: SupabaseRepository
   beforeEach(() => { insertCalls.length = 0; upsertCalls.length = 0; deleteCalls.length = 0; updateCalls.length = 0; repo = new SupabaseRepository() })
 
-  it('taskFromRow 映射 dueTime（旧数据缺列时回落 null）', async () => {
+  it('taskFromRow 映射 dueTime', async () => {
     setRows('wb_tasks', [{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: '2026-08-08', due_time: '09:30', tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
     const tasks = await repo.listTasks()
     expect(tasks[0].dueTime).toBe('09:30')
@@ -182,6 +184,15 @@ describe('定时提醒（2026-08-08）', () => {
     expect(call.where).toEqual({ column: 'id', value: 'r1' })
   })
 
+  it('restoreReminder 调 update 置 dismissed_at: null', async () => {
+    await repo.restoreReminder('r1')
+    expect(updateCalls.length).toBe(1)
+    const call = updateCalls[0]
+    expect(call.table).toBe('wb_reminders')
+    expect(call.payload).toEqual({ dismissed_at: null })
+    expect(call.where).toEqual({ column: 'id', value: 'r1' })
+  })
+
   it('savePushSubscription 载荷 snake_case 且带 id（endpoint 幂等）', async () => {
     await repo.savePushSubscription({ endpoint: 'https://push.example/1', keysP256dh: 'p256', keysAuth: 'auth', userAgent: 'test' })
     const payload = upsertCalls[0].payload as Record<string, unknown>
@@ -199,9 +210,22 @@ describe('定时提醒（2026-08-08）', () => {
     expect(deleteCalls[0]).toEqual({ table: 'wb_push_subscriptions', column: 'endpoint', value: 'https://push.example/1' })
   })
 
+  it('listPushSubscriptions 映射行（keys_p256dh/keys_auth/user_agent → camelCase）', async () => {
+    setRows('wb_push_subscriptions', [{ id: 's1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 'test-ua', created_at: '2026-08-08T00:00:00.000Z' }])
+    const subs = await repo.listPushSubscriptions()
+    expect(subs).toHaveLength(1)
+    expect(subs[0]).toEqual({ id: 's1', endpoint: 'https://push.example/1', keysP256dh: 'p256', keysAuth: 'auth', userAgent: 'test-ua', createdAt: '2026-08-08T00:00:00.000Z' })
+  })
+
   it('getChannelConfigs 无行时返回空配置', async () => {
     const c = await repo.getChannelConfigs()
     expect(c).toEqual({ serverchanKey: null })
+  })
+
+  it('getChannelConfigs 有行时返回 serverchanKey', async () => {
+    setRows('wb_channel_configs', [{ user_id: 'u1', serverchan_key: 'SCU123' }])
+    const c = await repo.getChannelConfigs()
+    expect(c).toEqual({ serverchanKey: 'SCU123' })
   })
 
   it('saveChannelConfigs 载荷 snake_case 带 user_id', async () => {
