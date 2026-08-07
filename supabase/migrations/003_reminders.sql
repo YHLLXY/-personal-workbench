@@ -1,5 +1,5 @@
 -- 定时提醒通知（2026-08-08，配套 api/reminders.ts）
--- 向后兼容：仅加列/建新表，可安全重复执行
+-- 向后兼容：仅加列/建新表，DDL 可安全重复执行（策略块除外）
 
 alter table public.wb_tasks add column if not exists due_time text;    -- HH:mm 可选，任务到期提醒时间
 alter table public.wb_exams add column if not exists exam_time text;   -- HH:mm 可选（考前 1 小时节点必需）
