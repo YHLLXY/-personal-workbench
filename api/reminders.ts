@@ -10,6 +10,7 @@
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import webpush from 'web-push'
 
 // Vercel 函数为 Node 环境，但 tsconfig.app.json（DOM lib）无 process 类型——此声明仅过 tsc
 declare const process: { env: Record<string, string | undefined> }
@@ -112,9 +113,9 @@ async function authUser(req: VercelRequest): Promise<SupabaseClient | null> {
   return userClient(token)
 }
 
-// ========== 核心流程：生成 + 幂等写入 + 到期统计（发送在 sendDue，Task 3） ==========
+// ========== 核心流程：生成 + 幂等写入 + 到期统计 + 发送 ==========
 
-async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: number; due: number }> {
+async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: number; due: number; sent: number; skipped: number }> {
   const [tasksRes, examsRes, remindersRes] = await Promise.all([
     sb.from('wb_tasks').select('id,user_id,title,status,due_date,due_time'),
     sb.from('wb_exams').select('id,user_id,title,exam_date,exam_time'),
@@ -133,7 +134,119 @@ async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: numbe
     const { error } = await sb.from('wb_reminders').upsert(fresh.map(s => ({ id: genId(), user_id: s.userId, ref_type: s.refType, ref_id: s.refId, kind: s.kind, scheduled_at: s.scheduledAt })), { onConflict: 'user_id,ref_type,ref_id,kind', ignoreDuplicates: true })
     if (error) throw error
   }
-  return { created: fresh.length, due: specs.filter(s => isDueNow(s, now)).length }
+  const dueCount = specs.filter(s => isDueNow(s, now)).length
+  const sentResult = await sendDue(sb, tasks, exams, now)
+  return { created: fresh.length, due: dueCount, ...sentResult }
+}
+
+// ========== 发送通道 ==========
+
+/** VAPID 惰性初始化（幂等）：发送前确保已配置；顶层 init 在测试环境（import 先于 env 赋值）不会触发 */
+let vapidInitialized = false
+function ensureVapid(): void {
+  if (vapidInitialized) return
+  vapidInitialized = true
+  const pub = process.env.VITE_VAPID_PUBLIC_KEY
+  const priv = process.env.VAPID_PRIVATE_KEY
+  if (pub && priv) {
+    try { webpush.setVapidDetails('mailto:workbench@example.com', pub, priv) } catch { /* env 未配置时跳过（发送时失败静默） */ }
+  }
+}
+
+/** 到期未发未忽略 → 逐条发送（Web Push + Server酱）→ 标记 sent_at；410/404 删除过期订阅 */
+async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[], now: Date): Promise<{ sent: number; skipped: number }> {
+  ensureVapid()
+  const [dueRes, subsRes, configsRes] = await Promise.all([
+    sb.from('wb_reminders').select('*').lte('scheduled_at', now.toISOString()).is('sent_at', null).is('dismissed_at', null),
+    sb.from('wb_push_subscriptions').select('*'),
+    sb.from('wb_channel_configs').select('*'),
+  ])
+  if (dueRes.error) throw dueRes.error
+  if (subsRes.error) throw subsRes.error
+  if (configsRes.error) throw configsRes.error
+  const tasksById = new Map(tasks.map(t => [t.id, t]))
+  const examsById = new Map(exams.map(e => [e.id, e]))
+  const subsByUser = new Map<string, string[]>()
+  for (const s of subsRes.data ?? []) {
+    const uid = String(s.user_id)
+    const list = subsByUser.get(uid) ?? []
+    list.push(JSON.stringify({ endpoint: String(s.endpoint), keys: { p256dh: String(s.keys_p256dh), auth: String(s.keys_auth) } }))
+    subsByUser.set(uid, list)
+  }
+  const chanByUser = new Map<string, string>()
+  for (const c of configsRes.data ?? []) if (c.serverchan_key) chanByUser.set(String(c.user_id), String(c.serverchan_key))
+
+  let sent = 0
+  let skipped = 0
+  for (const row of dueRes.data ?? []) {
+    const uid = String(row.user_id)
+    const kind = row.kind as ReminderKind
+    const refType = row.ref_type as 'task' | 'exam'
+    const ref = refType === 'task' ? tasksById.get(String(row.ref_id)) : examsById.get(String(row.ref_id))
+    if (!ref) { skipped++; continue }
+    // refType 决定 ref 来自哪个 map，故按 refType 分支后安全断言具体类型
+    const date = refType === 'task' ? String((ref as TaskLike).dueDate) : String((ref as ExamLike).examDate)
+    const time = refType === 'task' ? String((ref as TaskLike).dueTime) : String((ref as ExamLike).examTime)
+    const text = reminderText(kind, ref.title, date, time)
+    const payload = JSON.stringify({ title: '个人工作台提醒', body: text, url: '/reminders' })
+
+    const subs = (subsByUser.get(uid) ?? []).map(s => JSON.parse(s) as { endpoint: string; keys: { p256dh: string; auth: string } })
+    for (const sub of subs) {
+      try {
+        await webpush.sendNotification(sub, payload)
+        sent++
+      } catch (err) {
+        const code = (err as { statusCode?: number }).statusCode
+        if (code === 410 || code === 404) {
+          // 过期订阅：删除
+          try { await sb.from('wb_push_subscriptions').delete().eq('endpoint', sub.endpoint) } catch { /* 静默 */ }
+        } else skipped++
+      }
+    }
+    const scKey = chanByUser.get(uid)
+    if (scKey) {
+      try {
+        await fetch(`https://sctapi.ftqq.com/${scKey}.send`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: `title=${encodeURIComponent('个人工作台提醒')}&desp=${encodeURIComponent(text)}`,
+        })
+        sent++
+      } catch { skipped++ }
+    }
+    await sb.from('wb_reminders').update({ sent_at: now.toISOString() }).eq('id', String(row.id))
+  }
+  return { sent, skipped }
+}
+
+/** 测试发送：向本人全部通道发送一条测试通知 */
+async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number }> {
+  ensureVapid()
+  const { data: subs } = await sb.from('wb_push_subscriptions').select('*')
+  const { data: configs } = await sb.from('wb_channel_configs').select('*')
+  let sent = 0
+  const payload = JSON.stringify({ title: '个人工作台提醒', body: '这是一条测试通知，通知功能已就绪 ✅', url: '/settings' })
+  for (const s of subs ?? []) {
+    try {
+      await webpush.sendNotification({ endpoint: String(s.endpoint), keys: { p256dh: String(s.keys_p256dh), auth: String(s.keys_auth) } }, payload)
+      sent++
+    } catch (err) {
+      const code = (err as { statusCode?: number }).statusCode
+      if (code === 410 || code === 404) { try { await sb.from('wb_push_subscriptions').delete().eq('endpoint', String(s.endpoint)) } catch { /* 静默 */ } }
+    }
+  }
+  for (const c of configs ?? []) {
+    if (!c.serverchan_key) continue
+    try {
+      await fetch(`https://sctapi.ftqq.com/${String(c.serverchan_key)}.send`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: `title=${encodeURIComponent('个人工作台提醒')}&desp=${encodeURIComponent('这是一条测试通知，通知功能已就绪 ✅')}`,
+      })
+      sent++
+    } catch { /* 静默 */ }
+  }
+  return { sent }
 }
 
 // ========== 函数入口 ==========
@@ -156,8 +269,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ ok: true, ...result, reminders: data ?? [], vapidPublicKey: process.env.VITE_VAPID_PUBLIC_KEY ?? null })
     }
     if (entry === 'test') {
-      // Task 3 实现：设置页测试发送
-      return res.status(501).json({ error: 'not implemented' })
+      const sb = await authUser(req)
+      if (!sb) return res.status(401).json({ error: 'unauthorized' })
+      const result = await sendTest(sb, new Date())
+      return res.json({ ok: true, ...result })
     }
     return res.status(404).json({ error: 'not found' })
   } catch (err) {
@@ -165,3 +280,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: err instanceof Error ? err.message : 'internal error' })
   }
 }
+
+// ========== VAPID 初始化（模块顶层执行一次） ==========
+try {
+  const pub = process.env.VITE_VAPID_PUBLIC_KEY
+  const priv = process.env.VAPID_PRIVATE_KEY
+  if (pub && priv) webpush.setVapidDetails('mailto:workbench@example.com', pub, priv)
+} catch { /* env 未配置时跳过（发送时失败静默） */ }
