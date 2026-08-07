@@ -1,5 +1,8 @@
 {
   "rewrites": [
+    { "source": "/api/cron-notify", "destination": "/api/reminders?entry=cron" },
+    { "source": "/api/check-reminders", "destination": "/api/reminders?entry=check" },
+    { "source": "/api/test-notify", "destination": "/api/reminders?entry=test" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
