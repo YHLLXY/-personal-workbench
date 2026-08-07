@@ -71,3 +71,24 @@ describe('NotificationSection', () => {
     await waitFor(() => expect(repository.saveChannelConfigs).toHaveBeenCalledWith({ serverchanKey: 'SCU123' }))
   })
 })
+
+describe('NotificationSection 退订', () => {
+  beforeEach(() => { qc.clear(); vi.clearAllMocks() })
+
+  it('已订阅时点击「关闭推送」→ removePushSubscription + unsubscribe', async () => {
+    const unsubscribeFn = vi.fn(async () => {})
+    const sub = { endpoint: 'https://push.example/1', keys: { p256dh: 'p', auth: 'a' }, unsubscribe: unsubscribeFn }
+    vi.mocked(repository.listPushSubscriptions).mockResolvedValueOnce([{ id: 's1', endpoint: 'https://push.example/1', keysP256dh: 'p', keysAuth: 'a', userAgent: 't', createdAt: '2026-08-01T00:00:00.000Z' }] as never)
+    const getSubscription = vi.fn(async () => sub)
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', { value: { ready: Promise.resolve({ pushManager: { subscribe: vi.fn(), getSubscription } }) }, configurable: true })
+    render(
+      <QueryClientProvider client={qc}>
+        <NotificationSection />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByRole('button', { name: /关闭推送/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /关闭推送/ }))
+    await waitFor(() => expect(repository.removePushSubscription).toHaveBeenCalledWith('https://push.example/1'))
+    expect(unsubscribeFn).toHaveBeenCalled()
+  })
+})

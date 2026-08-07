@@ -33,7 +33,10 @@ export function NotificationSection() {
       if ('Notification' in window && Notification.permission !== 'granted') await Notification.requestPermission()
       const reg = await navigator.serviceWorker.ready
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) })
-      await repository.savePushSubscription({ endpoint: sub.endpoint, keysP256dh: sub.getKey('p256dh') ? btoa(String.fromCharCode(...new Uint8Array(sub.getKey('p256dh')!))) : '', keysAuth: sub.getKey('auth') ? btoa(String.fromCharCode(...new Uint8Array(sub.getKey('auth')!))) : '', userAgent: navigator.userAgent })
+      const p256dh = sub.getKey('p256dh')
+      const auth = sub.getKey('auth')
+      if (!p256dh || !auth) throw new Error('浏览器未返回推送密钥，无法订阅')
+      await repository.savePushSubscription({ endpoint: sub.endpoint, keysP256dh: btoa(String.fromCharCode(...new Uint8Array(p256dh))), keysAuth: btoa(String.fromCharCode(...new Uint8Array(auth))), userAgent: navigator.userAgent })
       setSubscribed(true)
       toast.success('已开启推送通知')
     } catch (err) {
@@ -97,7 +100,7 @@ export function NotificationSection() {
           ) : (
             <Button size="sm" onClick={subscribe} disabled={busy}><BellRing className="mr-1 size-3.5" />订阅推送</Button>
           )}
-          <Button size="sm" variant="outline" onClick={testSend} disabled={busy || !subscribed}>测试发送</Button>
+          <Button size="sm" variant="outline" onClick={testSend} disabled={busy || (!subscribed && !scKey.trim())}>测试发送</Button>
         </div>
         {isIOS && <p className="text-[10px] text-muted-foreground/70">📱 iPhone：请先分享到主屏幕（添加到主屏幕）后使用推送。</p>}
         {isAndroidChrome && <p className="text-[10px] text-muted-foreground/70">🤖 安卓 Chrome 的推送服务（FCM）在中国大陆不可用，请配置下方 Server酱通过微信接收。</p>}
