@@ -17,15 +17,16 @@ declare const process: { env: Record<string, string | undefined> }
 // ========== 提醒生成引擎（纯函数，可测试） ==========
 
 export type ReminderKind = 'due' | 'exam-3d' | 'exam-1d' | 'exam-1h'
-export interface TaskLike { id: string; title: string; status: string; dueDate: string | null; dueTime: string | null }
-export interface ExamLike { id: string; title: string; examDate: string; examTime: string | null }
-export interface ReminderSpec { refType: 'task' | 'exam'; refId: string; kind: ReminderKind; scheduledAt: string; title: string }
+export interface TaskLike { id: string; userId: string; title: string; status: string; dueDate: string | null; dueTime: string | null }
+export interface ExamLike { id: string; userId: string; title: string; examDate: string; examTime: string | null }
+export interface ReminderSpec { userId: string; refType: 'task' | 'exam'; refId: string; kind: ReminderKind; scheduledAt: string; title: string }
 
 /** Asia/Shanghai 固定 +8 偏移（无夏令时） */
 export const TZ_MS = 8 * 60 * 60 * 1000
 
-/** 'YYYY-MM-DD'（+ 可选 'HH:mm'）→ 上海时刻的 UTC 毫秒数 */
+/** 'YYYY-MM-DD'（+ 可选 'HH:mm'）→ 上海时刻的 UTC 毫秒数；格式非法返回 NaN */
 export function shanghaiMs(date: string, time?: string | null): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return Number.NaN
   const [y, m, d] = date.split('-').map(Number)
   const [hh, mm] = time && /^\d{2}:\d{2}$/.test(time) ? time.split(':').map(Number) : [0, 0]
   return Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0) - TZ_MS
@@ -37,20 +38,26 @@ export function todayShanghai(now: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
-/** 计算应存在的全部提醒节点（跳过：任务已完成、任务无 dueTime、考试已过） */
+/** 计算应存在的全部提醒节点（跳过：任务已完成、任务无 dueTime、考试已过、日期格式非法） */
 export function computeReminders(tasks: TaskLike[], exams: ExamLike[], now: Date): ReminderSpec[] {
   const out: ReminderSpec[] = []
   const today = todayShanghai(now)
   for (const t of tasks) {
     if (t.status === 'done' || !t.dueDate || !t.dueTime) continue
-    out.push({ refType: 'task', refId: t.id, kind: 'due', scheduledAt: new Date(shanghaiMs(t.dueDate, t.dueTime)).toISOString(), title: t.title })
+    const ms = shanghaiMs(t.dueDate, t.dueTime)
+    if (!Number.isFinite(ms)) continue // 坏格式日期跳过，避免 toISOString 抛 RangeError
+    out.push({ userId: t.userId, refType: 'task', refId: t.id, kind: 'due', scheduledAt: new Date(ms).toISOString(), title: t.title })
   }
   for (const e of exams) {
     if (e.examDate < today) continue // 考试已过
     const base = shanghaiMs(e.examDate)
-    out.push({ refType: 'exam', refId: e.id, kind: 'exam-3d', scheduledAt: new Date(base - 3 * 86400_000 + TZ_MS).toISOString(), title: e.title }) // 考前3天 08:00
-    out.push({ refType: 'exam', refId: e.id, kind: 'exam-1d', scheduledAt: new Date(base - 1 * 86400_000 + TZ_MS).toISOString(), title: e.title }) // 考前1天 08:00
-    if (e.examTime) out.push({ refType: 'exam', refId: e.id, kind: 'exam-1h', scheduledAt: new Date(shanghaiMs(e.examDate, e.examTime) - 3600_000).toISOString(), title: e.title }) // 考前1小时
+    if (!Number.isFinite(base)) continue // 坏格式日期跳过
+    out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-3d', scheduledAt: new Date(base - 3 * 86400_000 + TZ_MS).toISOString(), title: e.title }) // 考前3天 08:00
+    out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-1d', scheduledAt: new Date(base - 1 * 86400_000 + TZ_MS).toISOString(), title: e.title }) // 考前1天 08:00
+    if (e.examTime) {
+      const ms = shanghaiMs(e.examDate, e.examTime)
+      if (Number.isFinite(ms)) out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-1h', scheduledAt: new Date(ms - 3600_000).toISOString(), title: e.title }) // 考前1小时
+    }
   }
   return out
 }
@@ -109,20 +116,21 @@ async function authUser(req: VercelRequest): Promise<SupabaseClient | null> {
 
 async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: number; due: number }> {
   const [tasksRes, examsRes, remindersRes] = await Promise.all([
-    sb.from('wb_tasks').select('id,title,status,due_date,due_time'),
-    sb.from('wb_exams').select('id,title,exam_date,exam_time'),
+    sb.from('wb_tasks').select('id,user_id,title,status,due_date,due_time'),
+    sb.from('wb_exams').select('id,user_id,title,exam_date,exam_time'),
     sb.from('wb_reminders').select('ref_type,ref_id,kind'),
   ])
   if (tasksRes.error) throw tasksRes.error
   if (examsRes.error) throw examsRes.error
   if (remindersRes.error) throw remindersRes.error
-  const tasks: TaskLike[] = (tasksRes.data ?? []).map(r => ({ id: String(r.id), title: String(r.title), status: String(r.status), dueDate: r.due_date as string | null, dueTime: r.due_time as string | null }))
-  const exams: ExamLike[] = (examsRes.data ?? []).map(r => ({ id: String(r.id), title: String(r.title), examDate: String(r.exam_date), examTime: r.exam_time as string | null }))
+  const tasks: TaskLike[] = (tasksRes.data ?? []).map(r => ({ id: String(r.id), userId: String(r.user_id), title: String(r.title), status: String(r.status), dueDate: r.due_date as string | null, dueTime: r.due_time as string | null }))
+  const exams: ExamLike[] = (examsRes.data ?? []).map(r => ({ id: String(r.id), userId: String(r.user_id), title: String(r.title), examDate: String(r.exam_date), examTime: r.exam_time as string | null }))
   const specs = computeReminders(tasks, exams, now)
   const existing = (remindersRes.data ?? []).map(r => ({ refType: String(r.ref_type), refId: String(r.ref_id), kind: String(r.kind) }))
   const fresh = diffReminders(existing, specs)
   if (fresh.length > 0) {
-    const { error } = await sb.from('wb_reminders').insert(fresh.map(s => ({ id: genId(), ref_type: s.refType, ref_id: s.refId, kind: s.kind, scheduled_at: s.scheduledAt })))
+    // upsert + ignoreDuplicates：并发 cron/check 同时 diff 出相同 fresh 时，慢的一方不再撞 unique 约束
+    const { error } = await sb.from('wb_reminders').upsert(fresh.map(s => ({ id: genId(), user_id: s.userId, ref_type: s.refType, ref_id: s.refId, kind: s.kind, scheduled_at: s.scheduledAt })), { onConflict: 'user_id,ref_type,ref_id,kind', ignoreDuplicates: true })
     if (error) throw error
   }
   return { created: fresh.length, due: specs.filter(s => isDueNow(s, now)).length }
@@ -134,7 +142,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const entry = req.query.entry as string | undefined
     if (entry === 'cron') {
-      if (req.headers.authorization !== `Bearer ${env('CRON_SECRET')}`) return res.status(401).json({ error: 'unauthorized' })
+      // 直接读 env 比较：认证失败路径不抛 env 缺失错误，避免向未认证调用者泄漏环境变量名
+      if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET ?? ''}`) return res.status(401).json({ error: 'unauthorized' })
       const result = await runCheck(adminClient(), new Date())
       return res.json({ ok: true, ...result })
     }
@@ -142,7 +151,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sb = await authUser(req)
       if (!sb) return res.status(401).json({ error: 'unauthorized' })
       const result = await runCheck(sb, new Date())
-      const { data } = await sb.from('wb_reminders').select('*').order('scheduled_at', { ascending: false })
+      const { data, error } = await sb.from('wb_reminders').select('*').order('scheduled_at', { ascending: false })
+      if (error) throw error // 瞬态失败不再静默返回空列表
       return res.json({ ok: true, ...result, reminders: data ?? [], vapidPublicKey: process.env.VITE_VAPID_PUBLIC_KEY ?? null })
     }
     if (entry === 'test') {
