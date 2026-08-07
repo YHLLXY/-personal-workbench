@@ -22,7 +22,12 @@ const { insertCalls, upsertCalls, deleteCalls, mockTable, setRows } = vi.hoisted
         return { select: vi.fn(() => ({ single: vi.fn().mockResolvedValue({ data: { ...payload }, error: null }) })) }
       }),
       update: vi.fn().mockReturnThis(),
-      upsert: vi.fn((payload: unknown) => { upsertCalls.push({ table: name, payload }); return Promise.resolve({ error: null }) }),
+      upsert: vi.fn((payload: unknown) => {
+        upsertCalls.push({ table: name, payload })
+        // 链式对象：upsert().select().single()（upsertReview）与直接 await 解构 { error }（saveSubscriptions）都兼容
+        // 注意：Promise 上的 .select 是 undefined 会被误判为「不带链」——这里必须返回对象而非 Promise
+        return { select: () => ({ single: vi.fn().mockResolvedValue({ data: payload, error: null }) }) }
+      }),
       delete: vi.fn(() => {
         const rec: { table: string; column: string; value: unknown } = { table: name, column: '', value: null }
         deleteCalls.push(rec)
@@ -52,6 +57,17 @@ import { SupabaseRepository } from '../src/lib/db/supabase-repository'
 describe('SupabaseRepository', () => {
   let repo: SupabaseRepository
   beforeEach(() => { insertCalls.length = 0; upsertCalls.length = 0; deleteCalls.length = 0; repo = new SupabaseRepository() })
+
+  it('upsertReview 载荷使用 snake_case 列名（plan_tomorrow，2026-08-08 线上保存失败回归）', async () => {
+    await repo.upsertReview('2026-08-08', { mood: 4, summary: '今天不错', planTomorrow: '继续加油' })
+    const payload = upsertCalls[0].payload as Record<string, unknown>
+    expect(payload).toHaveProperty('plan_tomorrow', '继续加油')
+    expect(payload).toHaveProperty('review_date', '2026-08-08')
+    expect(payload).toHaveProperty('mood', 4)
+    expect(payload).toHaveProperty('summary', '今天不错')
+    expect(payload).not.toHaveProperty('planTomorrow')
+    expect(payload).toHaveProperty('id')
+  })
 
   it('createPaper 载荷使用 snake_case 列名', async () => {
     await repo.createPaper({ title: 't', authors: 'a', arxivId: '2401.1', url: 'https://arxiv.org/abs/2401.1', status: 'want', rating: null, note: null })

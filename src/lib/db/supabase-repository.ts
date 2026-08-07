@@ -165,7 +165,8 @@ export class SupabaseRepository implements WorkbenchRepository {
   async listReviews() { const { data, error } = await this.sb.from('wb_reviews').select('*'); if (error) throw error; return (data ?? []).map(reviewFromRow) }
   async upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string }) {
     // 注意：迁移中 id 无默认值，insert 载荷必须带 id（质量审阅发现 I-2 修正）
-    const { data, error } = await this.sb.from('wb_reviews').upsert({ id: genId(), review_date: reviewDate, ...patch }, { onConflict: 'user_id,review_date' }).select().single()
+    // 注意：载荷必须 snake_case（plan_tomorrow）——直接展开 patch 会把 planTomorrow 当列名触发 PGRST204 保存失败（2026-08-08 线上排障）
+    const { data, error } = await this.sb.from('wb_reviews').upsert({ id: genId(), review_date: reviewDate, mood: patch.mood, summary: patch.summary, plan_tomorrow: patch.planTomorrow }, { onConflict: 'user_id,review_date' }).select().single()
     if (error) throw error; return reviewFromRow(data)
   }
 
