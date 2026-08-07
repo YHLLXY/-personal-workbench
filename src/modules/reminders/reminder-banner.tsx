@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Bell } from 'lucide-react'
 import { useReminders } from './api'
@@ -13,14 +13,19 @@ export default function ReminderBanner() {
   const { data: tasks } = useTasks()
   const { data: exams } = useExams()
   const unread = countUnread(reminders ?? [])
+  const notifiedRef = useRef(new Set<string>())
 
-  // 前台系统通知：到期未发送的提醒弹系统通知（需已授权；订阅推送时授权，见设置页）
+  // 前台系统通知：到期未发送的提醒弹系统通知（每 id 每次会话仅弹一次，避免本地模式重复打扰）
   useEffect(() => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return
     const due = (reminders ?? []).filter(r => !r.sentAt && !r.dismissedAt && new Date(r.scheduledAt).getTime() <= Date.now())
-    if (due.length === 0) return
-    const n = new Notification('个人工作台提醒', { body: `${due.length} 条提醒待处理，点击查看`, icon: '/pwa-192x192.png' })
+    // 清理已处理/已忽略的 id（忽略后可重新提醒）
+    for (const id of notifiedRef.current) if (!due.some(r => r.id === id)) notifiedRef.current.delete(id)
+    const fresh = due.filter(r => !notifiedRef.current.has(r.id))
+    if (fresh.length === 0) return
+    const n = new Notification('个人工作台提醒', { body: `${fresh.length} 条提醒待处理，点击查看`, icon: '/pwa-192x192.png' })
     n.onclick = () => { window.focus(); n.close() }
+    for (const r of fresh) notifiedRef.current.add(r.id)
   }, [reminders])
 
   if (unread === 0) return null

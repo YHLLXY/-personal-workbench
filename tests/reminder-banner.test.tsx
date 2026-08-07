@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -50,5 +50,47 @@ describe('ReminderBanner', () => {
     await waitFor(() => expect(repository.listReminders).toHaveBeenCalled())
     expect(screen.queryByText(/交报告/)).toBeNull()
     expect(screen.queryByRole('link')).toBeNull()
+  })
+})
+
+// --- 前台系统通知测试（jsdom 无 Notification，stub 一个） ---
+class MockNotification {
+  static permission: NotificationPermission = 'granted'
+  static instances: Array<{ title: string; options: NotificationOptions }> = []
+  constructor(title: string, options: NotificationOptions) { MockNotification.instances.push({ title, options }) }
+  close() {}
+  onclick: (() => void) | null = null
+}
+
+describe('ReminderBanner 前台通知去重', () => {
+  beforeEach(() => {
+    MockNotification.instances = []
+    MockNotification.permission = 'granted'
+    vi.stubGlobal('Notification', MockNotification)
+    qc.clear()
+    vi.clearAllMocks()
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('授权 + 到期未发 → 弹一次；数据刷新（新数组引用，同一提醒仍在）→ 不重复', async () => {
+    renderBanner()
+    await waitFor(() => expect(MockNotification.instances.length).toBe(1))
+    expect(MockNotification.instances[0].title).toBe('个人工作台提醒')
+    // 模拟 focus refetch：重新拉取产生新的数组引用（仍含同一到期提醒）→ 不重复弹
+    vi.mocked(repository.listReminders).mockResolvedValueOnce([
+      { id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: PAST, sentAt: null, dismissedAt: null, createdAt: PAST, note: 'fresh-read' } as never,
+    ])
+    qc.invalidateQueries()
+    await waitFor(() => expect(repository.listReminders).toHaveBeenCalledTimes(2))
+    // 等 refetch 数据提交、effect 执行窗口关闭后再断言通知数
+    await act(async () => { await new Promise(r => setTimeout(r, 0)) })
+    expect(MockNotification.instances.length).toBe(1)
+  })
+
+  it('未授权 → 不弹', async () => {
+    MockNotification.permission = 'denied'
+    renderBanner()
+    await waitFor(() => expect(repository.listReminders).toHaveBeenCalled())
+    expect(MockNotification.instances.length).toBe(0)
   })
 })
