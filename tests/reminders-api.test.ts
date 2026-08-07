@@ -9,12 +9,14 @@ const state = vi.hoisted(() => ({
   sent: [] as Array<{ endpoint: string; payload: unknown }>,
   pushErrors: [] as Array<{ endpoint: string; error: unknown }>,
   fetchCalls: [] as Array<{ url: string; body?: string }>,
+  fetchResults: [] as Array<{ status?: number; body?: string }>,
   // 重置
   reset() {
     state.rows = []
     state.sent = []
     state.pushErrors = []
     state.fetchCalls = []
+    state.fetchResults = []
   },
   insert(table: string, row: Record<string, unknown>) { state.rows.push({ table, row }) },
 }))
@@ -29,8 +31,8 @@ function makeFakeClient(_headers?: Record<string, string>): SupabaseClient {
         order: vi.fn(() => Promise.resolve({ data: rows(), error: null })),
         single: vi.fn(() => Promise.resolve({ data: rows()[0] ?? null, error: null })),
         maybeSingle: vi.fn(() => Promise.resolve({ data: rows()[0] ?? null, error: null })),
-        // lte 为 no-op（保持时间无关的确定性测试；is 按列值过滤）
-        lte: vi.fn((_col: string, _val: string) => chain),
+        // lte 真实 ISO 字符串比较（scheduled_at 为 ISO 字符串，字典序即时间序）；is 按列值过滤
+        lte: vi.fn((col: string, val: unknown) => { filters.push(row => String(row[col]) <= String(val)); return chain }),
         is: vi.fn((col: string, val: unknown) => { filters.push(row => row[col] === val); return chain }),
         then: (onFulfilled: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) =>
           Promise.resolve({ data: rows(), error: null }).then(onFulfilled, onRejected),
@@ -40,7 +42,13 @@ function makeFakeClient(_headers?: Record<string, string>): SupabaseClient {
     return {
       select: vi.fn(makeChain),
       insert: vi.fn((rows: unknown[]) => { (Array.isArray(rows) ? rows : [rows]).forEach(r => state.insert(table, r as Record<string, unknown>)); return Promise.resolve({ error: null }) }),
-      update: vi.fn(() => ({ eq: vi.fn(() => Promise.resolve({ error: null })) })),
+      // update 真实应用 payload：eq 按列值匹配并把 payload 合并进命中行（供断言 sent_at）
+      update: vi.fn((payload: Record<string, unknown>) => ({
+        eq: vi.fn((col: string, val: unknown) => {
+          for (const r of state.rows) if (r.table === table && String(r.row[col]) === String(val)) r.row = { ...r.row, ...payload }
+          return Promise.resolve({ error: null })
+        }),
+      })),
       delete: vi.fn(() => ({
         eq: vi.fn((col: string, val: unknown) => {
           state.rows = state.rows.filter(r => !(r.table === table && r.row[col] === val))
@@ -81,7 +89,9 @@ beforeEach(() => {
   vi.restoreAllMocks()
   globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     state.fetchCalls.push({ url: String(url), body: typeof init?.body === 'string' ? init.body : undefined })
-    return new Response('{}', { status: 200 })
+    // 默认模拟 Server酱成功（{"code":0}）；测试可通过 state.fetchResults 指定 status/body（如非 0 code）
+    const mockRes = state.fetchResults.shift() ?? {}
+    return new Response(mockRes.body ?? '{"code":0}', { status: mockRes.status ?? 200 })
   }) as unknown as typeof fetch
 })
 afterEach(() => { globalThis.fetch = realFetch })
@@ -147,7 +157,7 @@ describe('api/reminders 入口', () => {
     const res401 = makeRes()
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: {} }), res401 as never)
     expect(res401.statusCode).toBe(401)
-    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-08-08T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-08-08T00:00:00.000Z' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
     const res = makeRes()
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
     expect(res.statusCode).toBe(200)
@@ -156,27 +166,72 @@ describe('api/reminders 入口', () => {
     expect(body.vapidPublicKey).toBe(VAPID_PUB)
   })
 
-  it('check：到期未发提醒 → 调用 web-push 发送并标记 sent（410 过期订阅被删除）', async () => {
+  it('check：到期未发提醒 → 调用 web-push 发送并标记 sent_at（410 过期订阅被删除）', async () => {
     const { default: webpush } = await import('web-push')
-    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-08-08', due_time: '09:30', user_id: 'u1' })
-    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-08-08T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-08-08T00:00:00.000Z' })
-    state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 'test', created_at: '2026-08-08T00:00:00.000Z' })
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 'test', created_at: '2026-01-01T00:00:00.000Z' })
     const res = makeRes()
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
     expect(res.statusCode).toBe(200)
     expect(state.sent.length).toBe(1)
     expect(state.sent[0].endpoint).toBe('https://push.example/1')
     expect(JSON.parse(String(state.sent[0].payload))).toMatchObject({ title: '个人工作台提醒', url: '/reminders' })
+    // 真实送达 → sent_at 已标记（ISO 字符串）
+    const sentRow = state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')
+    expect(sentRow).toBeDefined()
+    expect(sentRow?.row.sent_at).toBeTruthy()
 
-    // 过期订阅（410）→ 删除该行
+    // 过期订阅（410）→ 删除该行；未送达 → sent_at 不标记
     state.reset()
-    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-08-08', due_time: '09:30', user_id: 'u1' })
-    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-08-08T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-08-08T00:00:00.000Z' })
-    state.insert('wb_push_subscriptions', { id: 's2', user_id: 'u1', endpoint: 'https://push.example/410', keys_p256dh: 'p', keys_auth: 'a', user_agent: 't', created_at: '2026-08-08T00:00:00.000Z' })
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_push_subscriptions', { id: 's2', user_id: 'u1', endpoint: 'https://push.example/410', keys_p256dh: 'p', keys_auth: 'a', user_agent: 't', created_at: '2026-01-01T00:00:00.000Z' })
     state.pushErrors.push({ endpoint: 'https://push.example/410', error: { statusCode: 410 } })
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
     expect(state.rows.some(r => r.table === 'wb_push_subscriptions' && String(r.row.endpoint).includes('410'))).toBe(false)
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
     expect(webpush.setVapidDetails).toHaveBeenCalled()
+  })
+
+  it('check：未来提醒不发送（scheduled_at 在 now 之后，lte 过滤）', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2099-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2099-01-01T00:00:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 't', created_at: '2026-01-01T00:00:00.000Z' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    expect(res.statusCode).toBe(200)
+    expect(state.sent.length).toBe(0)
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
+  })
+
+  it('check：推送非 410/404 错误 → skipped，sent_at 不标记（下次可补发）', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/500', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 't', created_at: '2026-01-01T00:00:00.000Z' })
+    state.pushErrors.push({ endpoint: 'https://push.example/500', error: { statusCode: 500 } })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    expect(res.statusCode).toBe(200)
+    const body = res.body as { sent: number; skipped: number }
+    expect(body.sent).toBe(0)
+    expect(body.skipped).toBe(1)
+    expect(state.rows.some(r => r.table === 'wb_push_subscriptions')).toBe(true) // 非 410/404 不删除订阅
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
+  })
+
+  it('check：Server酱 返回非 0 code → skipped，sent_at 不标记', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_channel_configs', { user_id: 'u1', serverchan_key: 'SCU123' })
+    state.fetchResults.push({ status: 200, body: '{"code":400}' }) // HTTP 200 但 code 非 0 → 失败
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    expect(res.statusCode).toBe(200)
+    const body = res.body as { sent: number; skipped: number }
+    expect(body.sent).toBe(0)
+    expect(body.skipped).toBe(1)
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
   })
 
   it('test-notify：向本人通道发送测试通知', async () => {

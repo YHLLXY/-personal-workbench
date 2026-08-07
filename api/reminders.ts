@@ -153,7 +153,7 @@ function ensureVapid(): void {
   }
 }
 
-/** 到期未发未忽略 → 逐条发送（Web Push + Server酱）→ 标记 sent_at；410/404 删除过期订阅 */
+/** 到期未发未忽略 → 逐条发送（Web Push + Server酱）；真实送达才标记 sent_at（无通道/全失败保留 NULL 待补发）；410/404 删除过期订阅 */
 async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[], now: Date): Promise<{ sent: number; skipped: number }> {
   ensureVapid()
   const [dueRes, subsRes, configsRes] = await Promise.all([
@@ -190,11 +190,13 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
     const text = reminderText(kind, ref.title, date, time)
     const payload = JSON.stringify({ title: '个人工作台提醒', body: text, url: '/reminders' })
 
+    let delivered = 0
     const subs = (subsByUser.get(uid) ?? []).map(s => JSON.parse(s) as { endpoint: string; keys: { p256dh: string; auth: string } })
     for (const sub of subs) {
       try {
         await webpush.sendNotification(sub, payload)
         sent++
+        delivered++
       } catch (err) {
         const code = (err as { statusCode?: number }).statusCode
         if (code === 410 || code === 404) {
@@ -206,15 +208,19 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
     const scKey = chanByUser.get(uid)
     if (scKey) {
       try {
-        await fetch(`https://sctapi.ftqq.com/${scKey}.send`, {
+        // Server酱成功返回 {"code":0}；错误为 HTTP 200 + 非 0 code，不能只看 fetch 是否 resolve
+        const r = await fetch(`https://sctapi.ftqq.com/${scKey}.send`, {
           method: 'POST',
           headers: { 'content-type': 'application/x-www-form-urlencoded' },
           body: `title=${encodeURIComponent('个人工作台提醒')}&desp=${encodeURIComponent(text)}`,
+          signal: AbortSignal.timeout(5000),
         })
-        sent++
+        const j = (await r.json().catch(() => null)) as { code?: number } | null
+        if (r.ok && j?.code === 0) { sent++; delivered++ } else skipped++
       } catch { skipped++ }
     }
-    await sb.from('wb_reminders').update({ sent_at: now.toISOString() }).eq('id', String(row.id))
+    // 真实送达才标记 sent_at；无通道/全部失败时保留 NULL，下次 cron/check 会补发
+    if (delivered > 0) await sb.from('wb_reminders').update({ sent_at: now.toISOString() }).eq('id', String(row.id))
   }
   return { sent, skipped }
 }
@@ -222,8 +228,10 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
 /** 测试发送：向本人全部通道发送一条测试通知 */
 async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number }> {
   ensureVapid()
-  const { data: subs } = await sb.from('wb_push_subscriptions').select('*')
-  const { data: configs } = await sb.from('wb_channel_configs').select('*')
+  const { data: subs, error: subsError } = await sb.from('wb_push_subscriptions').select('*')
+  const { data: configs, error: configsError } = await sb.from('wb_channel_configs').select('*')
+  if (subsError) throw subsError
+  if (configsError) throw configsError
   let sent = 0
   const payload = JSON.stringify({ title: '个人工作台提醒', body: '这是一条测试通知，通知功能已就绪 ✅', url: '/settings' })
   for (const s of subs ?? []) {
@@ -238,12 +246,15 @@ async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number 
   for (const c of configs ?? []) {
     if (!c.serverchan_key) continue
     try {
-      await fetch(`https://sctapi.ftqq.com/${String(c.serverchan_key)}.send`, {
+      // 与 sendDue 相同：仅 HTTP ok 且 code===0 才算送达
+      const r = await fetch(`https://sctapi.ftqq.com/${String(c.serverchan_key)}.send`, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: `title=${encodeURIComponent('个人工作台提醒')}&desp=${encodeURIComponent('这是一条测试通知，通知功能已就绪 ✅')}`,
+        signal: AbortSignal.timeout(5000),
       })
-      sent++
+      const j = (await r.json().catch(() => null)) as { code?: number } | null
+      if (r.ok && j?.code === 0) sent++
     } catch { /* 静默 */ }
   }
   return { sent }
