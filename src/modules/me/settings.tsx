@@ -17,8 +17,9 @@ import { useFocusSessions } from '@/modules/study/api'
 import { useHabitLogs } from '@/modules/health/api'
 import { useReviews } from '@/modules/review/api'
 import { useNotes, usePapers } from '@/modules/news/api'
+import { NotificationSection } from './notifications-section'
 
-/** 个人中心页：资料卡 / 数据统计 / 数据管理 / 账号 / 关于 */
+/** 个人中心页：资料卡 / 数据统计 / 数据管理 / 通知 / 账号 / 关于 */
 export function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -29,6 +30,7 @@ export function SettingsPage() {
         <StatsGrid />
       </section>
       <DataSection />
+      <NotificationSection />
       <AccountSection />
       <AboutSection />
     </div>
