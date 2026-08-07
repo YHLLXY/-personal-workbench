@@ -1,6 +1,7 @@
 import { homeCards } from '@/registry'
 import OverviewHome from '@/modules/overview/overview-home'
 import { OverviewSummary } from '@/modules/overview/overview-summary'
+import ReminderBanner from '@/modules/reminders/reminder-banner'
 
 const SPAN_CLASS: Record<string, string> = {
   '3': 'md:col-span-3',
@@ -14,6 +15,8 @@ export default function Home() {
   const cards = homeCards().sort((a, b) => a.desktopOrder - b.desktopOrder)
   return (
     <div className="mx-auto max-w-7xl">
+      {/* 提醒横幅：移动端与桌面端都可见（无未读时自隐藏） */}
+      <ReminderBanner />
       {/* 移动端专属视图（组件根自带 md:hidden） */}
       <OverviewHome />
       {/* 桌面端今日概览条 */}

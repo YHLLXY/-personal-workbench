@@ -14,6 +14,7 @@ import { QuickCapture } from './quick-capture'
 import { ShortcutsDialog } from './shortcuts-dialog'
 import { OnboardingOverlay } from './onboarding'
 import { useGlobalHotkeys } from './hotkeys'
+import { useReminderSync } from '@/modules/reminders/api'
 
 /** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」（后续模块注册后自动增加） */
 const MOBILE_TABS = [
@@ -28,6 +29,7 @@ export function Shell() {
   const setCaptureOpen = useUiStore(s => s.setCaptureOpen)
   const setCaptureTab = useUiStore(s => s.setCaptureTab)
   useGlobalHotkeys()
+  useReminderSync() // 订阅提醒数据 → 更新 store 未读数 → Shell 重渲染 → 侧边栏角标联动
   const navigate = useNavigate()
   const location = useLocation() // 订阅路由变化，确保 active 样式刷新
   const today = new Date()
