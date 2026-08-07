@@ -37,3 +37,13 @@ self.addEventListener('notificationclick', (event) => {
     }),
   )
 })
+
+// 离线导航回退：网络失败时返回缓存的 index.html（替代 generateSW 的 navigateFallback）
+self.addEventListener('fetch', (event) => {
+  if (event.request.mode !== 'navigate') return
+  event.respondWith(
+    fetch(event.request).catch(() =>
+      caches.match('/index.html').then(r => r ?? fetch(event.request)),
+    ),
+  )
+})
