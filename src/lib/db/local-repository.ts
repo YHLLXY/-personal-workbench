@@ -1,4 +1,4 @@
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs } from './types'
+import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs } from './types'
 
 const PREFIX = 'wb:'
 function read<T>(key: string): T[] {
@@ -18,9 +18,15 @@ function patch<T extends { id: string }>(key: string, id: string, p: Partial<T>)
 function remove(key: string, id: string) { write(key, read<{ id: string }>(key).filter(r => r.id !== id)) }
 
 export class LocalRepository implements WorkbenchRepository {
-  async listTasks() { return read<Task>('tasks') }
+  async listTasks() {
+    // 惰性迁移：老数据 focus=true 但无 focusDate → 绑定到创建日（本地时区），焦点任务不再永久显示（仅内存生效，不落库）
+    return read<Task>('tasks').map(t => {
+      if (t.focus && !t.focusDate) t.focusDate = localDateOfISO(t.createdAt)
+      return t
+    })
+  }
   async createTask(input: TaskInput) {
-    return insert<Task>('tasks', { id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', dueDate: input.dueDate ?? null, dueTime: input.dueTime ?? null, tags: input.tags ?? [], sort: Date.now(), completedAt: null, createdAt: new Date().toISOString() })
+    return insert<Task>('tasks', { id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', dueDate: input.dueDate ?? null, dueTime: input.dueTime ?? null, focusDate: input.focusDate ?? null, tags: input.tags ?? [], sort: Date.now(), completedAt: null, createdAt: new Date().toISOString() })
   }
   async updateTask(id: string, p: Partial<Task>) {
     const rows = read<Task>('tasks')
@@ -60,6 +66,13 @@ export class LocalRepository implements WorkbenchRepository {
   async createExam(input: ExamInput) { return insert<Exam>('exams', { id: genId(), title: input.title, examDate: input.examDate, examTime: input.examTime ?? null, subject: input.subject ?? null, note: input.note ?? null, createdAt: new Date().toISOString() }) }
   async updateExam(id: string, p: Partial<Exam>) { return patch<Exam>('exams', id, p) }
   async deleteExam(id: string) { remove('exams', id) }
+
+  async listStudyGoals() { return read<StudyGoal>('studyGoals') }
+  async createStudyGoal(input: StudyGoalInput) {
+    return insert<StudyGoal>('studyGoals', { id: genId(), title: input.title, target: input.target ?? 100, progress: 0, deadline: input.deadline ?? null, status: 'active', note: input.note ?? null })
+  }
+  async updateStudyGoal(id: string, p: Partial<StudyGoal>) { return patch<StudyGoal>('studyGoals', id, p) }
+  async deleteStudyGoal(id: string) { remove('studyGoals', id) }
 
   async listNotes() { return read<Note>('notes') }
   async createNote(content: string, tag?: string | null) {
@@ -113,21 +126,28 @@ export class LocalRepository implements WorkbenchRepository {
   async createHealthLog(input: HealthLogInput) { return insert<HealthLog>('healthLogs', { id: genId(), ...input }) }
   async deleteHealthLog(id: string) { remove('healthLogs', id) }
 
-  async listReviews() { return read<Review>('reviews') }
-  async upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string }) {
+  async listReviews() {
+    // 旧数据兼容：新字段缺省时补默认值，读取不崩溃（逐字段赋值避免对象展开的 TS2783）
+    return read<Review>('reviews').map(r => ({
+      id: r.id, reviewDate: r.reviewDate, mood: r.mood,
+      achievements: r.achievements ?? '', reflection: r.reflection ?? '', gratitude: r.gratitude ?? '', learnings: r.learnings ?? '',
+      summary: r.summary, planTomorrow: r.planTomorrow, score: r.score ?? null, updatedAt: r.updatedAt,
+    }))
+  }
+  async upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string; achievements?: string; reflection?: string; gratitude?: string; learnings?: string; score?: number | null }) {
     const rows = read<Review>('reviews')
     const i = rows.findIndex(r => r.reviewDate === reviewDate)
     if (i >= 0) { rows[i] = { ...rows[i], ...patch, updatedAt: new Date().toISOString() }; write('reviews', rows); return rows[i] }
-    const r: Review = { id: genId(), reviewDate, mood: patch.mood ?? 3, summary: patch.summary ?? '', planTomorrow: patch.planTomorrow ?? '', updatedAt: new Date().toISOString() }
+    const r: Review = { id: genId(), reviewDate, mood: patch.mood ?? 3, achievements: patch.achievements ?? '', reflection: patch.reflection ?? '', gratitude: patch.gratitude ?? '', learnings: patch.learnings ?? '', summary: patch.summary ?? '', planTomorrow: patch.planTomorrow ?? '', score: patch.score ?? null, updatedAt: new Date().toISOString() }
     return insert<Review>('reviews', r)
   }
 
   async exportAll() {
-    const [tasks, habits, habitLogs, focusSessions, exams, notes, papers, folders, healthLogs, reviews] = await Promise.all([
+    const [tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews] = await Promise.all([
       this.listTasks(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
-      this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(),
+      this.listStudyGoals(), this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(),
     ])
-    return { tasks, habits, habitLogs, focusSessions, exams, notes, papers, folders, healthLogs, reviews }
+    return { tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews }
   }
 
   async importAll(tables: BackupTables) {
@@ -140,7 +160,9 @@ export class LocalRepository implements WorkbenchRepository {
     try {
       const entries: Array<[string, unknown[]]> = [
         ['tasks', tables.tasks], ['habits', tables.habits], ['habitLogs', tables.habitLogs],
-        ['focusSessions', tables.focusSessions], ['exams', tables.exams], ['notes', tables.notes],
+        ['focusSessions', tables.focusSessions], ['exams', tables.exams],
+        // ?? [] 守卫：旧备份文件没有 studyGoals 等新 key 时按空表处理，不抛错
+        ['studyGoals', tables.studyGoals ?? []], ['notes', tables.notes],
         ['papers', tables.papers], ['folders', tables.folders], ['healthLogs', tables.healthLogs],
         ['reviews', tables.reviews],
       ]

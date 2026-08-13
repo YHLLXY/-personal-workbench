@@ -3,16 +3,17 @@ import { buildBackup, validateBackup, formatBytes, backupFileName, BACKUP_APP, B
 import type { BackupTables } from '../src/lib/db/types'
 
 const sample: BackupTables = {
-  tasks: [{ id: 't1', title: '写完计划', focus: true, priority: 'high', status: 'done', dueDate: '2026-08-05', dueTime: null, tags: [], sort: 1, completedAt: '2026-08-05T08:00:00.000Z', createdAt: '2026-08-01T00:00:00.000Z' }],
+  tasks: [{ id: 't1', title: '写完计划', focus: true, focusDate: '2026-08-05', priority: 'high', status: 'done', dueDate: '2026-08-05', dueTime: null, tags: [], sort: 1, completedAt: '2026-08-05T08:00:00.000Z', createdAt: '2026-08-01T00:00:00.000Z' }],
   habits: [{ id: 'h1', name: '喝水', icon: '💧', color: '#5B8A72', targetPerDay: 8, active: true, createdAt: '2026-08-01T00:00:00.000Z' }],
   habitLogs: [{ id: 'l1', habitId: 'h1', logDate: '2026-08-05', count: 3 }],
   focusSessions: [{ id: 'f1', startAt: '2026-08-05T09:00:00.000Z', minutes: 25, note: null }],
   exams: [{ id: 'e1', title: '期末', examDate: '2026-09-01', examTime: null, subject: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' }],
+  studyGoals: [{ id: 'g1', title: '背单词', target: 100, progress: 30, deadline: null, status: 'active', note: null }],
   notes: [{ id: 'n1', content: '灵感', tag: null, archived: false, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }],
   papers: [{ id: 'p1', title: '论文', authors: 'a', arxivId: null, url: null, status: 'want', rating: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' }],
   folders: [{ id: 'd1', name: '机器学习', parentId: null, sort: 1 }],
   healthLogs: [{ id: 'g1', logDate: '2026-08-05', type: 'sleep', value: 7.5 }],
-  reviews: [{ id: 'r1', reviewDate: '2026-08-05', mood: 4, summary: '好', planTomorrow: '继续', updatedAt: '2026-08-05T12:00:00.000Z' }],
+  reviews: [{ id: 'r1', reviewDate: '2026-08-05', mood: 4, achievements: 'A', reflection: 'R', gratitude: 'G', learnings: 'L', summary: '好', planTomorrow: '继续', score: 7, updatedAt: '2026-08-05T12:00:00.000Z' }],
 }
 
 describe('backup', () => {

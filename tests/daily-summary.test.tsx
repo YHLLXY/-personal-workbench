@@ -3,24 +3,32 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { daysBetween, daysLabel, greeting } from '../src/app/daily-summary'
+import { todayStr } from '../src/lib/db/types'
 
-const TODAY = '2026-08-08'
+// 注意：fixture 日期必须相对「今天」动态生成——硬编码日期会在日期漂移后失效（2026-08-13 曾因此挂掉）
+const TODAY = todayStr()
+function dateOffset(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 vi.mock('@/lib/db', () => ({
   isCloudMode: false,
   repository: {
     listTasks: vi.fn(async () => [
-      { id: 't1', title: '写实验报告', focus: false, priority: 'medium', status: 'todo', dueDate: TODAY, dueTime: '14:00', tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' },
-      { id: 't2', title: '复习高数', focus: false, priority: 'low', status: 'done', dueDate: TODAY, dueTime: null, tags: [], sort: 2, completedAt: '2026-08-08T03:00:00.000Z', createdAt: '2026-08-01T00:00:00.000Z' },
+      { id: 't1', title: '写实验报告', focus: false, focusDate: null, priority: 'medium', status: 'todo', dueDate: TODAY, dueTime: '14:00', tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' },
+      { id: 't2', title: '复习高数', focus: false, focusDate: null, priority: 'low', status: 'done', dueDate: TODAY, dueTime: null, tags: [], sort: 2, completedAt: `${TODAY}T03:00:00.000Z`, createdAt: '2026-08-01T00:00:00.000Z' },
     ]),
     listExams: vi.fn(async () => [
-      { id: 'e1', title: '高数期末', examDate: '2026-08-11', examTime: '09:00', subject: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' },
+      { id: 'e1', title: '高数期末', examDate: dateOffset(3), examTime: '09:00', subject: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' },
     ]),
     updateTask: vi.fn(async () => ({}) as never),
   } as never,
 }))
 
 import DailySummary from '../src/app/daily-summary'
+import { CHANGELOG } from '../src/app/changelog'
 import { repository } from '@/lib/db'
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -67,8 +75,8 @@ describe('DailySummary', () => {
     expect(screen.getByText(/14:00/)).toBeTruthy()
     expect(screen.getByText(/高数期末/)).toBeTruthy()
     expect(screen.getByText(/3 天后/)).toBeTruthy()
-    expect(screen.getByText(/v1\.4/)).toBeTruthy()
-    expect(screen.getByText(/定时提醒通知 \+ 今日概览/)).toBeTruthy()
+    expect(screen.getByText(new RegExp(CHANGELOG[0].version))).toBeTruthy()
+    expect(screen.getByText(new RegExp(CHANGELOG[0].title))).toBeTruthy()
   })
 
   it('勾选未完成任务调用 updateTask 标记完成', async () => {

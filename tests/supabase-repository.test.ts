@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { localDateOfISO, type BackupTables } from '../src/lib/db/types'
 
 // vi.mock 工厂在模块导入期即执行（早于测试文件主体），故共享状态必须用 vi.hoisted 定义
 const { insertCalls, upsertCalls, deleteCalls, updateCalls, mockTable, setRows } = vi.hoisted(() => {
@@ -83,6 +84,35 @@ describe('SupabaseRepository', () => {
     expect(payload).toHaveProperty('id')
   })
 
+  it('upsertReview 载荷包含丰富字段（成就/反思/感恩/收获/评分）', async () => {
+    await repo.upsertReview('2026-08-13', { mood: 5, achievements: 'A', reflection: 'R', gratitude: 'G', learnings: 'L', summary: 'S', planTomorrow: 'P', score: 8 })
+    const payload = upsertCalls[0].payload as Record<string, unknown>
+    expect(payload).toHaveProperty('achievements', 'A')
+    expect(payload).toHaveProperty('reflection', 'R')
+    expect(payload).toHaveProperty('gratitude', 'G')
+    expect(payload).toHaveProperty('learnings', 'L')
+    expect(payload).toHaveProperty('score', 8)
+  })
+
+  it('reviewFromRow 映射新字段；旧行缺列 ?? 兜底不崩溃', async () => {
+    setRows('wb_reviews', [{ id: 'r1', review_date: '2026-08-13', mood: 5, achievements: 'A', reflection: 'R', gratitude: 'G', learnings: 'L', summary: 'S', plan_tomorrow: 'P', score: 9, updated_at: '2026-08-13T12:00:00.000Z' }])
+    const [r] = await repo.listReviews()
+    expect(r.achievements).toBe('A')
+    expect(r.reflection).toBe('R')
+    expect(r.gratitude).toBe('G')
+    expect(r.learnings).toBe('L')
+    expect(r.score).toBe(9)
+
+    // 迁移前老行：无新列值 → '' / null
+    setRows('wb_reviews', [{ id: 'r0', review_date: '2026-08-01', mood: 3, summary: '旧', plan_tomorrow: '', updated_at: '2026-08-01T12:00:00.000Z' }])
+    const [old] = await repo.listReviews()
+    expect(old.achievements).toBe('')
+    expect(old.reflection).toBe('')
+    expect(old.gratitude).toBe('')
+    expect(old.learnings).toBe('')
+    expect(old.score).toBeNull()
+  })
+
   it('createPaper 载荷使用 snake_case 列名', async () => {
     await repo.createPaper({ title: 't', authors: 'a', arxivId: '2401.1', url: 'https://arxiv.org/abs/2401.1', status: 'want', rating: null, note: null })
     const payload = insertCalls[0]
@@ -125,29 +155,62 @@ describe('SupabaseRepository', () => {
   })
 
   describe('exportAll / importAll', () => {
-    it('exportAll 拉全 10 张表并映射为领域对象', async () => {
+    it('exportAll 拉全 11 张表并映射为领域对象', async () => {
       setRows('wb_tasks', [{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
       setRows('wb_folders', [{ id: 'f1', name: '机器学习', parent_id: null, sort: 1 }])
       setRows('wb_papers', [{ id: 'p1', title: '论文', authors: 'a', arxiv_id: null, url: null, status: 'want', rating: null, note: null, created_at: '2026-08-01T00:00:00.000Z' }])
+      setRows('wb_study_goals', [{ id: 'g1', title: '背单词', target: 50, progress: 20, deadline: null, status: 'active', note: null, created_at: '2026-08-01T00:00:00.000Z' }])
       const tables = await repo.exportAll()
       expect(tables.tasks[0].title).toBe('任务')
       expect(tables.folders[0]).toEqual({ id: 'f1', name: '机器学习', parentId: null, sort: 1 })
       expect(tables.papers[0].type).toBe('paper')
+      expect(tables.studyGoals).toHaveLength(1)
+      expect(tables.studyGoals[0].title).toBe('背单词')
     })
 
     it('importAll 每表先 delete().neq(id) 清空再 upsert，载荷 snake_case', async () => {
       await repo.importAll({
-        tasks: [{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }],
-        habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [],
+        tasks: [{ id: 't1', title: '任务', focus: false, focusDate: null, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }],
+        habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [],
       })
-      // 每张表都先清空
-      expect(deleteCalls.length).toBe(10)
+      // 每张表都先清空（v1.5 起 11 张表，含 wb_study_goals）
+      expect(deleteCalls.length).toBe(11)
       expect(deleteCalls[0]).toEqual({ table: 'wb_tasks', column: 'id', value: '' })
       // tasks 表 upsert 载荷是 snake_case 列名
       const tasksUpsert = upsertCalls.find(u => u.table === 'wb_tasks')
-      expect(tasksUpsert?.payload).toEqual([{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, due_time: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
-      // 只有 tasks 有数据 → 只有 1 次 upsert（其余 9 张空表只清空不写入）
+      expect(tasksUpsert?.payload).toEqual([{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, due_time: null, focus_date: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
+      // 只有 tasks 有数据 → 只有 1 次 upsert（其余 10 张空表只清空不写入）
       expect(upsertCalls.length).toBe(1)
+    })
+
+    it('importAll 兼容旧备份：缺 studyGoals key 时按空表处理不报错', async () => {
+      // 旧备份文件没有 studyGoals key（10 张表）——tables[key] ?? [] 守卫必须兜住
+      const legacy = {
+        tasks: [], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [],
+      } as unknown as BackupTables
+      await repo.importAll(legacy)
+      expect(deleteCalls.length).toBe(11)
+      expect(upsertCalls.length).toBe(0)
+    })
+
+    it('studyGoals 备份映射：createStudyGoal 载荷 + goalFromRow', async () => {
+      const g = await repo.createStudyGoal({ title: '刷题 100', target: 100, deadline: '2026-09-01', note: '每天 5 题' })
+      const payload = insertCalls[0]
+      expect(payload).toHaveProperty('target', 100)
+      expect(payload).toHaveProperty('progress', 0)
+      expect(payload).toHaveProperty('status', 'active')
+      expect(payload).toHaveProperty('deadline', '2026-09-01')
+      expect(g.title).toBe('刷题 100')
+      expect(g.status).toBe('active')
+      expect(g.progress).toBe(0)
+
+      setRows('wb_study_goals', [{ id: 'g1', title: '背单词', target: 50, progress: 20, deadline: '2026-08-20', status: 'done', note: null, created_at: '2026-08-01T00:00:00.000Z' }])
+      const [row] = await repo.listStudyGoals()
+      expect(row).toEqual({ id: 'g1', title: '背单词', target: 50, progress: 20, deadline: '2026-08-20', status: 'done', note: null })
+
+      await repo.updateStudyGoal('g1', { progress: 21 })
+      expect(updateCalls[0].payload).toHaveProperty('progress', 21)
+      expect(updateCalls[0].payload).toHaveProperty('status', undefined)
     })
   })
 })
@@ -160,6 +223,36 @@ describe('定时提醒（2026-08-08）', () => {
     setRows('wb_tasks', [{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: '2026-08-08', due_time: '09:30', tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
     const tasks = await repo.listTasks()
     expect(tasks[0].dueTime).toBe('09:30')
+  })
+
+  it('taskFromRow 映射 focus_date（焦点绑定日期）', async () => {
+    setRows('wb_tasks', [{ id: 't1', title: '任务', focus: true, priority: 'low', status: 'todo', due_date: '2026-08-08', due_time: null, focus_date: '2026-08-08', tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
+    const tasks = await repo.listTasks()
+    expect(tasks[0].focusDate).toBe('2026-08-08')
+  })
+
+  it('旧行 focus=true 无 focus_date 时按创建日惰性迁移（本地时区）', async () => {
+    setRows('wb_tasks', [{ id: 't1', title: '任务', focus: true, priority: 'low', status: 'todo', due_date: null, due_time: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-04T02:00:00.000Z' }])
+    const tasks = await repo.listTasks()
+    expect(tasks[0].focusDate).toBe(localDateOfISO('2026-08-04T02:00:00.000Z'))
+  })
+
+  it('非焦点任务 focus_date 缺省映射为 null', async () => {
+    setRows('wb_tasks', [{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, due_time: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
+    const tasks = await repo.listTasks()
+    expect(tasks[0].focusDate).toBeNull()
+  })
+
+  it('updateTask 载荷含 focus_date（snake_case）', async () => {
+    await repo.updateTask('t1', { focusDate: '2026-08-08' })
+    expect(updateCalls[0].payload).toHaveProperty('focus_date', '2026-08-08')
+  })
+
+  it('createTask 载荷含 focus_date（缺省 null）', async () => {
+    await repo.createTask({ title: 'x', focus: true, focusDate: '2026-08-08' })
+    expect(insertCalls[0]).toHaveProperty('focus_date', '2026-08-08')
+    await repo.createTask({ title: 'y' })
+    expect(insertCalls[1]).toHaveProperty('focus_date', null)
   })
 
   it('examFromRow 映射 examTime', async () => {

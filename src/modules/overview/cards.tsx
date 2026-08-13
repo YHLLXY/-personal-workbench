@@ -1,5 +1,4 @@
-import { Link } from 'react-router-dom'
-import { CheckCircle2, ArrowRight, Star } from 'lucide-react'
+import { CheckCircle2, Star } from 'lucide-react'
 import { useTasks, todayTasks } from './api'
 import { todayStr } from '@/lib/db/types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -13,7 +12,6 @@ export function TodayTasksCard() {
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><CheckCircle2 className="size-4 text-primary" strokeWidth={1.7} />今日待办</CardTitle>
-        <Link to="/tasks" className="text-xs text-muted-foreground hover:text-primary"><ArrowRight className="size-3.5" /></Link>
       </CardHeader>
       <CardContent className="space-y-1">
         {isLoading ? <Skeleton className="h-16 w-full" /> : list.length === 0 ? (
@@ -32,7 +30,8 @@ export function TodayTasksCard() {
 
 export function TodayFocusCard() {
   const { data: tasks, isLoading } = useTasks()
-  const focus = (tasks ?? []).filter(t => t.focus && t.status !== 'done').slice(0, 3)
+  const today = todayStr()
+  const focus = (tasks ?? []).filter(t => t.focus && t.focusDate === today && t.status !== 'done').slice(0, 3)
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">

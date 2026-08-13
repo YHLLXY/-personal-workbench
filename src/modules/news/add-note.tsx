@@ -65,7 +65,7 @@ export function AddNote({ open, onOpenChange, defaultFolderId }: { open: boolean
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>添加文案笔记</DialogTitle></DialogHeader>
         <Tabs value={tab} onValueChange={v => setTab(String(v))}>
           <TabsList className="w-full">
@@ -86,7 +86,7 @@ export function AddNote({ open, onOpenChange, defaultFolderId }: { open: boolean
           </TabsContent>
 
           <TabsContent value="paste" className="space-y-3 pt-3">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">标题（空则"未命名"）</label>
                 <Input value={title} onChange={e => setTitle(e.target.value)} />

@@ -79,6 +79,18 @@
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  body { @apply bg-background text-foreground antialiased; font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+  body { @apply bg-background text-foreground antialiased; overflow-x: hidden; font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
   .font-numeric { font-variant-numeric: tabular-nums; }
+}
+
+/* 页面切换淡入 + 卡片 stagger 入场 */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: rise-in 0.3s ease-out; }
+.card-enter { animation: rise-in 0.4s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .card-enter { animation: none; }
 }

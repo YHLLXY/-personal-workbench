@@ -3,6 +3,7 @@
     { "source": "/api/cron-notify", "destination": "/api/reminders?entry=cron" },
     { "source": "/api/check-reminders", "destination": "/api/reminders?entry=check" },
     { "source": "/api/test-notify", "destination": "/api/reminders?entry=test" },
+    { "source": "/api/resolve-phone", "destination": "/api/auth?entry=resolve-phone" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

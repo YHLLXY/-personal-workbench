@@ -110,7 +110,10 @@ export function Shell() {
         {/* 内容 */}
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-4 md:py-6 pb-32 md:pb-6">
           <Suspense fallback={<div className="space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}>
-            <Outlet />
+            {/* key=pathname 使路由切换时整块重挂载，重播页面入场动画 */}
+            <div key={location.pathname} className="page-enter">
+              <Outlet />
+            </div>
           </Suspense>
         </main>
       </div>

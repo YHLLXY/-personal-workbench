@@ -74,7 +74,7 @@ export function AddPaper({ open, onOpenChange, defaultFolderId }: { open: boolea
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>添加论文</DialogTitle></DialogHeader>
         <Tabs defaultValue="arxiv">
           <TabsList className="w-full">
@@ -123,7 +123,7 @@ export function AddPaper({ open, onOpenChange, defaultFolderId }: { open: boolea
               <label className="text-xs text-muted-foreground">链接 URL</label>
               <Input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…" />
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">文件夹</label>
                 <Select value={folder} onValueChange={v => setFolder(String(v))}>

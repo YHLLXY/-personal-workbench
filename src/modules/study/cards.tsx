@@ -1,5 +1,4 @@
-import { Link } from 'react-router-dom'
-import { CalendarClock, ArrowRight, Timer } from 'lucide-react'
+import { CalendarClock, Timer } from 'lucide-react'
 import { useExams, useFocusToday, daysUntil } from './api'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -11,7 +10,6 @@ export function ExamsCard() {
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><CalendarClock className="size-4 text-primary" strokeWidth={1.7} />最近考试</CardTitle>
-        <Link to="/study" className="text-xs text-muted-foreground hover:text-primary"><ArrowRight className="size-3.5" /></Link>
       </CardHeader>
       <CardContent className="space-y-2">
         {isLoading ? <Skeleton className="h-16 w-full" /> : sorted.length === 0 ? <p className="text-xs text-muted-foreground py-2">暂无考试安排</p>

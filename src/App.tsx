@@ -6,6 +6,7 @@ import { ThemeProvider } from './app/theme'
 import { AuthProvider, useAuth } from './app/auth'
 import { Shell } from './app/layout'
 import AuthPage from './app/auth-page'
+import ResetPasswordPage from './app/reset-password'
 import { allSubModules } from './registry'
 import { isCloudMode } from './lib/db'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -30,6 +31,7 @@ export default function App() {
             <Suspense fallback={<div className="p-6 space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}>
               <Routes>
                 <Route path="/login" element={isCloudMode ? <AuthPage /> : <Navigate to="/" replace />} />
+                <Route path="/reset-password" element={isCloudMode ? <ResetPasswordPage /> : <Navigate to="/" replace />} />
                 <Route element={<Guard><Shell /></Guard>}>
                   {allSubModules.map(s => <Route key={s.id} path={s.path} element={<s.component />} />)}
                   <Route path="/settings" element={<SettingsPage />} />

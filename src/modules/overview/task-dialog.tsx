@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Star } from 'lucide-react'
@@ -8,24 +9,49 @@ import { useTaskMutations } from './api'
 import { toast } from 'sonner'
 import { todayStr } from '@/lib/db/types'
 import { cn } from '@/lib/utils'
+import type { Task } from '@/lib/db/types'
 
-export function TaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const { create } = useTaskMutations()
+/** 新建 / 编辑任务对话框。focus 开关联动 focusDate：开 → 今天，关 → null */
+export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (v: boolean) => void; editing?: Task | null }) {
+  const { create, update } = useTaskMutations()
   const [title, setTitle] = useState('')
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium')
   const [focus, setFocus] = useState(false)
+  const [dueDate, setDueDate] = useState(todayStr())
   const [dueTime, setDueTime] = useState('')
+  const [tagsText, setTagsText] = useState('')
 
-  useEffect(() => { if (open) { setTitle(''); setPriority('medium'); setFocus(false); setDueTime('') } }, [open])
+  useEffect(() => {
+    if (open) {
+      setTitle(editing?.title ?? '')
+      setPriority(editing?.priority ?? 'medium')
+      setFocus(editing?.focus ?? false)
+      setDueDate(editing?.dueDate ?? todayStr())
+      setDueTime(editing?.dueTime ?? '')
+      setTagsText(editing?.tags?.join('，') ?? '')
+    }
+  }, [open, editing])
 
   function submit() {
     if (!title.trim()) return
-    create.mutate({ title: title.trim(), priority, focus, dueDate: todayStr(), dueTime: dueTime || null }, { onSuccess: () => { setTitle(''); onOpenChange(false); toast.success('已添加') } })
+    const tags = tagsText.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+    const payload = {
+      title: title.trim(),
+      priority,
+      focus,
+      focusDate: focus ? todayStr() : null,
+      dueDate: dueDate || null,
+      dueTime: dueTime || null,
+      tags,
+    }
+    const onDone = () => { onOpenChange(false); toast.success(editing ? '已保存' : '已添加') }
+    if (editing) update.mutate({ id: editing.id, patch: payload }, { onSuccess: onDone })
+    else create.mutate(payload, { onSuccess: onDone })
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>新建任务</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{editing ? '编辑任务' : '新建任务'}</DialogTitle></DialogHeader>
         <div className="space-y-3 pt-2">
           <Input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="任务内容" onKeyDown={e => e.key === 'Enter' && submit()} />
           <div className="flex gap-3">
@@ -42,10 +68,18 @@ export function TaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             </Button>
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="task-due-time" className="text-xs text-muted-foreground">提醒时间（可选，到点通知）</label>
+            <Label htmlFor="task-due-date">日期（可清空；焦点任务仅在所选日期显示）</Label>
+            <Input id="task-due-date" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="task-due-time">提醒时间（可选，到点通知）</Label>
             <Input id="task-due-time" type="time" value={dueTime} onChange={e => setDueTime(e.target.value)} />
           </div>
-          <Button className="w-full" onClick={submit} disabled={!title.trim() || create.isPending}>添加</Button>
+          <div className="space-y-1.5">
+            <Label htmlFor="task-tags">标签（可选，逗号分隔）</Label>
+            <Input id="task-tags" value={tagsText} onChange={e => setTagsText(e.target.value)} placeholder="如：工作，学习" />
+          </div>
+          <Button className="w-full" onClick={submit} disabled={!title.trim() || (editing ? update.isPending : create.isPending)}>{editing ? '保存' : '添加'}</Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -17,7 +17,7 @@ export function OverviewSummary() {
 
   const today = todayStr()
   const list = todayTasks(tasks ?? [], today)
-  const inScope = (t: Task) => t.dueDate === today || t.focus
+  const inScope = (t: Task) => t.dueDate === today || (t.focus && t.focusDate === today) || (t.dueDate && t.dueDate < today)
   const done = (tasks ?? []).filter(t => t.status === 'done' && inScope(t)).length
   const total = done + list.length
   const activeHabits = (habits ?? []).filter(h => h.active).length

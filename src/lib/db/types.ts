@@ -6,12 +6,13 @@ export interface Task {
   status: 'todo' | 'doing' | 'done' | 'someday'
   dueDate: string | null   // YYYY-MM-DD
   dueTime: string | null  // HH:mm 可选，到期提醒时间
+  focusDate: string | null // YYYY-MM-DD，焦点绑定日期（今日焦点只在其绑定日显示）
   tags: string[]
   sort: number
   completedAt: string | null
   createdAt: string        // ISO
 }
-export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; dueTime?: string | null; tags?: string[] }
+export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; dueTime?: string | null; focusDate?: string | null; tags?: string[] }
 
 export interface Habit { id: string; name: string; icon: string; color: string; targetPerDay: number; active: boolean; createdAt: string }
 export interface HabitLog { id: string; habitId: string; logDate: string; count: number }
@@ -49,7 +50,31 @@ export interface FolderInput { name: string; parentId?: string | null }
 export interface HealthLog { id: string; logDate: string; type: 'weight' | 'sleep' | 'exercise'; value: number }
 export interface HealthLogInput { logDate: string; type: HealthLog['type']; value: number }
 
-export interface Review { id: string; reviewDate: string; mood: number; summary: string; planTomorrow: string; updatedAt: string }
+export interface Review {
+  id: string
+  reviewDate: string
+  mood: number
+  achievements: string
+  reflection: string
+  gratitude: string
+  learnings: string
+  summary: string
+  planTomorrow: string
+  score: number | null  // 今日评分 1-10，可留空
+  updatedAt: string
+}
+
+/** 学习目标：进度条 + 截止日 + 完成归档（v1.5 学习管理增强） */
+export interface StudyGoal {
+  id: string
+  title: string
+  target: number      // 目标量（默认 100）
+  progress: number    // 当前进度
+  deadline: string | null  // YYYY-MM-DD
+  status: 'active' | 'done'
+  note: string | null
+}
+export interface StudyGoalInput { title: string; target?: number; deadline?: string | null; note?: string | null }
 
 /** 今日热点订阅配置：空 sourceIds = 订阅全部源 */
 export interface Subscriptions { sourceIds: string[]; topics: string[] }
@@ -89,6 +114,11 @@ export interface WorkbenchRepository {
   updateExam(id: string, patch: Partial<Exam>): Promise<Exam>
   deleteExam(id: string): Promise<void>
 
+  listStudyGoals(): Promise<StudyGoal[]>
+  createStudyGoal(input: StudyGoalInput): Promise<StudyGoal>
+  updateStudyGoal(id: string, patch: Partial<StudyGoal>): Promise<StudyGoal>
+  deleteStudyGoal(id: string): Promise<void>
+
   listNotes(): Promise<Note[]>
   createNote(content: string, tag?: string | null): Promise<Note>
   updateNote(id: string, patch: Partial<Note>): Promise<Note>
@@ -110,7 +140,7 @@ export interface WorkbenchRepository {
   deleteHealthLog(id: string): Promise<void>
 
   listReviews(): Promise<Review[]>
-  upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string }): Promise<Review>
+  upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string; achievements?: string; reflection?: string; gratitude?: string; learnings?: string; score?: number | null }): Promise<Review>
 
   exportAll(): Promise<BackupTables>
   getSubscriptions(): Promise<Subscriptions>
@@ -128,13 +158,14 @@ export interface WorkbenchRepository {
   importAll(tables: BackupTables): Promise<void>
 }
 
-/** 备份的 10 张表数据（导出/导入闭环的载体） */
+/** 备份的 11 张表数据（导出/导入闭环的载体） */
 export interface BackupTables {
   tasks: Task[]
   habits: Habit[]
   habitLogs: HabitLog[]
   focusSessions: FocusSession[]
   exams: Exam[]
+  studyGoals: StudyGoal[]
   notes: Note[]
   papers: Paper[]
   folders: Folder[]

@@ -13,8 +13,9 @@ export default function OverviewHome() {
   const { data: tasks, isLoading: tl } = useTasks()
   const { data: exams } = useExamsSoon()
   const nextExam = exams?.[0]
-  const list = todayTasks(tasks ?? [], todayStr()).slice(0, 5)
-  const focusList = (tasks ?? []).filter(t => t.focus && t.status !== 'done').slice(0, 3)
+  const today = todayStr()
+  const list = todayTasks(tasks ?? [], today).slice(0, 5)
+  const focusList = (tasks ?? []).filter(t => t.focus && t.focusDate === today && t.status !== 'done').slice(0, 3)
 
   return (
     <div className="md:hidden mx-auto max-w-md space-y-3">
@@ -45,18 +46,18 @@ export default function OverviewHome() {
             </div>
           ))}
       </div>
-      {/* 最近考试 */}
+      {/* 最近考试 → 学习管理 */}
       {nextExam && (
-        <div className="bg-card border border-border rounded-2xl p-4">
+        <Link to="/study" className="block bg-card border border-border rounded-2xl p-4 transition-all active:scale-[0.98]">
           <div className="text-xs text-muted-foreground">最近考试</div>
           <div className="text-2xl font-extrabold font-numeric mt-1">{daysUntil(nextExam.examDate)}<span className="text-sm font-normal text-muted-foreground ml-1">天后 · {nextExam.title}</span></div>
-        </div>
+        </Link>
       )}
-      {/* 习惯热力 */}
-      <div className="bg-card border border-border rounded-2xl p-4">
+      {/* 习惯热力 → 运动健康 */}
+      <Link to="/health" className="block bg-card border border-border rounded-2xl p-4 transition-all active:scale-[0.98]">
         <div className="flex items-center gap-2 text-sm font-semibold mb-2"><Flame className="size-4 text-primary" strokeWidth={1.7} />习惯打卡</div>
         <MiniHeatmap />
-      </div>
+      </Link>
       {/* 快捷入口 */}
       <MobileHomeEntries />
       <WeeklyTrendCard />

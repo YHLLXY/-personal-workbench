@@ -34,7 +34,6 @@ export function NotesCard() {
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><Sparkles className="size-4 text-primary" strokeWidth={1.7} />灵感速记</CardTitle>
-        <Link to="/notes" className="text-xs text-muted-foreground hover:text-primary"><ArrowRight className="size-3.5" /></Link>
       </CardHeader>
       <CardContent className="space-y-2">
         {recent.length === 0 ? <p className="text-xs text-muted-foreground py-2">暂无速记</p> : recent.map(n => (

@@ -1,5 +1,4 @@
-import { Link } from 'react-router-dom'
-import { RotateCcw, ArrowRight } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import { useTodayReview } from './api'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 
@@ -9,7 +8,6 @@ export function ReviewCard() {
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><RotateCcw className="size-4 text-primary" strokeWidth={1.7} />今日复盘</CardTitle>
-        <Link to="/review" className="text-xs text-muted-foreground hover:text-primary"><ArrowRight className="size-3.5" /></Link>
       </CardHeader>
       <CardContent>
         {review ? (

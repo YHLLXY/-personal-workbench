@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { CalendarDays, ChevronDown, ChevronUp, ClipboardList, Sparkles } from 'lucide-react'
 import { useTasks, useTaskMutations, todayTasks } from '@/modules/overview/api'
 import { useExamsSoon } from '@/modules/study/api'
-import { todayStr } from '@/lib/db/types'
+import { todayStr, localDateOfISO } from '@/lib/db/types'
 import { CHANGELOG } from './changelog'
 
 const STORAGE_KEY = 'wb:daily-summary-shown'
@@ -55,8 +55,9 @@ export default function DailySummary() {
     setOpen(true)
   }, [tasksLoading, examsLoading, tasks, exams, today])
 
+  // 今日已完成：按实际完成日期统计（逾期任务今天完成、焦点任务等都能计入）
   const doneToday = useMemo(
-    () => (tasks ?? []).filter(t => t.dueDate === today && t.status === 'done').length,
+    () => (tasks ?? []).filter(t => t.status === 'done' && t.completedAt && localDateOfISO(t.completedAt) === today).length,
     [tasks, today],
   )
   const pendingList = useMemo(() => todayTasks(tasks ?? [], today), [tasks, today])

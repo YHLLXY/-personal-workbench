@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { LocalRepository } from '../src/lib/db/local-repository'
+import { localDateOfISO } from '../src/lib/db/types'
 
 describe('LocalRepository', () => {
   let repo: LocalRepository
@@ -10,6 +11,26 @@ describe('LocalRepository', () => {
     expect(t.id).toBeTruthy()
     expect(t.status).toBe('todo')
     expect((await repo.listTasks())[0].title).toBe('完成作业')
+  })
+
+  it('createTask 支持 focusDate 传入与缺省回落 null', async () => {
+    const withDate = await repo.createTask({ title: '焦点任务', focus: true, focusDate: '2026-08-04' })
+    expect(withDate.focusDate).toBe('2026-08-04')
+    const without = await repo.createTask({ title: '普通任务' })
+    expect(without.focusDate).toBeNull()
+  })
+
+  it('旧数据 focus=true 无 focusDate 读取时按创建日补齐（惰性迁移）', async () => {
+    localStorage.setItem('wb:tasks', JSON.stringify([{ id: 'old1', title: '旧焦点', focus: true, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-03T16:00:00.000Z' }]))
+    const tasks = await repo.listTasks()
+    expect(tasks[0].focusDate).toBe(localDateOfISO('2026-08-03T16:00:00.000Z'))
+  })
+
+  it('惰性迁移不落库（读取不改变 localStorage 原值）', async () => {
+    const raw = JSON.stringify([{ id: 'old1', title: '旧焦点', focus: true, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-03T16:00:00.000Z' }])
+    localStorage.setItem('wb:tasks', raw)
+    await repo.listTasks()
+    expect(localStorage.getItem('wb:tasks')).toBe(raw)
   })
 
   it('完成任务自动记录 completedAt', async () => {
@@ -32,6 +53,32 @@ describe('LocalRepository', () => {
     const rs = await repo.listReviews()
     expect(rs).toHaveLength(1)
     expect(rs[0].summary).toBe('很好')
+  })
+
+  it('upsertReview 支持丰富字段（成就/反思/感恩/收获/评分）', async () => {
+    await repo.upsertReview('2026-08-04', { mood: 5, achievements: '写完论文', reflection: '拖延', gratitude: '朋友', learnings: '番茄钟', summary: '充实', planTomorrow: '早睡', score: 8 })
+    const r = (await repo.listReviews())[0]
+    expect(r.achievements).toBe('写完论文')
+    expect(r.reflection).toBe('拖延')
+    expect(r.gratitude).toBe('朋友')
+    expect(r.learnings).toBe('番茄钟')
+    expect(r.score).toBe(8)
+    // 未提供时回落默认
+    await repo.upsertReview('2026-08-05', { summary: 'x' })
+    const r2 = (await repo.listReviews()).find(x => x.reviewDate === '2026-08-05')!
+    expect(r2.achievements).toBe('')
+    expect(r2.score).toBeNull()
+  })
+
+  it('旧复盘行（无新字段）读取时补默认值', async () => {
+    localStorage.setItem('wb:reviews', JSON.stringify([{ id: 'old', reviewDate: '2026-08-03', mood: 3, summary: '旧', planTomorrow: '', updatedAt: '2026-08-03T12:00:00.000Z' }]))
+    const r = (await repo.listReviews())[0]
+    expect(r.achievements).toBe('')
+    expect(r.reflection).toBe('')
+    expect(r.gratitude).toBe('')
+    expect(r.learnings).toBe('')
+    expect(r.score).toBeNull()
+    expect(r.summary).toBe('旧')
   })
 
   it('重命名已完成任务不丢失 completedAt', async () => {
@@ -180,16 +227,59 @@ describe('定时提醒（2026-08-08）', () => {
   })
 })
 
+describe('学习目标（v1.5）', () => {
+  let repo: LocalRepository
+  beforeEach(() => { localStorage.clear(); repo = new LocalRepository() })
+
+  it('createStudyGoal 缺省回落 target=100 / progress=0 / active / null', async () => {
+    const g = await repo.createStudyGoal({ title: '背单词' })
+    expect(g.target).toBe(100)
+    expect(g.progress).toBe(0)
+    expect(g.status).toBe('active')
+    expect(g.deadline).toBeNull()
+    expect(g.note).toBeNull()
+    const withAll = await repo.createStudyGoal({ title: '刷题', target: 50, deadline: '2026-08-20', note: '每天 5 题' })
+    expect(withAll.target).toBe(50)
+    expect(withAll.deadline).toBe('2026-08-20')
+    expect(withAll.note).toBe('每天 5 题')
+  })
+
+  it('updateStudyGoal 进度步进与完成归档', async () => {
+    const g = await repo.createStudyGoal({ title: '刷题', target: 10 })
+    const p1 = await repo.updateStudyGoal(g.id, { progress: 3 })
+    expect(p1.progress).toBe(3)
+    const done = await repo.updateStudyGoal(g.id, { status: 'done' })
+    expect(done.status).toBe('done')
+    expect((await repo.listStudyGoals())[0].status).toBe('done')
+  })
+
+  it('deleteStudyGoal 删除', async () => {
+    const g = await repo.createStudyGoal({ title: '临时' })
+    await repo.deleteStudyGoal(g.id)
+    expect(await repo.listStudyGoals()).toHaveLength(0)
+  })
+
+  it('importAll 兼容旧备份：缺 studyGoals key 不报错且置空', async () => {
+    await repo.createStudyGoal({ title: '将被覆盖' })
+    const legacy = {
+      tasks: [], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [],
+    } as unknown as import('../src/lib/db/types').BackupTables
+    await repo.importAll(legacy)
+    expect(await repo.listStudyGoals()).toEqual([])
+  })
+})
+
 describe('exportAll / importAll', () => {
   let repo: LocalRepository
   beforeEach(() => { localStorage.clear(); repo = new LocalRepository() })
 
-  it('exportAll 导出 10 张表，往返 importAll 后数据一致', async () => {
+  it('exportAll 导出 11 张表，往返 importAll 后数据一致', async () => {
     const t = await repo.createTask({ title: '备份我' })
     const h = await repo.createHabit({ name: '喝水' })
     await repo.setHabitLog(h.id, '2026-08-05', 2)
     await repo.createFocusSession(25, '深度工作')
     await repo.createExam({ title: '期末', examDate: '2026-09-01' })
+    await repo.createStudyGoal({ title: '刷题', target: 100, deadline: '2026-09-01', note: '每天 5 题' })
     await repo.createNote('灵感')
     await repo.createPaper({ title: '论文', authors: 'a', arxivId: null, url: null, status: 'want', rating: null, note: null })
     await repo.createFolder({ name: '机器学习' })
@@ -198,7 +288,7 @@ describe('exportAll / importAll', () => {
 
     const tables = await repo.exportAll()
     expect(Object.keys(tables).sort()).toEqual(
-      ['tasks', 'habits', 'habitLogs', 'focusSessions', 'exams', 'notes', 'papers', 'folders', 'healthLogs', 'reviews'].sort(),
+      ['tasks', 'habits', 'habitLogs', 'focusSessions', 'exams', 'studyGoals', 'notes', 'papers', 'folders', 'healthLogs', 'reviews'].sort(),
     )
 
     localStorage.clear()
@@ -210,6 +300,7 @@ describe('exportAll / importAll', () => {
     expect(await fresh.listHabitLogs()).toEqual(await repo.listHabitLogs())
     expect(await fresh.listFocusSessions()).toEqual(await repo.listFocusSessions())
     expect(await fresh.listExams()).toEqual(await repo.listExams())
+    expect(await fresh.listStudyGoals()).toEqual(await repo.listStudyGoals())
     expect(await fresh.listNotes()).toEqual(await repo.listNotes())
     expect(await fresh.listPapers()).toEqual(await repo.listPapers())
     expect(await fresh.listFolders()).toEqual(await repo.listFolders())
@@ -220,7 +311,7 @@ describe('exportAll / importAll', () => {
 
   it('importAll 覆盖式替换旧数据', async () => {
     await repo.createTask({ title: '旧任务' })
-    await repo.importAll({ tasks: [{ id: 'n1', title: '新任务', focus: false, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [] })
+    await repo.importAll({ tasks: [{ id: 'n1', title: '新任务', focus: false, focusDate: null, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }], habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [] })
     const tasks = await repo.listTasks()
     expect(tasks).toHaveLength(1)
     expect(tasks[0].title).toBe('新任务')
@@ -236,7 +327,7 @@ describe('exportAll / importAll', () => {
       if (key === 'wb:habits') throw new DOMException('quota', 'QuotaExceededError')
       realSetItem.call(this, key, value)
     })
-    await expect(repo.importAll({ tasks: [], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [] })).rejects.toThrow()
+    await expect(repo.importAll({ tasks: [], habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [] })).rejects.toThrow()
     spy.mockRestore()
     expect(await repo.exportAll()).toEqual(before)
   })

@@ -15,7 +15,7 @@ export default function Health() {
       <h1 className="text-xl font-bold mb-1">运动健康</h1>
       <p className="text-xs text-muted-foreground mb-4">习惯打卡 · 体重 / 睡眠 / 运动记录</p>
       <Tabs defaultValue="checkin">
-        <TabsList>
+        <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="checkin">今日打卡</TabsTrigger>
           <TabsTrigger value="habits">习惯管理</TabsTrigger>
           <TabsTrigger value="records">身体记录</TabsTrigger>
@@ -67,11 +67,11 @@ function RecordsPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {([['weight', '体重'], ['sleep', '睡眠'], ['exercise', '运动']] as const).map(([t, label]) => (
           <button key={t} onClick={() => { setType(t); setValue('') }} className={cn('text-xs px-3 py-1.5 rounded-full border', type === t ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground')}>{label}</button>
         ))}
-        <Input type="number" step="0.1" min="0" max={type === 'sleep' ? 24 : undefined} value={value} onChange={e => setValue(e.target.value)} placeholder={type === 'weight' ? 'kg' : type === 'sleep' ? '小时' : '分钟'} className="w-24 h-8 text-sm ml-auto" />
+        <Input type="number" step="0.1" min="0" max={type === 'sleep' ? 24 : undefined} value={value} onChange={e => setValue(e.target.value)} placeholder={type === 'weight' ? 'kg' : type === 'sleep' ? '小时' : '分钟'} className="flex-1 min-w-24 h-8 text-sm" />
         <Button size="sm" disabled={!value || Number(value) <= 0} onClick={() => { create.mutate({ logDate: todayStr(), type, value: Number(value) }, { onSuccess: () => { setValue(''); toast.success('已记录') } }) }}>记录</Button>
       </div>
       <div className="bg-card border border-border rounded-2xl divide-y divide-border/70">

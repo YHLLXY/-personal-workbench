@@ -40,10 +40,14 @@ export function useTaskMutations() {
   }
 }
 
-/** 今日任务（含过期未完成） */
+/** 今日任务（今日到期 + 今日焦点 + 已过期未完成，不含 done） */
 export function todayTasks(tasks: Task[], today: string): Task[] {
   return tasks
-    .filter(t => t.status !== 'done' && (t.dueDate === today || t.focus))
+    .filter(t => t.status !== 'done' && (t.dueDate === today || (t.focus && t.focusDate === today) || (t.dueDate && t.dueDate < today)))
     .sort((a, b) => Number(b.focus) - Number(a.focus) || priorityRank(a) - priorityRank(b))
+}
+/** 已过期未完成任务（顺延/逾期区用） */
+export function overdueTasks(tasks: Task[], today: string): Task[] {
+  return tasks.filter(t => t.status !== 'done' && t.dueDate !== null && t.dueDate < today)
 }
 function priorityRank(t: Task) { return t.priority === 'high' ? 0 : t.priority === 'medium' ? 1 : 2 }

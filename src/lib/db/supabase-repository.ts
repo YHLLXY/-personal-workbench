@@ -1,12 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
-import { genId, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind } from './types'
+import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind } from './types'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
 type Row = Record<string, unknown>
 
 function taskFromRow(r: Row): Task {
-  return { id: String(r.id), title: String(r.title), focus: Boolean(r.focus), priority: r.priority as Task['priority'], status: r.status as Task['status'], dueDate: r.due_date as string | null, dueTime: r.due_time as string | null, tags: (r.tags as string[]) ?? [], sort: Number(r.sort ?? 0), completedAt: r.completed_at ? new Date(String(r.completed_at)).toISOString() : null, createdAt: String(r.created_at) }
+  const t: Task = { id: String(r.id), title: String(r.title), focus: Boolean(r.focus), priority: r.priority as Task['priority'], status: r.status as Task['status'], dueDate: r.due_date as string | null, dueTime: r.due_time as string | null, focusDate: (r.focus_date as string | null) ?? null, tags: (r.tags as string[]) ?? [], sort: Number(r.sort ?? 0), completedAt: r.completed_at ? new Date(String(r.completed_at)).toISOString() : null, createdAt: String(r.created_at) }
+  // 惰性迁移：老数据 focus=true 但无 focus_date → 绑定到创建日（本地时区），焦点任务不再永久显示（勿用 SQL 回填）
+  if (t.focus && !t.focusDate) t.focusDate = localDateOfISO(t.createdAt)
+  return t
 }
 function habitFromRow(r: Row): Habit { return { id: String(r.id), name: String(r.name), icon: String(r.icon), color: String(r.color), targetPerDay: Number(r.target_per_day), active: Boolean(r.active), createdAt: String(r.created_at) } }
 function logFromRow(r: Row): HabitLog { return { id: String(r.id), habitId: String(r.habit_id), logDate: String(r.log_date), count: Number(r.count) } }
@@ -28,11 +31,24 @@ function paperFromRow(r: Row): Paper {
     source: r.source as string | null,
   }
 }
+function goalFromRow(r: Row): StudyGoal {
+  return { id: String(r.id), title: String(r.title), target: Number(r.target ?? 100), progress: Number(r.progress ?? 0), deadline: r.deadline as string | null, status: r.status as StudyGoal['status'] ?? 'active', note: r.note as string | null }
+}
 function folderFromRow(r: Row): Folder {
   return { id: String(r.id), name: String(r.name), parentId: r.parent_id as string | null, sort: Number(r.sort ?? 0) }
 }
 function healthFromRow(r: Row): HealthLog { return { id: String(r.id), logDate: String(r.log_date), type: r.type as HealthLog['type'], value: Number(r.value) } }
-function reviewFromRow(r: Row): Review { return { id: String(r.id), reviewDate: String(r.review_date), mood: Number(r.mood), summary: String(r.summary), planTomorrow: String(r.plan_tomorrow), updatedAt: String(r.updated_at) } }
+function reviewFromRow(r: Row): Review {
+  // 新字段 ?? '' 兜底：迁移 005 之前的老行没有这些列值，读取不崩溃
+  return {
+    id: String(r.id), reviewDate: String(r.review_date), mood: Number(r.mood),
+    achievements: String(r.achievements ?? ''), reflection: String(r.reflection ?? ''),
+    gratitude: String(r.gratitude ?? ''), learnings: String(r.learnings ?? ''),
+    summary: String(r.summary), planTomorrow: String(r.plan_tomorrow),
+    score: r.score == null ? null : Number(r.score),
+    updatedAt: String(r.updated_at),
+  }
+}
 function reminderFromRow(r: Row): Reminder {
   return { id: String(r.id), refType: r.ref_type as Reminder['refType'], refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, dismissedAt: r.dismissed_at ? String(r.dismissed_at) : null, createdAt: String(r.created_at) }
 }
@@ -40,29 +56,30 @@ function pushSubFromRow(r: Row): PushSubscriptionRow {
   return { id: String(r.id), endpoint: String(r.endpoint), keysP256dh: String(r.keys_p256dh), keysAuth: String(r.keys_auth), userAgent: r.user_agent as string | null, createdAt: String(r.created_at) }
 }
 
-function taskToRow(t: Task) { return { id: t.id, title: t.title, focus: t.focus, priority: t.priority, status: t.status, due_date: t.dueDate, due_time: t.dueTime, tags: t.tags, sort: t.sort, completed_at: t.completedAt, created_at: t.createdAt } }
+function taskToRow(t: Task) { return { id: t.id, title: t.title, focus: t.focus, priority: t.priority, status: t.status, due_date: t.dueDate, due_time: t.dueTime, focus_date: t.focusDate, tags: t.tags, sort: t.sort, completed_at: t.completedAt, created_at: t.createdAt } }
 function habitToRow(h: Habit) { return { id: h.id, name: h.name, icon: h.icon, color: h.color, target_per_day: h.targetPerDay, active: h.active, created_at: h.createdAt } }
 function logToRow(l: HabitLog) { return { id: l.id, habit_id: l.habitId, log_date: l.logDate, count: l.count } }
 function focusToRow(s: FocusSession) { return { id: s.id, start_at: s.startAt, minutes: s.minutes, note: s.note } }
 function examToRow(e: Exam) { return { id: e.id, title: e.title, exam_date: e.examDate, exam_time: e.examTime, subject: e.subject, note: e.note, created_at: e.createdAt } }
 function noteToRow(n: Note) { return { id: n.id, content: n.content, tag: n.tag, archived: n.archived, created_at: n.createdAt, updated_at: n.updatedAt } }
 function paperToRow(p: Paper) { return { id: p.id, title: p.title, authors: p.authors, arxiv_id: p.arxivId, url: p.url, status: p.status, rating: p.rating, note: p.note, created_at: p.createdAt, type: p.type ?? 'paper', folder_id: p.folderId ?? null, tags: p.tags ?? [], content: p.content ?? null, summary: p.summary ?? null, keywords: p.keywords ?? [], source: p.source ?? null } }
+function goalToRow(g: StudyGoal) { return { id: g.id, title: g.title, target: g.target, progress: g.progress, deadline: g.deadline, status: g.status, note: g.note } }
 function folderToRow(f: Folder) { return { id: f.id, name: f.name, parent_id: f.parentId, sort: f.sort } }
 function healthToRow(l: HealthLog) { return { id: l.id, log_date: l.logDate, type: l.type, value: l.value } }
-function reviewToRow(r: Review) { return { id: r.id, review_date: r.reviewDate, mood: r.mood, summary: r.summary, plan_tomorrow: r.planTomorrow, updated_at: r.updatedAt } }
+function reviewToRow(r: Review) { return { id: r.id, review_date: r.reviewDate, mood: r.mood, achievements: r.achievements, reflection: r.reflection, gratitude: r.gratitude, learnings: r.learnings, summary: r.summary, plan_tomorrow: r.planTomorrow, score: r.score, updated_at: r.updatedAt } }
 
 /** 表名映射（备份表 -> Supabase 表） */
 const TABLES: Record<keyof BackupTables, string> = {
   tasks: 'wb_tasks', habits: 'wb_habits', habitLogs: 'wb_habit_logs', focusSessions: 'wb_focus_sessions',
-  exams: 'wb_exams', notes: 'wb_notes', papers: 'wb_papers', folders: 'wb_folders',
+  exams: 'wb_exams', studyGoals: 'wb_study_goals', notes: 'wb_notes', papers: 'wb_papers', folders: 'wb_folders',
   healthLogs: 'wb_health_logs', reviews: 'wb_reviews',
 }
 
 const toRows: { [K in keyof BackupTables]: (rows: BackupTables[K]) => Record<string, unknown>[] } = {
   tasks: rs => rs.map(taskToRow), habits: rs => rs.map(habitToRow), habitLogs: rs => rs.map(logToRow),
-  focusSessions: rs => rs.map(focusToRow), exams: rs => rs.map(examToRow), notes: rs => rs.map(noteToRow),
-  papers: rs => rs.map(paperToRow), folders: rs => rs.map(folderToRow), healthLogs: rs => rs.map(healthToRow),
-  reviews: rs => rs.map(reviewToRow),
+  focusSessions: rs => rs.map(focusToRow), exams: rs => rs.map(examToRow), studyGoals: rs => rs.map(goalToRow),
+  notes: rs => rs.map(noteToRow), papers: rs => rs.map(paperToRow), folders: rs => rs.map(folderToRow),
+  healthLogs: rs => rs.map(healthToRow), reviews: rs => rs.map(reviewToRow),
 }
 
 function toSnake<K extends keyof BackupTables>(key: K, rows: BackupTables[K]): Record<string, unknown>[] {
@@ -78,12 +95,12 @@ export class SupabaseRepository implements WorkbenchRepository {
 
   async listTasks() { const { data, error } = await this.sb.from('wb_tasks').select('*').order('sort', { ascending: false }); if (error) throw error; return (data ?? []).map(taskFromRow) }
   async createTask(input: TaskInput) {
-    const { data, error } = await this.sb.from('wb_tasks').insert({ id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', due_date: input.dueDate ?? null, due_time: input.dueTime ?? null, tags: input.tags ?? [], sort: Date.now() }).select().single()
+    const { data, error } = await this.sb.from('wb_tasks').insert({ id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', due_date: input.dueDate ?? null, due_time: input.dueTime ?? null, focus_date: input.focusDate ?? null, tags: input.tags ?? [], sort: Date.now() }).select().single()
     if (error) throw error; return taskFromRow(data)
   }
   async updateTask(id: string, p: Partial<Task>) {
     // 注意：去掉冗余的 p.status !== 'done'（TS2367：第一分支已排除 'done'，后续比较类型无重叠；与 local-repository 逻辑一致）
-    const { data, error } = await this.sb.from('wb_tasks').update({ title: p.title, focus: p.focus, priority: p.priority, status: p.status, due_date: p.dueDate, due_time: p.dueTime, tags: p.tags, sort: p.sort, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt }).eq('id', id).select().single()
+    const { data, error } = await this.sb.from('wb_tasks').update({ title: p.title, focus: p.focus, priority: p.priority, status: p.status, due_date: p.dueDate, due_time: p.dueTime, focus_date: p.focusDate, tags: p.tags, sort: p.sort, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt }).eq('id', id).select().single()
     if (error) throw error; return taskFromRow(data)
   }
   async deleteTask(id: string) { const { error } = await this.sb.from('wb_tasks').delete().eq('id', id); if (error) throw error }
@@ -115,6 +132,17 @@ export class SupabaseRepository implements WorkbenchRepository {
   async createExam(input: ExamInput) { const { data, error } = await this.sb.from('wb_exams').insert({ id: genId(), title: input.title, exam_date: input.examDate, exam_time: input.examTime ?? null, subject: input.subject ?? null, note: input.note ?? null }).select().single(); if (error) throw error; return examFromRow(data) }
   async updateExam(id: string, p: Partial<Exam>) { const { data, error } = await this.sb.from('wb_exams').update({ title: p.title, exam_date: p.examDate, exam_time: p.examTime, subject: p.subject, note: p.note }).eq('id', id).select().single(); if (error) throw error; return examFromRow(data) }
   async deleteExam(id: string) { const { error } = await this.sb.from('wb_exams').delete().eq('id', id); if (error) throw error }
+
+  async listStudyGoals() { const { data, error } = await this.sb.from('wb_study_goals').select('*').order('created_at'); if (error) throw error; return (data ?? []).map(goalFromRow) }
+  async createStudyGoal(input: StudyGoalInput) {
+    const { data, error } = await this.sb.from('wb_study_goals').insert({ id: genId(), title: input.title, target: input.target ?? 100, progress: 0, deadline: input.deadline ?? null, status: 'active', note: input.note ?? null }).select().single()
+    if (error) throw error; return goalFromRow(data)
+  }
+  async updateStudyGoal(id: string, p: Partial<StudyGoal>) {
+    const { data, error } = await this.sb.from('wb_study_goals').update({ title: p.title, target: p.target, progress: p.progress, deadline: p.deadline, status: p.status, note: p.note }).eq('id', id).select().single()
+    if (error) throw error; return goalFromRow(data)
+  }
+  async deleteStudyGoal(id: string) { const { error } = await this.sb.from('wb_study_goals').delete().eq('id', id); if (error) throw error }
 
   async listNotes() { const { data, error } = await this.sb.from('wb_notes').select('*').order('updated_at', { ascending: false }); if (error) throw error; return (data ?? []).map(noteFromRow) }
   async createNote(content: string, tag?: string | null) { const { data, error } = await this.sb.from('wb_notes').insert({ id: genId(), content, tag: tag ?? null }).select().single(); if (error) throw error; return noteFromRow(data) }
@@ -169,26 +197,27 @@ export class SupabaseRepository implements WorkbenchRepository {
   async deleteHealthLog(id: string) { const { error } = await this.sb.from('wb_health_logs').delete().eq('id', id); if (error) throw error }
 
   async listReviews() { const { data, error } = await this.sb.from('wb_reviews').select('*'); if (error) throw error; return (data ?? []).map(reviewFromRow) }
-  async upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string }) {
+  async upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string; achievements?: string; reflection?: string; gratitude?: string; learnings?: string; score?: number | null }) {
     // 注意：迁移中 id 无默认值，insert 载荷必须带 id（质量审阅发现 I-2 修正）
     // 注意：载荷必须 snake_case（plan_tomorrow）——直接展开 patch 会把 planTomorrow 当列名触发 PGRST204 保存失败（2026-08-08 线上排障）
-    const { data, error } = await this.sb.from('wb_reviews').upsert({ id: genId(), review_date: reviewDate, mood: patch.mood, summary: patch.summary, plan_tomorrow: patch.planTomorrow }, { onConflict: 'user_id,review_date' }).select().single()
+    const { data, error } = await this.sb.from('wb_reviews').upsert({ id: genId(), review_date: reviewDate, mood: patch.mood, achievements: patch.achievements, reflection: patch.reflection, gratitude: patch.gratitude, learnings: patch.learnings, summary: patch.summary, plan_tomorrow: patch.planTomorrow, score: patch.score ?? null }, { onConflict: 'user_id,review_date' }).select().single()
     if (error) throw error; return reviewFromRow(data)
   }
 
   async exportAll() {
-    const [tasks, habits, habitLogs, focusSessions, exams, notes, papers, folders, healthLogs, reviews] = await Promise.all([
+    const [tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews] = await Promise.all([
       this.listTasks(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
-      this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(),
+      this.listStudyGoals(), this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(),
     ])
-    return { tasks, habits, habitLogs, focusSessions, exams, notes, papers, folders, healthLogs, reviews }
+    return { tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews }
   }
 
   async importAll(tables: BackupTables) {
     // 逐表独立 try：失败表报错，其余表保持已写入（幂等可重入）
     const errors: string[] = []
     await Promise.all((Object.keys(TABLES) as (keyof BackupTables)[]).map(async key => {
-      const rows = toSnake(key, tables[key])
+      // ?? [] 守卫：旧备份文件没有 studyGoals 等新 key 时按空表处理，不抛错
+      const rows = toSnake(key, tables[key] ?? [])
       try {
         // RLS 已限定 user_id = auth.uid()，delete().neq('id','') 安全清空本用户全部行
         const { error: delErr } = await this.sb.from(TABLES[key]).delete().neq('id', '')

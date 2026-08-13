@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { taskCompletionRate, totalFocusMinutes, formatMinutes, activeNoteCount, buildWeeklyTrend } from '../src/lib/stats'
 import type { Task, FocusSession, Note } from '../src/lib/db/types'
 
-const mkTask = (over: Partial<Task>): Task => ({ id: 'x', title: 't', focus: false, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z', ...over })
+const mkTask = (over: Partial<Task>): Task => ({ id: 'x', title: 't', focus: false, priority: 'low', status: 'todo', dueDate: null, dueTime: null, focusDate: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z', ...over })
 
 describe('stats', () => {
   it('taskCompletionRate：完成/总数/百分比', () => {

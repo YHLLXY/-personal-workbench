@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { isCloudMode } from '../lib/db'
 import { getSupabaseClient } from '../lib/db/supabase-client'
 import { AVATAR_COLORS, getLocalProfile, setLocalProfile, type Profile } from '../lib/profile'
@@ -33,6 +34,28 @@ function userFromSession(
   }
 }
 
+/** 已确认过别名的会话（user_id:phone），避免 onAuthStateChange 每次刷新都重复查库 */
+const aliasEnsured = new Set<string>()
+
+/**
+ * 手机号别名补齐（注册/登录成功后调用）：
+ * user_metadata 带 phone 且 wb_login_aliases 无该行 → RLS 插入本人行。
+ * 手机号登录（/api/resolve-phone）依赖此行解析邮箱。
+ * 表属认证域（本人 RLS），不进 WorkbenchRepository/BackupTables（防备份把别名带到另一账号）。
+ * 幂等 + 静默失败：他人已占用的手机号（PK 冲突）放弃补齐，不打断登录。
+ */
+async function ensurePhoneAlias(sb: SupabaseClient, user: { id: string; user_metadata?: Record<string, unknown> }): Promise<void> {
+  const phone = user.user_metadata?.phone
+  if (typeof phone !== 'string' || !phone) return
+  const key = `${user.id}:${phone}`
+  if (aliasEnsured.has(key)) return
+  aliasEnsured.add(key)
+  try {
+    const { data } = await sb.from('wb_login_aliases').select('phone').eq('phone', phone).maybeSingle()
+    if (!data) await sb.from('wb_login_aliases').insert({ phone, user_id: user.id })
+  } catch (err) { console.warn('ensurePhoneAlias failed', err) }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ user: null, loading: isCloudMode, signOut: async () => {}, updateProfile: async () => {} })
 
@@ -44,8 +67,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
     const sb = getSupabaseClient()
-    sb.auth.getSession().then(({ data }) => setState(s => ({ ...s, user: userFromSession(data.session?.user), loading: false }))).catch(() => setState(s => ({ ...s, user: null, loading: false })))
-    const { data: sub } = sb.auth.onAuthStateChange((_e, session) => setState(s => ({ ...s, user: userFromSession(session?.user), loading: false })))
+    sb.auth.getSession().then(({ data }) => {
+      const user = data.session?.user
+      setState(s => ({ ...s, user: userFromSession(user), loading: false }))
+      if (user) void ensurePhoneAlias(sb, user) // 登录后补齐手机号别名行（幂等）
+    }).catch(() => setState(s => ({ ...s, user: null, loading: false })))
+    const { data: sub } = sb.auth.onAuthStateChange((_e, session) => {
+      const user = session?.user
+      setState(s => ({ ...s, user: userFromSession(user), loading: false }))
+      if (user) void ensurePhoneAlias(sb, user)
+    })
     return () => sub.subscription.unsubscribe()
   }, [])
 
@@ -53,7 +84,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         ...state,
-        signOut: async () => { if (isCloudMode) await getSupabaseClient().auth.signOut() },
+        signOut: async () => {
+          if (isCloudMode) await getSupabaseClient().auth.signOut()
+          aliasEnsured.clear() // 退出后清缓存，下次登录重新确保别名
+        },
         updateProfile: async (data) => {
           if (!isCloudMode) {
             const next = { ...getLocalProfile(), ...data }
