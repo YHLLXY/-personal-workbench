@@ -64,6 +64,11 @@ describe('recentOverdue', () => {
     const tasks = [t({ id: 'a', dueDate: '2026-08-01' }), t({ id: 'b', dueDate: '2026-07-30' })]
     expect(recentOverdue(tasks, '2026-08-04', 3).map(x => x.id)).toEqual(['a'])
   })
+  it('跨月窗口边界：today=8-01 窗口起点回到 7 月（daysBefore 跨月正确）', () => {
+    const tasks = [t({ id: 'a', dueDate: '2026-07-29' }), t({ id: 'b', dueDate: '2026-07-28' })]
+    expect(recentOverdue(tasks, '2026-08-01', 3).map(x => x.id)).toEqual(['a'])
+    expect(oldOverdue(tasks, '2026-08-01', 3).map(x => x.id)).toEqual(['b'])
+  })
 })
 
 describe('oldOverdue', () => {

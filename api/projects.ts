@@ -68,7 +68,7 @@ function extractEmoji(md: string): string {
   return m?.[1] ?? '🚪'
 }
 
-/** `## 项目简介` 小节首段（跳过引用块），截断 120 字 */
+/** `## 项目简介` 小节首段（跳过引用块），净化 Markdown 链接后截断 120 字 */
 function extractSummary(body: string): string {
   const m = body.match(/##\s*项目简介\s*\r?\n([\s\S]*?)(?=\r?\n##\s|\r?\n---|\s*$)/)
   if (!m) return ''
@@ -77,8 +77,15 @@ function extractSummary(body: string): string {
     .map(l => l.trim())
     .filter(l => l && !l.startsWith('>'))
     .join(' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/<https?:\/\/[^>]+>/g, '')
     .replace(/\s+/g, ' ')
-  return text.slice(0, 120)
+    .trim()
+  if (text.length <= 120) return text
+  const cut = text.slice(0, 120)
+  // 避免把 Markdown 链接残片（[、](）截进摘要
+  const bad = Math.max(cut.lastIndexOf('['), cut.lastIndexOf(']('))
+  return bad > 60 ? cut.slice(0, bad).trimEnd() : cut
 }
 
 /** 门户口 Markdown → 项目摘要（frontmatter 缺字段时按默认值降级） */
@@ -155,15 +162,15 @@ async function fetchFromGithub(token: string): Promise<ProjectInfo[]> {
 
 export const FALLBACK_PROJECTS: ProjectInfo[] = [
   { name: 'Horizon', emoji: '🌅', phase: '进行中', stack: ['Python', 'uv', 'Docker'], aliases: ['AI 新闻雷达'], updatedAt: '2026-08-02', summary: 'AI 新闻雷达：7 类信息源同管线抓取（Hacker News/Reddit/Telegram/Twitter/GitHub/RSS/OpenBB），AI 打分过滤（0-10 分），生成中英双语日报并多渠道分发。' },
-  { name: 'couple', emoji: '🚪', phase: '进行中', stack: ['小程序'], aliases: ['情侣心愿小程序'], updatedAt: '2026-07-29', summary: '情侣互动小程序，含心愿系统、共同日记、积分系统等功能。' },
-  { name: '个人工作台', emoji: '🚪', phase: '进行中', stack: ['React 19', 'Vite', 'TypeScript', 'Tailwind', 'Supabase', 'Vercel'], aliases: ['工作台'], updatedAt: '2026-08-12', summary: '个人效率工作台 Web 应用（总览/待办/学习/番茄钟/热点/论文库/速记/健康/复盘 + 定时提醒通知），React + Vite + Supabase + Vercel 部署。' },
-  { name: '学生会交流平台', emoji: '🚪', phase: '进行中', stack: ['React 19', 'Vite', 'Ant Design', 'Supabase'], aliases: ['StudentHub'], updatedAt: '2026-08-04', summary: '学生会内部交流与管理平台（React 19 + Vite + TypeScript + Ant Design + Supabase），含任务管理、部门公告、部门论坛、活动抢票、权限管理、通知中心、数据埋点、PWA 等 13 个模块。' },
-  { name: '小挑', emoji: '🚪', phase: '进行中', stack: ['HTML', 'CSS', 'JavaScript'], aliases: ['AgriAgent', '丰稷智农'], updatedAt: '2026-07-29', summary: '基于农业智能体的数智农业咨询服务平台商业计划书 + 前端页面开发。' },
-  { name: '数学建模', emoji: '🚪', phase: '进行中', stack: ['Python', 'GAMM', 'DE'], aliases: ['数模'], updatedAt: '2026-07-29', summary: '数学建模竞赛相关，含光热发电定日镜场、蔬菜定价优化等项目。' },
-  { name: '本地模型测试', emoji: '🚪', phase: '进行中', stack: ['HTML', 'JavaScript'], aliases: ['贪吃蛇'], updatedAt: '2026-08-18', summary: '本地模型测试工作区，含贪吃蛇游戏原型（单 HTML 文件，浏览器直接运行）。' },
-  { name: '海报设计', emoji: '🚪', phase: '已完成', stack: ['AI 生成', '提示词'], aliases: ['海报'], updatedAt: '2026-07-29', summary: '招新海报提示词方案（用于 AI 生成海报），含多版提示词迭代。' },
+  { name: 'couple', emoji: '💑', phase: '进行中', stack: ['小程序'], aliases: ['情侣心愿小程序'], updatedAt: '2026-07-29', summary: '情侣互动小程序，含心愿系统、共同日记、积分系统等功能。' },
+  { name: '个人工作台', emoji: '🧭', phase: '进行中', stack: ['React 19', 'Vite', 'TypeScript', 'Tailwind', 'Supabase', 'Vercel'], aliases: ['工作台'], updatedAt: '2026-08-12', summary: '个人效率工作台 Web 应用（总览/待办/学习/番茄钟/热点/论文库/速记/健康/复盘 + 定时提醒通知），React + Vite + Supabase + Vercel 部署。' },
+  { name: '学生会交流平台', emoji: '🏛️', phase: '进行中', stack: ['React 19', 'Vite', 'Ant Design', 'Supabase'], aliases: ['StudentHub'], updatedAt: '2026-08-04', summary: '学生会内部交流与管理平台（React 19 + Vite + TypeScript + Ant Design + Supabase），含任务管理、部门公告、部门论坛、活动抢票、权限管理、通知中心、数据埋点、PWA 等 13 个模块。' },
+  { name: '小挑', emoji: '🌾', phase: '进行中', stack: ['HTML', 'CSS', 'JavaScript'], aliases: ['AgriAgent', '丰稷智农'], updatedAt: '2026-07-29', summary: '基于农业智能体的数智农业咨询服务平台商业计划书 + 前端页面开发。' },
+  { name: '数学建模', emoji: '📐', phase: '进行中', stack: ['Python', 'GAMM', 'DE'], aliases: ['数模'], updatedAt: '2026-07-29', summary: '数学建模竞赛相关，含光热发电定日镜场、蔬菜定价优化等项目。' },
+  { name: '本地模型测试', emoji: '🧪', phase: '进行中', stack: ['HTML', 'JavaScript'], aliases: ['贪吃蛇'], updatedAt: '2026-08-18', summary: '本地模型测试工作区，含贪吃蛇游戏原型（单 HTML 文件，浏览器直接运行）。' },
+  { name: '海报设计', emoji: '🎨', phase: '已完成', stack: ['AI 生成', '提示词'], aliases: ['海报'], updatedAt: '2026-07-29', summary: '招新海报提示词方案（用于 AI 生成海报），含多版提示词迭代。' },
   { name: '自我画像', emoji: '🖼️', phase: '进行中', stack: ['PWA', 'IndexedDB', 'Service Worker'], aliases: ['ME', '自我认知测评'], updatedAt: '2026-08-03', summary: '自我认知测评 PWA：400 题 / 6 领域 × 3 层次 / 8 题型 / 11 心理学框架评分 / 虚拟滚动 / IndexedDB / 报告页。' },
-  { name: '视频文案提取器', emoji: '🚪', phase: '进行中', stack: ['Python', 'yt-dlp', 'FunASR', 'GPU'], aliases: ['文案提取'], updatedAt: '2026-08-12', summary: '视频文案提取工具：抖音/B站/YouTube 视频下载（yt-dlp）+ 本地转写（FunASR SenseVoiceSmall，GPU）。' },
+  { name: '视频文案提取器', emoji: '🎬', phase: '进行中', stack: ['Python', 'yt-dlp', 'FunASR', 'GPU'], aliases: ['文案提取'], updatedAt: '2026-08-12', summary: '视频文案提取工具：抖音/B站/YouTube 视频下载（yt-dlp）+ 本地转写（FunASR SenseVoiceSmall，GPU）。' },
 ]
 
 // ========== 函数入口 ==========

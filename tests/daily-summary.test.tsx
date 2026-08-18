@@ -31,6 +31,7 @@ import DailySummary from '../src/app/daily-summary'
 import { CHANGELOG } from '../src/app/changelog'
 import { repository } from '@/lib/db'
 
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 function renderSummary() {
   return render(
@@ -75,8 +76,8 @@ describe('DailySummary', () => {
     expect(screen.getByText(/14:00/)).toBeTruthy()
     expect(screen.getByText(/高数期末/)).toBeTruthy()
     expect(screen.getByText(/3 天后/)).toBeTruthy()
-    expect(screen.getByText(new RegExp(CHANGELOG[0].version))).toBeTruthy()
-    expect(screen.getByText(new RegExp(CHANGELOG[0].title))).toBeTruthy()
+    expect(screen.getByText(new RegExp(esc(CHANGELOG[0].version)))).toBeTruthy()
+    expect(screen.getByText(new RegExp(esc(CHANGELOG[0].title)))).toBeTruthy()
   })
 
   it('勾选未完成任务调用 updateTask 标记完成', async () => {
