@@ -62,9 +62,9 @@ function parseFrontmatter(fm: string): Fm {
   return out
 }
 
-/** 标题行 `# 🚪 名称` 取首个 emoji 作为卡片图标，缺省 🚪 */
+/** 标题行 `# 🚪 名称` 取首个 emoji 作为卡片图标，缺省 🚪（m 标志匹配行首，标题在 frontmatter 之后） */
 function extractEmoji(md: string): string {
-  const m = md.match(/^#\s*(\p{Extended_Pictographic})/u)
+  const m = md.match(/^#\s*(\p{Extended_Pictographic})/um)
   return m?.[1] ?? '🚪'
 }
 

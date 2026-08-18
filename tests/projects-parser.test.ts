@@ -63,6 +63,20 @@ describe('parseGateway', () => {
     expect(parseGateway('# 🌅 Horizon — AI 新闻雷达', 'h').emoji).toBe('🌅')
     expect(parseGateway('# 🥬 蔬菜定价 — 门户口', 'v').emoji).toBe('🥬')
   })
+  it('标题在 frontmatter 之后仍能提取 emoji（回归：真实门户口标题非文件首行）', () => {
+    const md = `---
+project: "Horizon"
+phase: "进行中"
+---
+
+# 🌅 Horizon — AI 新闻雷达
+
+## 项目简介
+
+AI 新闻雷达。
+`
+    expect(parseGateway(md, 'Horizon').emoji).toBe('🌅')
+  })
   it('简介只取首段并截断 120 字', () => {
     const md = `---\nproject: "p"\n---\n\n## 项目简介\n\n${'长'.repeat(200)}\n\n第二段不取\n\n## 状态\n\n- x`
     const p = parseGateway(md, 'p')
