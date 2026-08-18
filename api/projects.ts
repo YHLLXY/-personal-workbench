@@ -116,6 +116,13 @@ async function ghJson(path: string, token: string, signal?: AbortSignal): Promis
   return r.json() as Promise<GhEntry[]>
 }
 
+/** 单文件 Contents 请求（返回含 base64 content 的对象；列目录不返回 content） */
+async function ghFile(path: string, token: string, signal?: AbortSignal): Promise<GhEntry> {
+  const r = await fetch(`${BASE}/${path}`, { headers: ghHeaders(token), signal })
+  if (!r.ok) throw new Error(`GitHub HTTP ${r.status}`)
+  return r.json() as Promise<GhEntry>
+}
+
 /** 拉取 30-项目/ 下全部门户口并解析；单项目失败静默跳过，全部失败抛错走降级 */
 async function fetchFromGithub(token: string): Promise<ProjectInfo[]> {
   const root = await ghJson(ROOT_DIR, token)
@@ -126,8 +133,14 @@ async function fetchFromGithub(token: string): Promise<ProjectInfo[]> {
     try {
       const entries = await ghJson(`${ROOT_DIR}/${encodeURIComponent(dir.name)}`, token, ctrl.signal)
       const gateway = entries.find(e => e.type === 'file' && e.name === `${dir.name} - 门户口.md`)
-      if (!gateway || !gateway.content) return null
-      const md = Buffer.from(gateway.content, 'base64').toString('utf-8')
+      if (!gateway) return null
+      const file = await ghFile(
+        `${ROOT_DIR}/${encodeURIComponent(dir.name)}/${encodeURIComponent(gateway.name)}`,
+        token,
+        ctrl.signal,
+      )
+      if (!file.content) return null
+      const md = Buffer.from(file.content, 'base64').toString('utf-8')
       return parseGateway(md, dir.name)
     } finally { clearTimeout(timer) }
   }))
