@@ -16,18 +16,26 @@ export function buildImportPlan(existing: GrowthAction[]): GrowthActionInput[] {
 }
 
 /** 一键导入十项行动：逐条创建 Habit（icon=行动 emoji）+ GrowthAction（habitId 关联）。
- *  幂等：按 no 跳过已存在的行动，重复调用不会产生重复数据。 */
+ *  幂等：按 no 跳过已存在的行动，重复调用不会产生重复数据。
+ *  失败回滚：中途失败时清理已创建的习惯（如云端未跑迁移时表不存在），不留半截数据。 */
 export function useImportPresets() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (existing: GrowthAction[]) => {
-      const results: GrowthAction[] = []
-      for (const p of buildImportPlan(existing)) {
-        const habit = await repository.createHabit({ name: p.title, icon: p.emoji, color: '#5B8A72', targetPerDay: 1 })
-        const action = await repository.createGrowthAction({ ...p, habitId: habit.id } as GrowthActionInput)
-        results.push(action)
+      const createdHabits: string[] = []
+      try {
+        const results: GrowthAction[] = []
+        for (const p of buildImportPlan(existing)) {
+          const habit = await repository.createHabit({ name: p.title, icon: p.emoji, color: '#5B8A72', targetPerDay: 1 })
+          createdHabits.push(habit.id)
+          const action = await repository.createGrowthAction({ ...p, habitId: habit.id } as GrowthActionInput)
+          results.push(action)
+        }
+        return results.length
+      } catch (err) {
+        for (const id of createdHabits) { try { await repository.deleteHabit(id) } catch { /* 清理失败不掩盖原始错误 */ } }
+        throw err
       }
-      return results.length
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: growthKeys.all })
