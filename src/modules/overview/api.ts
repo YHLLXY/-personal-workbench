@@ -50,4 +50,19 @@ export function todayTasks(tasks: Task[], today: string): Task[] {
 export function overdueTasks(tasks: Task[], today: string): Task[] {
   return tasks.filter(t => t.status !== 'done' && t.dueDate !== null && t.dueDate < today)
 }
+/** 近 windowDays 天内的逾期（逾期区用，默认 7 天限窗） */
+export function recentOverdue(tasks: Task[], today: string, windowDays = 7): Task[] {
+  const start = daysBefore(today, windowDays)
+  return tasks.filter(t => t.status !== 'done' && t.dueDate !== null && t.dueDate < today && t.dueDate >= start)
+}
+/** 更早的逾期（折叠区 + 一键归档用） */
+export function oldOverdue(tasks: Task[], today: string, windowDays = 7): Task[] {
+  const start = daysBefore(today, windowDays)
+  return tasks.filter(t => t.status !== 'done' && t.dueDate !== null && t.dueDate < start)
+}
+function daysBefore(dateStr: string, n: number): string {
+  const d = new Date(`${dateStr}T00:00:00`)
+  d.setDate(d.getDate() - n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 function priorityRank(t: Task) { return t.priority === 'high' ? 0 : t.priority === 'medium' ? 1 : 2 }

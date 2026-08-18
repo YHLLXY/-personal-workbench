@@ -23,6 +23,7 @@ const CARD_LINK: Record<string, string> = {
   'home-heatmap': '/health',
   'home-review': '/review',
   'home-notes': '/notes',
+  'home-projects': '/projects',
 }
 
 /** 整卡 Link 统一外壳：border 基础透明 + hover 高亮边框 + 按压缩放 */

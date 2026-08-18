@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Search, Plus, Film, FileText, Trash2, FolderTree as FolderTreeIcon, Library } from 'lucide-react'
+import { Search, Plus, Film, FileText, Trash2, FolderTree as FolderTreeIcon, Library, CircleHelp } from 'lucide-react'
 import { usePapers, usePaperMutations, useFolders, useFolderMutations } from './api'
 import { FolderTree } from './folder-tree'
 import { PaperDetail } from './paper-detail'
 import { AddPaper } from './add-paper'
 import { AddNote } from './add-note'
+import { GuideSheet } from './guide-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -35,6 +36,7 @@ export default function Papers() {
   const [addPaperOpen, setAddPaperOpen] = useState(false)
   const [addNoteOpen, setAddNoteOpen] = useState(false)
   const [treeOpen, setTreeOpen] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -66,6 +68,9 @@ export default function Papers() {
           <p className="mt-0.5 text-xs text-muted-foreground">论文与视频文案，统一收纳</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setGuideOpen(true)} aria-label="新手指引" title="新手指引">
+            <CircleHelp className="size-4" />
+          </Button>
           <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
             <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -175,6 +180,7 @@ export default function Papers() {
       <PaperDetail paper={selected} open={detailOpen} onOpenChange={setDetailOpen} />
       <AddPaper open={addPaperOpen} onOpenChange={setAddPaperOpen} defaultFolderId={folderFilter === 'all' || folderFilter === '__none__' ? null : folderFilter} />
       <AddNote open={addNoteOpen} onOpenChange={setAddNoteOpen} defaultFolderId={folderFilter === 'all' || folderFilter === '__none__' ? null : folderFilter} />
+      <GuideSheet open={guideOpen} onOpenChange={setGuideOpen} />
     </div>
   )
 }

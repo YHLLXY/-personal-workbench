@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Download, KeyRound, LogOut, Upload } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowRight, Download, FolderKanban, KeyRound, LogOut, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -25,6 +26,18 @@ export function SettingsPage() {
     <div className="mx-auto max-w-2xl space-y-5">
       <h1 className="text-xl font-bold">个人中心</h1>
       <ProfileCard />
+      <section className="flex items-center justify-between rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center gap-3">
+          <FolderKanban className="size-5 text-primary" strokeWidth={1.7} />
+          <div>
+            <div className="text-sm font-semibold">我的项目</div>
+            <p className="mt-0.5 text-xs text-muted-foreground">知识库项目状态总览（门户口动态同步）</p>
+          </div>
+        </div>
+        <Link to="/projects" aria-label="查看我的项目">
+          <Button size="sm" variant="outline"><ArrowRight className="size-3.5" /></Button>
+        </Link>
+      </section>
       <section>
         <h2 className="mb-2 text-sm font-semibold">数据统计</h2>
         <StatsGrid />
