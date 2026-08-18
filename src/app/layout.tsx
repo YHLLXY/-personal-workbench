@@ -16,9 +16,10 @@ import { OnboardingOverlay } from './onboarding'
 import { useGlobalHotkeys } from './hotkeys'
 import { useReminderSync } from '@/modules/reminders/api'
 
-/** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」（后续模块注册后自动增加） */
+/** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」。
+ *  review（今日复盘）不在底部 Tab：移动端仅保留首页卡片入口（home-review），路径 /review 仍可用（侧边栏/命令面板/复盘卡片）。 */
 const MOBILE_TABS = [
-  ...modules.map(m => ({ sub: m.children[0] })),
+  ...modules.filter(m => m.id !== 'review').map(m => ({ sub: m.children[0] })),
   { sub: { id: 'me', name: '我的', icon: Settings, path: '/settings', component: () => null } },
 ]
 
