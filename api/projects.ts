@@ -162,7 +162,8 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
     const projects = await fetchFromGithub(token)
     res.setHeader('Cache-Control', CACHE_OK)
     res.json({ updatedAt: new Date().toISOString(), source: 'github', projects })
-  } catch {
+  } catch (e) {
+    console.error('[projects] fallback:', e instanceof Error ? e.message : String(e))
     res.setHeader('Cache-Control', CACHE_FALLBACK)
     res.json({ updatedAt: null, source: 'fallback', projects: FALLBACK_PROJECTS })
   }
