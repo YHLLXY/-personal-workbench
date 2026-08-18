@@ -1,7 +1,8 @@
 /// <reference lib="webworker" />
 /** 个人工作台 Service Worker（injectManifest 模式）：
  *  处理后台 Web Push（push 事件显示通知；notificationclick 聚焦/打开应用）。 */
-import { precacheAndRoute } from 'workbox-precaching'
+import { clientsClaim } from 'workbox-core'
+import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -9,6 +10,12 @@ export {}
 
 // 构建时由 vite-plugin-pwa/workbox-build 将资源清单注入到 self.__WB_MANIFEST
 precacheAndRoute(self.__WB_MANIFEST)
+cleanupOutdatedCaches()
+
+// autoUpdate 模式（registerType: 'autoUpdate' + registerSW 虚拟模块）：
+// 安装即接管，让手机在下次打开时自动升级到最新版本
+self.skipWaiting()
+clientsClaim()
 
 self.addEventListener('push', (event) => {
   let title = '个人工作台提醒'
