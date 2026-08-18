@@ -1,4 +1,4 @@
-import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs } from './types'
+import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput } from './types'
 
 const PREFIX = 'wb:'
 function read<T>(key: string): T[] {
@@ -48,7 +48,11 @@ export class LocalRepository implements WorkbenchRepository {
     return insert<Habit>('habits', { id: genId(), name: input.name, icon: input.icon ?? '✓', color: input.color ?? '#5B8A72', targetPerDay: input.targetPerDay ?? 1, active: true, createdAt: new Date().toISOString() })
   }
   async updateHabit(id: string, p: Partial<Habit>) { return patch<Habit>('habits', id, p) }
-  async deleteHabit(id: string) { remove('habits', id); write('habitLogs', read<HabitLog>('habitLogs').filter(l => l.habitId !== id)) }
+  async deleteHabit(id: string) {
+    remove('habits', id); write('habitLogs', read<HabitLog>('habitLogs').filter(l => l.habitId !== id))
+    // 联动：自我提升行动解除与已删习惯的关联（避免悬空 habitId）
+    write('growthActions', read<GrowthAction>('growthActions').map(g => g.habitId === id ? { ...g, habitId: null } : g))
+  }
   async listHabitLogs() { return read<HabitLog>('habitLogs') }
   async setHabitLog(habitId: string, logDate: string, count: number) {
     const rows = read<HabitLog>('habitLogs')
@@ -142,12 +146,27 @@ export class LocalRepository implements WorkbenchRepository {
     return insert<Review>('reviews', r)
   }
 
+  async listGrowthActions() {
+    // 旧数据兼容：新字段缺省时补默认值，读取不崩溃
+    return read<GrowthAction>('growthActions').map(g => ({
+      id: g.id, no: g.no, title: g.title, emoji: g.emoji, category: g.category,
+      why: g.why ?? '', steps: g.steps ?? [], targets: g.targets ?? [], verify: g.verify ?? '',
+      habitId: g.habitId ?? null, status: g.status ?? 'active', sort: g.sort ?? 0,
+      createdAt: g.createdAt ?? new Date().toISOString(),
+    }))
+  }
+  async createGrowthAction(input: GrowthActionInput) {
+    return insert<GrowthAction>('growthActions', { id: genId(), no: input.no, title: input.title, emoji: input.emoji, category: input.category, why: input.why, steps: input.steps, targets: input.targets, verify: input.verify, habitId: input.habitId ?? null, status: 'active', sort: input.no, createdAt: new Date().toISOString() })
+  }
+  async updateGrowthAction(id: string, p: Partial<GrowthAction>) { return patch<GrowthAction>('growthActions', id, p) }
+  async deleteGrowthAction(id: string) { remove('growthActions', id) }
+
   async exportAll() {
-    const [tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews] = await Promise.all([
+    const [tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions] = await Promise.all([
       this.listTasks(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
-      this.listStudyGoals(), this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(),
+      this.listStudyGoals(), this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(), this.listGrowthActions(),
     ])
-    return { tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews }
+    return { tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions }
   }
 
   async importAll(tables: BackupTables) {
@@ -164,7 +183,7 @@ export class LocalRepository implements WorkbenchRepository {
         // ?? [] 守卫：旧备份文件没有 studyGoals 等新 key 时按空表处理，不抛错
         ['studyGoals', tables.studyGoals ?? []], ['notes', tables.notes],
         ['papers', tables.papers], ['folders', tables.folders], ['healthLogs', tables.healthLogs],
-        ['reviews', tables.reviews],
+        ['reviews', tables.reviews], ['growthActions', tables.growthActions ?? []],
       ]
       for (const [key, rows] of entries) localStorage.setItem(PREFIX + key, JSON.stringify(rows))
     } catch (err) {

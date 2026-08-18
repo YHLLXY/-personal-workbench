@@ -1,4 +1,4 @@
-import { Bell, BookOpen, CheckCircle2, FolderKanban, HeartPulse, LayoutDashboard, Library, Newspaper, RotateCcw, Sparkles, Timer, type LucideIcon } from 'lucide-react'
+import { Bell, BookOpen, CheckCircle2, FolderKanban, HeartPulse, LayoutDashboard, Library, Newspaper, RotateCcw, Sparkles, Timer, TrendingUp, type LucideIcon } from 'lucide-react'
 import { lazy, type ComponentType } from 'react'
 import { useReminderStore } from './modules/reminders/store'
 import { TodayTasksCard } from './modules/overview/cards'
@@ -8,6 +8,7 @@ import { HeatmapCard } from './modules/health/cards'
 import { ReviewCard } from './modules/review/cards'
 import { WeeklyTrendCard } from './modules/overview/weekly-trend'
 import { ProjectsCard } from './modules/projects/cards'
+import { GrowthCard } from './modules/growth/cards'
 
 export interface HomeCardDef {
   id: string
@@ -118,6 +119,16 @@ export const modules: ModuleDef[] = [
         id: 'review', name: '今日复盘', icon: RotateCcw, path: '/review',
         component: lazy(() => import('./modules/review/review')),
         homeCard: { id: 'home-review', span: '12', mobileOrder: 5, desktopOrder: 7, component: ReviewCard },
+      },
+    ],
+  },
+  {
+    id: 'growth', name: '成长', icon: TrendingUp,
+    children: [
+      {
+        id: 'growth', name: '自我提升', icon: TrendingUp, path: '/growth',
+        component: lazy(() => import('./modules/growth/growth')),
+        homeCard: { id: 'home-growth', span: '5', mobileOrder: 7, desktopOrder: 10, component: GrowthCard },
       },
     ],
   },

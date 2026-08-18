@@ -14,6 +14,7 @@ const sample: BackupTables = {
   folders: [{ id: 'd1', name: '机器学习', parentId: null, sort: 1 }],
   healthLogs: [{ id: 'g1', logDate: '2026-08-05', type: 'sleep', value: 7.5 }],
   reviews: [{ id: 'r1', reviewDate: '2026-08-05', mood: 4, achievements: 'A', reflection: 'R', gratitude: 'G', learnings: 'L', summary: '好', planTomorrow: '继续', score: 7, updatedAt: '2026-08-05T12:00:00.000Z' }],
+  growthActions: [{ id: 'ga1', no: 1, title: '睡眠', emoji: '🛏', category: '睡眠', why: 'w', steps: ['a'], targets: ['b'], verify: 'v', habitId: null, status: 'active', sort: 1, createdAt: '2026-08-01T00:00:00.000Z' }],
 }
 
 describe('backup', () => {

@@ -79,6 +79,34 @@ export interface StudyGoalInput { title: string; target?: number; deadline?: str
 /** 今日热点订阅配置：空 sourceIds = 订阅全部源 */
 export interface Subscriptions { sourceIds: string[]; topics: string[] }
 
+/** 自我提升行动（v1.7）：元数据 + 关联打卡习惯；steps/targets 为 JSON 数组字符串 */
+export interface GrowthAction {
+  id: string
+  no: number
+  title: string
+  emoji: string
+  category: string
+  why: string
+  steps: string[]
+  targets: string[]
+  verify: string
+  habitId: string | null
+  status: 'active' | 'paused' | 'done'
+  sort: number
+  createdAt: string
+}
+export interface GrowthActionInput {
+  no: number
+  title: string
+  emoji: string
+  category: string
+  why: string
+  steps: string[]
+  targets: string[]
+  verify: string
+  habitId?: string | null
+}
+
 export type ReminderKind = 'due' | 'exam-3d' | 'exam-1d' | 'exam-1h'
 export interface Reminder {
   id: string
@@ -139,6 +167,11 @@ export interface WorkbenchRepository {
   createHealthLog(input: HealthLogInput): Promise<HealthLog>
   deleteHealthLog(id: string): Promise<void>
 
+  listGrowthActions(): Promise<GrowthAction[]>
+  createGrowthAction(input: GrowthActionInput): Promise<GrowthAction>
+  updateGrowthAction(id: string, patch: Partial<GrowthAction>): Promise<GrowthAction>
+  deleteGrowthAction(id: string): Promise<void>
+
   listReviews(): Promise<Review[]>
   upsertReview(reviewDate: string, patch: { mood?: number; summary?: string; planTomorrow?: string; achievements?: string; reflection?: string; gratitude?: string; learnings?: string; score?: number | null }): Promise<Review>
 
@@ -158,7 +191,7 @@ export interface WorkbenchRepository {
   importAll(tables: BackupTables): Promise<void>
 }
 
-/** 备份的 11 张表数据（导出/导入闭环的载体） */
+/** 备份的 12 张表数据（导出/导入闭环的载体） */
 export interface BackupTables {
   tasks: Task[]
   habits: Habit[]
@@ -171,6 +204,7 @@ export interface BackupTables {
   folders: Folder[]
   healthLogs: HealthLog[]
   reviews: Review[]
+  growthActions: GrowthAction[]
 }
 
 /** 通用 ID 生成 */

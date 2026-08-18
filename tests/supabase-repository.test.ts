@@ -171,10 +171,10 @@ describe('SupabaseRepository', () => {
     it('importAll 每表先 delete().neq(id) 清空再 upsert，载荷 snake_case', async () => {
       await repo.importAll({
         tasks: [{ id: 't1', title: '任务', focus: false, focusDate: null, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }],
-        habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [],
+        habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [], growthActions: [],
       })
-      // 每张表都先清空（v1.5 起 11 张表，含 wb_study_goals）
-      expect(deleteCalls.length).toBe(11)
+      // 每张表都先清空（v1.7 起 12 张表，含 wb_growth_actions）
+      expect(deleteCalls.length).toBe(12)
       expect(deleteCalls[0]).toEqual({ table: 'wb_tasks', column: 'id', value: '' })
       // tasks 表 upsert 载荷是 snake_case 列名
       const tasksUpsert = upsertCalls.find(u => u.table === 'wb_tasks')
@@ -189,7 +189,7 @@ describe('SupabaseRepository', () => {
         tasks: [], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [],
       } as unknown as BackupTables
       await repo.importAll(legacy)
-      expect(deleteCalls.length).toBe(11)
+      expect(deleteCalls.length).toBe(12)
       expect(upsertCalls.length).toBe(0)
     })
 

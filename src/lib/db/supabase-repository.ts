@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
-import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind } from './types'
+import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind, type GrowthAction, type GrowthActionInput } from './types'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
 type Row = Record<string, unknown>
@@ -49,6 +49,16 @@ function reviewFromRow(r: Row): Review {
     updatedAt: String(r.updated_at),
   }
 }
+function growthFromRow(r: Row): GrowthAction {
+  // steps/targets 存 JSON 数组字符串（text），解析失败按空数组兜底
+  const parseList = (raw: unknown): string[] => { try { const v = JSON.parse(String(raw ?? '[]')); return Array.isArray(v) ? v.map(String) : [] } catch { return [] } }
+  return {
+    id: String(r.id), no: Number(r.no), title: String(r.title), emoji: String(r.emoji), category: String(r.category),
+    why: String(r.why ?? ''), steps: parseList(r.steps), targets: parseList(r.targets), verify: String(r.verify ?? ''),
+    habitId: r.habit_id ? String(r.habit_id) : null, status: (r.status as GrowthAction['status']) ?? 'active',
+    sort: Number(r.sort ?? 0), createdAt: String(r.created_at),
+  }
+}
 function reminderFromRow(r: Row): Reminder {
   return { id: String(r.id), refType: r.ref_type as Reminder['refType'], refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, dismissedAt: r.dismissed_at ? String(r.dismissed_at) : null, createdAt: String(r.created_at) }
 }
@@ -67,19 +77,20 @@ function goalToRow(g: StudyGoal) { return { id: g.id, title: g.title, target: g.
 function folderToRow(f: Folder) { return { id: f.id, name: f.name, parent_id: f.parentId, sort: f.sort } }
 function healthToRow(l: HealthLog) { return { id: l.id, log_date: l.logDate, type: l.type, value: l.value } }
 function reviewToRow(r: Review) { return { id: r.id, review_date: r.reviewDate, mood: r.mood, achievements: r.achievements, reflection: r.reflection, gratitude: r.gratitude, learnings: r.learnings, summary: r.summary, plan_tomorrow: r.planTomorrow, score: r.score, updated_at: r.updatedAt } }
+function growthToRow(g: GrowthAction) { return { id: g.id, no: g.no, title: g.title, emoji: g.emoji, category: g.category, why: g.why, steps: JSON.stringify(g.steps), targets: JSON.stringify(g.targets), verify: g.verify, habit_id: g.habitId, status: g.status, sort: g.sort, created_at: g.createdAt } }
 
 /** 表名映射（备份表 -> Supabase 表） */
 const TABLES: Record<keyof BackupTables, string> = {
   tasks: 'wb_tasks', habits: 'wb_habits', habitLogs: 'wb_habit_logs', focusSessions: 'wb_focus_sessions',
   exams: 'wb_exams', studyGoals: 'wb_study_goals', notes: 'wb_notes', papers: 'wb_papers', folders: 'wb_folders',
-  healthLogs: 'wb_health_logs', reviews: 'wb_reviews',
+  healthLogs: 'wb_health_logs', reviews: 'wb_reviews', growthActions: 'wb_growth_actions',
 }
 
 const toRows: { [K in keyof BackupTables]: (rows: BackupTables[K]) => Record<string, unknown>[] } = {
   tasks: rs => rs.map(taskToRow), habits: rs => rs.map(habitToRow), habitLogs: rs => rs.map(logToRow),
   focusSessions: rs => rs.map(focusToRow), exams: rs => rs.map(examToRow), studyGoals: rs => rs.map(goalToRow),
   notes: rs => rs.map(noteToRow), papers: rs => rs.map(paperToRow), folders: rs => rs.map(folderToRow),
-  healthLogs: rs => rs.map(healthToRow), reviews: rs => rs.map(reviewToRow),
+  healthLogs: rs => rs.map(healthToRow), reviews: rs => rs.map(reviewToRow), growthActions: rs => rs.map(growthToRow),
 }
 
 function toSnake<K extends keyof BackupTables>(key: K, rows: BackupTables[K]): Record<string, unknown>[] {
@@ -114,7 +125,13 @@ export class SupabaseRepository implements WorkbenchRepository {
     const { data, error } = await this.sb.from('wb_habits').update({ name: p.name, icon: p.icon, color: p.color, target_per_day: p.targetPerDay, active: p.active }).eq('id', id).select().single()
     if (error) throw error; return habitFromRow(data)
   }
-  async deleteHabit(id: string) { const { error } = await this.sb.from('wb_habits').delete().eq('id', id); if (error) throw error }
+  async deleteHabit(id: string) {
+    const { error } = await this.sb.from('wb_habits').delete().eq('id', id)
+    if (error) throw error
+    // 联动：自我提升行动解除与已删习惯的关联（避免悬空 habitId）
+    const { error: gaErr } = await this.sb.from('wb_growth_actions').update({ habit_id: null }).eq('habit_id', id)
+    if (gaErr) throw gaErr
+  }
   async listHabitLogs() { const { data, error } = await this.sb.from('wb_habit_logs').select('*'); if (error) throw error; return (data ?? []).map(logFromRow) }
   async setHabitLog(habitId: string, logDate: string, count: number) {
     // 注意：迁移中 id 无默认值，insert 载荷必须带 id（质量审阅发现 I-2 修正）
@@ -204,12 +221,32 @@ export class SupabaseRepository implements WorkbenchRepository {
     if (error) throw error; return reviewFromRow(data)
   }
 
+  async listGrowthActions() { const { data, error } = await this.sb.from('wb_growth_actions').select('*').order('sort'); if (error) throw error; return (data ?? []).map(growthFromRow) }
+  async createGrowthAction(input: GrowthActionInput) {
+    const { data, error } = await this.sb.from('wb_growth_actions').insert({
+      id: genId(), no: input.no, title: input.title, emoji: input.emoji, category: input.category,
+      why: input.why, steps: JSON.stringify(input.steps), targets: JSON.stringify(input.targets),
+      verify: input.verify, habit_id: input.habitId ?? null, status: 'active', sort: input.no,
+    }).select().single()
+    if (error) throw error; return growthFromRow(data)
+  }
+  async updateGrowthAction(id: string, p: Partial<GrowthAction>) {
+    const { data, error } = await this.sb.from('wb_growth_actions').update({
+      title: p.title, emoji: p.emoji, category: p.category, why: p.why,
+      steps: p.steps !== undefined ? JSON.stringify(p.steps) : undefined,
+      targets: p.targets !== undefined ? JSON.stringify(p.targets) : undefined,
+      verify: p.verify, habit_id: p.habitId, status: p.status, sort: p.sort,
+    }).eq('id', id).select().single()
+    if (error) throw error; return growthFromRow(data)
+  }
+  async deleteGrowthAction(id: string) { const { error } = await this.sb.from('wb_growth_actions').delete().eq('id', id); if (error) throw error }
+
   async exportAll() {
-    const [tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews] = await Promise.all([
+    const [tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions] = await Promise.all([
       this.listTasks(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
-      this.listStudyGoals(), this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(),
+      this.listStudyGoals(), this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(), this.listGrowthActions(),
     ])
-    return { tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews }
+    return { tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions }
   }
 
   async importAll(tables: BackupTables) {
