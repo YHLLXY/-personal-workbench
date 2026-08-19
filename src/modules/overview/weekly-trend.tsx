@@ -1,4 +1,3 @@
-import { lazy, Suspense } from 'react'
 import { BarChart3 } from 'lucide-react'
 import { useTasks } from './api'
 import { useFocusSessions } from '../study/api'
@@ -6,10 +5,9 @@ import { buildWeeklyTrend } from '@/lib/stats'
 import { todayStr } from '@/lib/db/types'
 import { EmptyState } from '@/components/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
+import { WeeklyTrendChart } from './weekly-trend-chart'
 
-const WeeklyTrendChart = lazy(() => import('./weekly-trend-chart').then(m => ({ default: m.WeeklyTrendChart })))
-
-/** 本周趋势卡：近 7 天专注分钟柱状图 + 完成任务量折线（recharts，独立 chunk） */
+/** 本周趋势卡：近 7 天专注分钟柱状图 + 完成任务量折线（纯 SVG 手绘，零依赖） */
 export function WeeklyTrendCard() {
   const { data: tasks, isLoading: tl } = useTasks()
   const { data: sessions, isLoading: sl } = useFocusSessions()
@@ -38,15 +36,7 @@ export function WeeklyTrendCard() {
       {!hasAny ? (
         <EmptyState icon={<BarChart3 />} title="本周还没有记录" desc="完成任务或专注后，这里会出现趋势" className="py-6" />
       ) : (
-        <Suspense fallback={
-          <div className="flex h-[140px] items-end justify-between gap-2 px-1" aria-hidden>
-            {[32, 55, 24, 70, 45, 86, 60].map((h, i) => (
-              <div key={i} className="w-full rounded-t bg-muted" style={{ height: `${h}%` }} />
-            ))}
-          </div>
-        }>
-          <WeeklyTrendChart days={days} />
-        </Suspense>
+        <WeeklyTrendChart days={days} />
       )}
     </div>
   )
