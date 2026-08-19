@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.8',
+    date: '2026-08-18',
+    title: '整体优化：永不白屏 + 首屏提速 + 弱网缓存',
+    items: [
+      '稳定性：全站错误边界（渲染错误不再白屏），懒加载失败自动重试 + 自动刷新，弱网/版本更新后自动恢复',
+      '性能：周趋势图改用纯 SVG 手绘（回归 v1.2 设计初衷），移除 recharts 图表库，移动端首页首屏 -312KB',
+      '泛用性：Service Worker 运行时缓存（自家 API 缓存优先 + 跨域配图缓存），弱网秒开、离线可看历史数据',
+    ],
+  },
+  {
     version: 'v1.7',
     date: '2026-08-18',
     title: '自我提升模块：十项行动上线',
