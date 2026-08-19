@@ -1,5 +1,6 @@
 import { Bell, BookOpen, CheckCircle2, FolderKanban, HeartPulse, LayoutDashboard, Library, Newspaper, RotateCcw, Sparkles, Timer, TrendingUp, type LucideIcon } from 'lucide-react'
-import { lazy, type ComponentType } from 'react'
+import type { ComponentType } from 'react'
+import { lazyRetry } from './lib/lazy-retry'
 import { useReminderStore } from './modules/reminders/store'
 import { TodayTasksCard } from './modules/overview/cards'
 import { ExamsCard, FocusCard } from './modules/study/cards'
@@ -48,22 +49,22 @@ export const modules: ModuleDef[] = [
     children: [
       {
         id: 'home', name: '工作台总览', icon: LayoutDashboard, path: '/',
-        component: lazy(() => import('./app/home')),
+        component: lazyRetry(() => import('./app/home')),
         homeCard: { id: 'home-trend', span: '5', mobileOrder: -1, desktopOrder: 8, component: WeeklyTrendCard },
       },
       {
         id: 'tasks', name: '今日待办', icon: CheckCircle2, path: '/tasks',
-        component: lazy(() => import('./modules/overview/today-tasks')),
+        component: lazyRetry(() => import('./modules/overview/today-tasks')),
         homeCard: { id: 'home-tasks', span: '5', mobileOrder: 1, desktopOrder: 1, component: TodayTasksCard },
       },
       {
         id: 'reminders', name: '提醒', icon: Bell, path: '/reminders',
-        component: lazy(() => import('./modules/reminders/reminders-center')),
+        component: lazyRetry(() => import('./modules/reminders/reminders-center')),
         badge: () => { const n = useReminderStore.getState().unread; return n > 0 ? String(n) : null },
       },
       {
         id: 'projects', name: '我的项目', icon: FolderKanban, path: '/projects',
-        component: lazy(() => import('./modules/projects/projects')),
+        component: lazyRetry(() => import('./modules/projects/projects')),
         homeCard: { id: 'home-projects', span: '5', mobileOrder: 6, desktopOrder: 9, component: ProjectsCard },
       },
     ],
@@ -73,12 +74,12 @@ export const modules: ModuleDef[] = [
     children: [
       {
         id: 'study-manager', name: '学习管理', icon: BookOpen, path: '/study',
-        component: lazy(() => import('./modules/study/study-manager')),
+        component: lazyRetry(() => import('./modules/study/study-manager')),
         homeCard: { id: 'home-exams', span: '3', mobileOrder: 2, desktopOrder: 2, component: ExamsCard },
       },
       {
         id: 'pomodoro', name: '番茄钟', icon: Timer, path: '/pomodoro',
-        component: lazy(() => import('./modules/study/pomodoro')),
+        component: lazyRetry(() => import('./modules/study/pomodoro')),
         homeCard: { id: 'home-focus', span: '4', mobileOrder: 3, desktopOrder: 3, component: FocusCard },
       },
     ],
@@ -88,16 +89,16 @@ export const modules: ModuleDef[] = [
     children: [
       {
         id: 'hot', name: '今日热点', icon: Newspaper, path: '/hot',
-        component: lazy(() => import('./modules/news/hot')),
+        component: lazyRetry(() => import('./modules/news/hot')),
         homeCard: { id: 'home-hot', span: '5', mobileOrder: -1, desktopOrder: 4, component: HotCard },
       },
       {
         id: 'papers', name: '资料库', icon: Library, path: '/papers',
-        component: lazy(() => import('./modules/news/papers')),
+        component: lazyRetry(() => import('./modules/news/papers')),
       },
       {
         id: 'notes', name: '灵感速记', icon: Sparkles, path: '/notes',
-        component: lazy(() => import('./modules/news/notes')),
+        component: lazyRetry(() => import('./modules/news/notes')),
         homeCard: { id: 'home-notes', span: '12', mobileOrder: -1, desktopOrder: 5, component: NotesCard },
       },
     ],
@@ -107,7 +108,7 @@ export const modules: ModuleDef[] = [
     children: [
       {
         id: 'health', name: '运动健康', icon: HeartPulse, path: '/health',
-        component: lazy(() => import('./modules/health/health')),
+        component: lazyRetry(() => import('./modules/health/health')),
         homeCard: { id: 'home-heatmap', span: '7', mobileOrder: 4, desktopOrder: 6, component: HeatmapCard },
       },
     ],
@@ -117,7 +118,7 @@ export const modules: ModuleDef[] = [
     children: [
       {
         id: 'review', name: '今日复盘', icon: RotateCcw, path: '/review',
-        component: lazy(() => import('./modules/review/review')),
+        component: lazyRetry(() => import('./modules/review/review')),
         homeCard: { id: 'home-review', span: '12', mobileOrder: 5, desktopOrder: 7, component: ReviewCard },
       },
     ],
@@ -127,7 +128,7 @@ export const modules: ModuleDef[] = [
     children: [
       {
         id: 'growth', name: '自我提升', icon: TrendingUp, path: '/growth',
-        component: lazy(() => import('./modules/growth/growth')),
+        component: lazyRetry(() => import('./modules/growth/growth')),
         homeCard: { id: 'home-growth', span: '5', mobileOrder: 7, desktopOrder: 10, component: GrowthCard },
       },
     ],

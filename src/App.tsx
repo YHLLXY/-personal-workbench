@@ -11,6 +11,7 @@ import { allSubModules } from './registry'
 import { isCloudMode } from './lib/db'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SettingsPage } from './modules/me/settings'
+import { ErrorBoundary } from '@/components/error-boundary'
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1 } } })
 
@@ -28,17 +29,19 @@ export default function App() {
         <BrowserRouter>
           <AuthProvider>
             <Toaster richColors position="top-center" />
-            <Suspense fallback={<div className="p-6 space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}>
-              <Routes>
-                <Route path="/login" element={isCloudMode ? <AuthPage /> : <Navigate to="/" replace />} />
-                <Route path="/reset-password" element={isCloudMode ? <ResetPasswordPage /> : <Navigate to="/" replace />} />
-                <Route element={<Guard><Shell /></Guard>}>
-                  {allSubModules.map(s => <Route key={s.id} path={s.path} element={<s.component />} />)}
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Route>
-              </Routes>
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={<div className="p-6 space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}>
+                <Routes>
+                  <Route path="/login" element={isCloudMode ? <AuthPage /> : <Navigate to="/" replace />} />
+                  <Route path="/reset-password" element={isCloudMode ? <ResetPasswordPage /> : <Navigate to="/" replace />} />
+                  <Route element={<Guard><Shell /></Guard>}>
+                    {allSubModules.map(s => <Route key={s.id} path={s.path} element={<s.component />} />)}
+                    <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Route>
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
           </AuthProvider>
         </BrowserRouter>
       </ThemeProvider>

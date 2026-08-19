@@ -15,6 +15,7 @@ import { ShortcutsDialog } from './shortcuts-dialog'
 import { OnboardingOverlay } from './onboarding'
 import { useGlobalHotkeys } from './hotkeys'
 import { useReminderSync } from '@/modules/reminders/api'
+import { ErrorBoundary } from '@/components/error-boundary'
 
 /** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」。
  *  review（今日复盘）不在底部 Tab：移动端仅保留首页卡片入口（home-review），路径 /review 仍可用（侧边栏/命令面板/复盘卡片）。 */
@@ -110,12 +111,14 @@ export function Shell() {
 
         {/* 内容 */}
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-4 md:py-6 pb-32 md:pb-6">
-          <Suspense fallback={<div className="space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}>
-            {/* key=pathname 使路由切换时整块重挂载，重播页面入场动画 */}
-            <div key={location.pathname} className="page-enter">
-              <Outlet />
-            </div>
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<div className="space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}>
+              {/* key=pathname 使路由切换时整块重挂载，重播页面入场动画 */}
+              <div key={location.pathname} className="page-enter">
+                <Outlet />
+              </div>
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
 
