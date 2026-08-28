@@ -16,6 +16,7 @@ import { OnboardingOverlay } from './onboarding'
 import { useGlobalHotkeys } from './hotkeys'
 import { useReminderSync } from '@/modules/reminders/api'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { greeting } from './daily-summary'
 
 /** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」。
  *  review（今日复盘）不在底部 Tab：移动端仅保留首页卡片入口（home-review），路径 /review 仍可用（侧边栏/命令面板/复盘卡片）。 */
@@ -89,7 +90,7 @@ export function Shell() {
         {/* 顶栏 */}
         <header className="flex items-center gap-3 px-4 md:px-6 py-3 border-b border-border bg-card/60 backdrop-blur sticky top-0 z-20">
           <div className="text-sm font-semibold">
-            {greeting()}
+            {greeting(new Date())}
             <span className="ml-2 text-xs font-normal text-muted-foreground hidden sm:inline">{dateStr}</span>
           </div>
           <button onClick={() => setPaletteOpen(true)}
@@ -148,13 +149,6 @@ export function Shell() {
   )
 }
 
-function greeting() {
-  const h = new Date().getHours()
-  if (h < 6) return '夜深了'
-  if (h < 12) return '早上好'
-  if (h < 18) return '下午好'
-  return '晚上好'
-}
 function isMobileActive(path: string, current: string) {
   if (path === '/') return current === '/'
   return current.startsWith(path)

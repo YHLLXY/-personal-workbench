@@ -44,11 +44,11 @@ export function QuickCapture() {
       const habits = (await repository.listHabits()).filter(h => h.active)
       const logs = await repository.listHabitLogs()
       const today = todayStr()
-      for (const h of habits) {
+      await Promise.all(habits.map(h => {
         const hit = logs.find(l => l.habitId === h.id && l.logDate === today)
-        if (hit) await repository.setHabitLog(h.id, today, Math.min(h.targetPerDay, hit.count + 1))
-        else await repository.setHabitLog(h.id, today, 1)
-      }
+        if (hit) return repository.setHabitLog(h.id, today, Math.min(h.targetPerDay, hit.count + 1))
+        return repository.setHabitLog(h.id, today, 1)
+      }))
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: habitLogKeys.all }); toast.success('今日习惯已打卡'); reset() },
     onError: () => toast.error('打卡失败'),

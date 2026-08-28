@@ -22,7 +22,7 @@ export function buildDailySummary(date: string, data: {
   const byType = (type: HealthLog['type']) => data.healthLogs.find(h => h.logDate === date && h.type === type) ?? null
   return {
     tasksDone: done.length,
-    tasksTotal: data.tasks.filter(t => t.status === 'done').length,
+    tasksTotal: done.length,
     focusMinutes: focus,
     habitChecks: habit,
     weightLog: byType('weight'),

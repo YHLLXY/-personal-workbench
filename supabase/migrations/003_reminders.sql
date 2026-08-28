@@ -43,10 +43,12 @@ create policy p_select on public.wb_reminders for select using (user_id = auth.u
 create policy p_insert on public.wb_reminders for insert with check (user_id = auth.uid());
 create policy p_update on public.wb_reminders for update using (user_id = auth.uid());
 create policy p_delete on public.wb_reminders for delete using (user_id = auth.uid());
+drop policy if exists p_select on public.wb_push_subscriptions;
 create policy p_select on public.wb_push_subscriptions for select using (user_id = auth.uid());
 create policy p_insert on public.wb_push_subscriptions for insert with check (user_id = auth.uid());
 create policy p_update on public.wb_push_subscriptions for update using (user_id = auth.uid());
 create policy p_delete on public.wb_push_subscriptions for delete using (user_id = auth.uid());
+drop policy if exists p_select on public.wb_channel_configs;
 create policy p_select on public.wb_channel_configs for select using (user_id = auth.uid());
 create policy p_insert on public.wb_channel_configs for insert with check (user_id = auth.uid());
 create policy p_update on public.wb_channel_configs for update using (user_id = auth.uid());

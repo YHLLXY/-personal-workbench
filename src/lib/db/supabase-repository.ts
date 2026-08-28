@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
 import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind, type GrowthAction, type GrowthActionInput } from './types'
+import { assertNoCycle } from './folder-tree'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
 type Row = Record<string, unknown>
@@ -205,6 +206,10 @@ export class SupabaseRepository implements WorkbenchRepository {
     if (upErr) throw upErr
   }
   async moveFolder(id: string, newParentId: string | null) {
+    const { data: allFolders, error: fetchErr } = await this.sb.from('wb_folders').select('id, parent_id')
+    if (fetchErr) throw fetchErr
+    const folders = (allFolders ?? []).map(f => ({ id: String(f.id), parentId: f.parent_id as string | null, name: '', sort: 0 })) as Folder[]
+    assertNoCycle(folders, id, newParentId)
     const { data, error } = await this.sb.from('wb_folders').update({ parent_id: newParentId }).eq('id', id).select().single()
     if (error) throw error; return folderFromRow(data)
   }

@@ -13,7 +13,7 @@ export interface BackupFile {
   tables: BackupTables
 }
 
-const TABLE_KEYS = ['tasks', 'habits', 'habitLogs', 'focusSessions', 'exams', 'notes', 'papers', 'folders', 'healthLogs', 'reviews'] as const
+const TABLE_KEYS = ['tasks', 'habits', 'habitLogs', 'focusSessions', 'exams', 'studyGoals', 'notes', 'papers', 'folders', 'healthLogs', 'reviews', 'growthActions'] as const
 
 export function buildBackup(tables: BackupTables, mode: 'local' | 'cloud'): BackupFile {
   return { app: BACKUP_APP, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), mode, tables }

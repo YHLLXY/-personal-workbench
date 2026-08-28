@@ -65,7 +65,11 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const url = (event.notification.data as { url?: string } | undefined)?.url ?? '/reminders'
+  let url = (event.notification.data as { url?: string } | undefined)?.url ?? '/reminders'
+  try {
+    const parsed = new URL(url, self.location.origin)
+    if (parsed.origin !== self.location.origin) url = self.location.origin + '/reminders'
+  } catch { url = self.location.origin + '/reminders' }
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(winClients => {
       for (const c of winClients) {

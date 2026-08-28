@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { RefreshCw, Link2, Settings2 } from 'lucide-react'
 import { loadHot, filterByTopics, formatFetchedAt, type HotResult, type HotCategory } from '../../lib/hot'
 import { repository } from '@/lib/db'
@@ -18,12 +18,14 @@ export default function Hot() {
   const [activeTopic, setActiveTopic] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
 
+  const staleRetriedRef = useRef(false)
+
   async function load(refresh = false, silent = false, sourceIds?: string[]) {
     if (!silent) setLoading(true)
     try {
       const r = await loadHot(refresh, sourceIds ?? subs.sourceIds)
       setRes(r)
-      if (r.stale) load(true, true)
+      if (r.stale && !staleRetriedRef.current) { staleRetriedRef.current = true; load(true, true) }
       else if (refresh && r.items.length === 0) toast.error('热点源暂不可用，请稍后重试')
       else if (refresh) toast.success(r.fromCache ? '网络不可用，已显示缓存' : '已刷新')
     } catch { toast.error('加载失败，请重试') } finally { if (!silent) setLoading(false) }

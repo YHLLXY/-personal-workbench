@@ -1,4 +1,5 @@
 import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput } from './types'
+import { assertNoCycle } from './folder-tree'
 
 const PREFIX = 'wb:'
 function read<T>(key: string): T[] {
@@ -122,7 +123,7 @@ export class LocalRepository implements WorkbenchRepository {
     write('papers', papers)
   }
   async moveFolder(id: string, newParentId: string | null) {
-    if (newParentId === id) throw new Error('不能移动到自身')
+    assertNoCycle(read<Folder>('folders'), id, newParentId)
     return patch<Folder>('folders', id, { parentId: newParentId })
   }
 

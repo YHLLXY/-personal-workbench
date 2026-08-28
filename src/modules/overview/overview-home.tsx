@@ -11,7 +11,7 @@ import { WeeklyTrendCard } from './weekly-trend'
 
 export default function OverviewHome() {
   const { data: tasks, isLoading: tl } = useTasks()
-  const { data: exams } = useExamsSoon()
+  const { data: exams, isLoading: el } = useExamsSoon()
   const nextExam = exams?.[0]
   const today = todayStr()
   const list = todayTasks(tasks ?? [], today).slice(0, 5)
@@ -47,7 +47,7 @@ export default function OverviewHome() {
           ))}
       </div>
       {/* 最近考试 → 学习管理 */}
-      {nextExam && (
+      {el ? <Skeleton className="h-16 w-full" /> : nextExam && (
         <Link to="/study" className="block bg-card border border-border rounded-2xl p-4 transition-all active:scale-[0.98]">
           <div className="text-xs text-muted-foreground">最近考试</div>
           <div className="text-2xl font-extrabold font-numeric mt-1">{daysUntil(nextExam.examDate)}<span className="text-sm font-normal text-muted-foreground ml-1">天后 · {nextExam.title}</span></div>

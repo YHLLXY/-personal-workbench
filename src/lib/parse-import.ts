@@ -44,6 +44,14 @@ export function parseImportMarkdown(text: string): ParsedImport {
     const p = line.match(/^platform:\s*"?([^"]*?)"?\s*$/)
     if (p) platform = p[1]
     if (line.startsWith('  - ')) keywords.push(line.slice(4).trim())
+    // 支持行内数组格式：keywords: [a, b, c]
+    const inlineKw = line.match(/^keywords:\s*\[(.+)\]\s*$/)
+    if (inlineKw) {
+      for (const k of inlineKw[1].split(',')) {
+        const trimmed = k.trim().replace(/^["']|["']$/g, '')
+        if (trimmed) keywords.push(trimmed)
+      }
+    }
   }
   return { title, sourceUrl, platform, summaryJson: null, keywords, content: body.trim() }
 }

@@ -14,6 +14,17 @@ declare const process: { env: Record<string, string | undefined> }
 
 // ========== 工具 ==========
 
+/** 简易 IP 限流（Serverless 下不精确但够用） */
+const rateLimitMap = new Map<string, number[]>()
+function checkRateLimit(ip: string, maxPerMinute = 5): boolean {
+  const now = Date.now()
+  const window = rateLimitMap.get(ip)?.filter(t => now - t < 60_000) ?? []
+  if (window.length >= maxPerMinute) return false
+  window.push(now)
+  rateLimitMap.set(ip, window)
+  return true
+}
+
 function env(k: string): string {
   const v = process.env[k]
   if (!v) throw new Error(`missing env ${k}`)
@@ -39,6 +50,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const entry = req.query.entry as string | undefined
     if (entry === 'resolve-phone') {
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? 'unknown'
+      if (!checkRateLimit(clientIp)) return res.status(429).json({ error: 'too many requests' })
       // 登录前调用（无会话）：公开解析接口。手机号本身非机密，本项目为手机号登录易用性接受该权衡；
       // 未注册手机号返回 404（not_found），前端据此提示「请先注册」；服务异常返回 500 由前端降级为邮箱登录
       const phone = normalizePhone(String((req.body as { phone?: string })?.phone ?? ''))
@@ -55,6 +68,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(404).json({ error: 'not found' })
   } catch (err) {
     console.error('auth handler error', err)
-    return res.status(500).json({ error: err instanceof Error ? err.message : 'internal error' })
+    return res.status(500).json({ error: 'internal error' })
   }
 }

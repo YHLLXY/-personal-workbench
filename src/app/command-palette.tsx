@@ -78,6 +78,10 @@ export function CommandPalette() {
     ]
   }, [q, navigate, setOpen, setCaptureOpen, setCaptureTab, setShortcutsOpen, theme, toggle])
 
+  useEffect(() => {
+    if (!open) setQ('')
+  }, [open])
+
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-start justify-center pt-[15vh] px-4" onClick={() => setOpen(false)}>

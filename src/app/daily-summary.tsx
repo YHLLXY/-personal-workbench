@@ -26,6 +26,7 @@ export function daysLabel(n: number): string {
 
 export function greeting(date: Date): string {
   const h = date.getHours()
+  if (h < 6) return '夜深了'
   if (h < 12) return '早上好'
   if (h < 18) return '下午好'
   return '晚上好'

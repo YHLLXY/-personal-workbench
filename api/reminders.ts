@@ -11,6 +11,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
+import { timingSafeEqual } from 'crypto'
 
 // Vercel 函数为 Node 环境，但 tsconfig.app.json（DOM lib）无 process 类型——此声明仅过 tsc
 declare const process: { env: Record<string, string | undefined> }
@@ -277,7 +278,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const entry = req.query.entry as string | undefined
     if (entry === 'cron') {
       // 直接读 env 比较：认证失败路径不抛 env 缺失错误，避免向未认证调用者泄漏环境变量名
-      if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET ?? ''}`) return res.status(401).json({ error: 'unauthorized' })
+      const expected = `Bearer ${process.env.CRON_SECRET ?? ''}`
+      const actual = req.headers.authorization ?? ''
+      const ok = expected.length === actual.length && timingSafeEqual(Buffer.from(expected), Buffer.from(actual))
+      if (!ok) return res.status(401).json({ error: 'unauthorized' })
       const result = await runCheck(adminClient(), new Date())
       return res.json({ ok: true, ...result })
     }
@@ -299,7 +303,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(404).json({ error: 'not found' })
   } catch (err) {
     console.error('reminders handler error', err)
-    return res.status(500).json({ error: err instanceof Error ? err.message : 'internal error' })
+    return res.status(500).json({ error: 'internal error' })
   }
 }
 
