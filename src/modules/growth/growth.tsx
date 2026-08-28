@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check, ChevronRight, Flame, Plus, RotateCcw, TrendingUp } from 'lucide-react'
 import { useGrowthActions, useImportPresets } from './api'
+import { celebrate, streakMilestone } from './celebrate'
 import { useHabits, useHabitLogs, useSetHabitLog } from '../health/api'
 import { useReviews } from '../review/api'
 import { todayStr } from '../../lib/db/types'
@@ -11,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import type { GrowthAction } from '../../lib/db/types'
+import type { GrowthAction, Habit } from '../../lib/db/types'
 import { ActionDetail } from './action-detail'
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -71,6 +72,29 @@ function TodayPanel() {
   const habitOf = (a: GrowthAction) => habits?.find(h => h.id === a.habitId && h.active)
 
   if (active.length === 0) return <p className="text-sm text-muted-foreground py-6 text-center">还没有进行中的行动，去「行动计划」导入</p>
+
+  /** 打卡 + 三层成就感反馈：卡片动效 / 纸屑震动 / 全部完成与连击里程碑加强 toast */
+  function checkIn(e: MouseEvent<HTMLButtonElement>, a: GrowthAction, habit: Habit) {
+    const done = logs?.find(l => l.habitId === habit.id && l.logDate === today)?.count ?? 0
+    const next = done > 0 ? 0 : 1
+    if (next === 1) {
+      const newStreak = streakFromLogDates([...(logs?.filter(l => l.habitId === habit.id).map(l => l.logDate) ?? []), today])
+      const othersUndone = active.filter(x => {
+        const h = habitOf(x)
+        return h && h.id !== habit.id && !logs?.some(l => l.habitId === h.id && l.logDate === today)
+      }).length
+      const all = othersUndone === 0
+      const milestone = streakMilestone(newStreak)
+      void celebrate(e.currentTarget, all || milestone != null ? 'grand' : 'single')
+      if (all) toast.success(`今日行动全部完成 🎉 连击 ${newStreak} 天`)
+      else if (milestone) toast.success(`「${a.title}」打卡成功 · 连击 ${newStreak} 天 🔥`)
+      else toast.success(`「${a.title}」打卡成功`)
+    } else {
+      toast.info(`已取消「${a.title}」`)
+    }
+    setLog.mutate({ habitId: habit.id, date: today, count: next })
+  }
+
   return (
     <div className="space-y-2">
       {active.map(a => {
@@ -78,19 +102,19 @@ function TodayPanel() {
         const done = habit ? logs?.find(l => l.habitId === habit.id && l.logDate === today)?.count ?? 0 : 0
         const dates = habit ? new Set(logs?.filter(l => l.habitId === habit.id).map(l => l.logDate) ?? []) : new Set<string>()
         return (
-          <div key={a.id} className={cn('flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3', done > 0 && 'opacity-70')}>
+          <div key={a.id} className={cn('flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3 transition-colors', done > 0 ? 'border-primary/40 bg-primary/5' : '')}>
             <span className="text-lg">{a.emoji}</span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm truncate">{a.title}</p>
+              <p className={cn('text-sm truncate transition-colors', done > 0 && 'line-through text-muted-foreground')}>{a.title}</p>
               <p className="text-[10px] text-muted-foreground">行动 {a.no} · {CATEGORY_LABEL[a.category] ?? a.category} {done > 0 ? '· 今日已完成' : ''}</p>
             </div>
             {habit ? (
               <>
                 <span className="text-xs text-muted-foreground flex items-center gap-0.5 shrink-0"><Flame className="size-3 text-orange-400" />{streakFromLogDates([...dates])} 天</span>
-                <button onClick={() => { const next = done > 0 ? 0 : 1; setLog.mutate({ habitId: habit.id, date: today, count: next }, { onSuccess: () => next === 0 ? toast.info(`已取消「${a.title}」`) : toast.success(`「${a.title}」打卡成功`) }) }}
+                <button onClick={e => checkIn(e, a, habit)}
                   aria-label={`打卡 ${a.title}`}
-                  className={cn('size-6 rounded-full border-[1.5px] flex items-center justify-center transition-colors', done > 0 ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40 text-muted-foreground hover:border-primary')}>
-                  {done > 0 ? <Check className="size-3.5" /> : <Plus className="size-3.5" />}
+                  className={cn('size-6 rounded-full border-[1.5px] flex items-center justify-center transition-colors active:scale-90', done > 0 ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40 text-muted-foreground hover:border-primary')}>
+                  {done > 0 ? <Check className="size-3.5 check-pop" /> : <Plus className="size-3.5" />}
                 </button>
               </>
             ) : (

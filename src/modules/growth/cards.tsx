@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Check, Flame, TrendingUp } from 'lucide-react'
 import { useGrowthActions } from './api'
+import { celebrate } from './celebrate'
 import { useHabits, useHabitLogs, useSetHabitLog } from '../health/api'
 import { todayStr } from '../../lib/db/types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -52,9 +53,9 @@ export function GrowthCard() {
             <div key={a.id} className="flex items-center gap-2.5 text-[13px]">
               <span>{a.emoji}</span>
               <span className="flex-1 truncate">{a.title}</span>
-              <button onClick={() => setLog.mutate({ habitId: h.id, date: today, count: 1 }, { onSuccess: () => toast.success(`「${a.title}」打卡成功`) })}
+              <button onClick={e => { void celebrate(e.currentTarget, undone.length === 1 ? 'grand' : 'single'); setLog.mutate({ habitId: h.id, date: today, count: 1 }, { onSuccess: () => toast.success(`「${a.title}」打卡成功`) }) }}
                 aria-label={`打卡 ${a.title}`}
-                className={cn('size-5 rounded-full border-[1.5px] flex items-center justify-center transition-colors border-muted-foreground/40 text-muted-foreground hover:border-primary')}>
+                className={cn('size-5 rounded-full border-[1.5px] flex items-center justify-center transition-colors active:scale-90 border-muted-foreground/40 text-muted-foreground hover:border-primary')}>
                 <Check className="size-3" />
               </button>
             </div>
