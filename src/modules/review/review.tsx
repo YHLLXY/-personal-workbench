@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BookOpen, CalendarClock, ChevronDown, CheckCircle2, FileText, Flame, Heart, HeartHandshake, Lightbulb, ListTodo, Scale, Timer, TrendingUp, Trophy, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { parsePlan, buildTrend, tomorrowStr } from './review-utils'
+import { parsePlan, buildTrend, buildWeeklySummary, tomorrowStr } from './review-utils'
 
 const MOODS = ['很差', '较差', '一般', '不错', '很棒']
 
@@ -62,6 +62,7 @@ export default function Review() {
   const isToday = activeDate === today
   const streak = streakFromLogDates((reviews ?? []).map(r => r.reviewDate)) // 连续复盘天数（复用打卡连击算法）
   const trend = buildTrend(reviews ?? [])
+  const week = buildWeeklySummary(today, { tasks: tasks ?? [], focusSessions: sessions ?? [], habitLogs: logs ?? [], reviews: reviews ?? [] })
 
   function doSave() {
     save.mutate({ reviewDate: activeDate, mood, score, summary, planTomorrow: plan, achievements, reflection, gratitude, learnings }, {
@@ -102,6 +103,22 @@ export default function Review() {
         <Stat icon={Timer} label="专注时长" value={`${Math.floor(s.focusMinutes / 60)}h ${s.focusMinutes % 60}m`} sub="今天" />
         <Stat icon={Flame} label="打卡" value={`${s.habitChecks}`} sub="次" />
         <Stat icon={Scale} label="体重" value={s.weightLog ? `${s.weightLog.value}kg` : '—'} sub={s.weightLog?.logDate === today ? '今天' : '未记录'} />
+      </div>
+
+      {/* 本周回顾：7 天聚合（待办/专注/打卡/复盘 + 心情评分均值） */}
+      <div className="bg-card border border-border rounded-2xl p-4">
+        <div className="text-sm font-semibold mb-2 flex items-center gap-2">
+          <CalendarClock className="size-4 text-primary" strokeWidth={1.7} />本周回顾
+          <span className="text-xs font-normal text-muted-foreground">近 7 天</span>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+          {([['完成任务', `${week.tasksDone}`, '项'], ['专注', `${week.focusMinutes}`, '分钟'], ['打卡', `${week.habitChecks}`, '次'], ['复盘', `${week.reviewsWritten}`, '篇'], ['平均心情', week.avgMood != null ? `${week.avgMood}` : '—', '/5'], ['平均评分', week.avgScore != null ? `${week.avgScore}` : '—', '/10']] as [string, string, string][]).map(([label, v, unit]) => (
+            <div key={label} className="rounded-xl bg-muted/60 px-2 py-2">
+              <div className="text-base font-bold font-numeric">{v}<span className="text-[10px] font-normal text-muted-foreground ml-0.5">{unit}</span></div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 近 14 次复盘趋势迷你图（数据 <2 条不渲染） */}
