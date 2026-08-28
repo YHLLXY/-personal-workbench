@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Check, Flame, TrendingUp } from 'lucide-react'
 import { useGrowthActions } from './api'
-import { celebrate } from './celebrate'
+import { celebrate } from '@/lib/celebrate'
 import { useHabits, useHabitLogs, useSetHabitLog } from '../health/api'
 import { todayStr } from '../../lib/db/types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'

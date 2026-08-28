@@ -1,14 +1,40 @@
 import { useEffect, useState } from 'react'
 import { Play, Pause, RotateCcw, Minus, Plus } from 'lucide-react'
+import { toast } from 'sonner'
 import { formatSeconds, breakForFocusIndex, FOCUS_MIN_MINUTES, FOCUS_MAX_MINUTES, SHORT_BREAK_MIN, LONG_BREAK_MIN, getPomodoroSettings, savePomodoroSettings, type Phase, type PomodoroSettings } from '@/lib/pomodoro'
+import { celebrate } from '@/lib/celebrate'
 import { useCreateFocus } from './api'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 const STATE_KEY = 'wb:pomodoro-state'
 const FOCUS_STEP = 5
 /** 运行中会话超过 12 小时视为陈旧，挂载时重置 */
 const STALE_MS = 12 * 60 * 60 * 1000
+
+/** 专注完成提示音：三连上行音（Web Audio，无音频设备/自动播放策略拦截时静默降级） */
+function playChime() {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctx) return
+    const ctx = new Ctx()
+    const now = ctx.currentTime
+    ;[880, 1100, 1320].forEach((freq, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0.15, now + i * 0.18)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.18 + 0.16)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(now + i * 0.18)
+      osc.stop(now + i * 0.18 + 0.18)
+    })
+    setTimeout(() => void ctx.close().catch(() => {}), 1200)
+  } catch { /* 静默降级 */ }
+}
 
 /** 持久化的计时状态：running 时 startedAt 为真实起点、elapsed 为暂停前累计；暂停时 startedAt=null、elapsed 冻结（保留剩余） */
 interface PersistedPomodoroState {
@@ -56,6 +82,8 @@ export default function Pomodoro() {
     return saved
   })
   const { phase, focusIndex, totalSeconds, startedAt, running } = state
+  // 本次专注主题（可选）：完成时写入 FocusSession.note，专注记录才有上下文
+  const [focusNote, setFocusNote] = useState('')
 
   // running 时每秒重渲染；剩余秒数由 startedAt 实时推导，切后台/休眠不漂移
   const [, setTick] = useState(0)
@@ -76,13 +104,20 @@ export default function Pomodoro() {
   useEffect(() => {
     if (remaining > 0) return
     if (phase === 'focus') {
-      mutate({ minutes: Math.round(liveElapsed / 60) })
+      const minutes = Math.max(Math.round(liveElapsed / 60), 1)
+      const note = focusNote.trim()
+      mutate({ minutes, note: note || undefined })
+      playChime()
+      void celebrate(null, 'grand')
+      toast.success(`专注完成 +${minutes} 分钟${note ? ` · ${note}` : ''}`)
+      setFocusNote('')
       const nextPhase = breakForFocusIndex(focusIndex)
       setState(s => ({ phase: nextPhase, focusIndex: s.focusIndex + 1, totalSeconds: (nextPhase === 'long' ? LONG_BREAK_MIN : SHORT_BREAK_MIN) * 60, elapsed: 0, startedAt: null, running: false }))
     } else {
+      toast.info('休息结束，开始下一个专注吧')
       setState(s => ({ phase: 'focus', focusIndex: s.focusIndex, totalSeconds: settings.focusMinutes * 60, elapsed: 0, startedAt: null, running: false }))
     }
-  }, [remaining, phase, focusIndex, liveElapsed, settings.focusMinutes, mutate])
+  }, [remaining, phase, focusIndex, liveElapsed, settings.focusMinutes, mutate, focusNote])
 
   const toggleRunning = () => {
     if (running) {
@@ -99,9 +134,9 @@ export default function Pomodoro() {
     savePomodoroSettings({ focusMinutes: next })
     setSettings({ focusMinutes: next })
     if (phase === 'focus') {
-      // 当前专注阶段同步伸缩：总长与已用同增同减，剩余不变
-      const deltaSec = (next - settings.focusMinutes) * 60
-      setState(s => ({ ...s, totalSeconds: next * 60, elapsed: s.elapsed + deltaSec }))
+      // 加时 = 延长本节剩余时间（elapsed 不动，total 增加，剩余即时 +delta）。
+      // 旧实现把 delta 加进 elapsed，导致未开始也"预支"时长：25→30 分钟后剩余显示 25:00、圆环缺角（2026-08 线上反馈）。
+      setState(s => ({ ...s, totalSeconds: next * 60 }))
     }
   }
 
@@ -134,6 +169,9 @@ export default function Pomodoro() {
           <Button size="sm" variant="outline" aria-label="增加专注时长" disabled={settings.focusMinutes >= FOCUS_MAX_MINUTES} onClick={() => adjustFocusMinutes(FOCUS_STEP)}><Plus className="size-3.5" /></Button>
         </div>
       </div>
+      <Input value={focusNote} onChange={e => setFocusNote(e.target.value)}
+        placeholder="这次专注做什么？（可选，完成时记入专注记录）"
+        className="h-9 text-sm max-w-72 text-center" maxLength={50} />
       <div className="relative size-56">
         <div className="absolute inset-0 rounded-full" style={{ background: `conic-gradient(var(--primary) ${pct * 360}deg, var(--muted) 0deg)` }} />
         <div className="absolute inset-3 rounded-full bg-card flex flex-col items-center justify-center">

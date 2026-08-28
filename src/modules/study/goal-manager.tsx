@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Minus, Pencil, Plus, PlusCircle, RotateCcw, Target, Trash2 } from 'lucide-react'
+import { Check, CheckCircle2, Minus, Pencil, Plus, PlusCircle, RotateCcw, Target, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { useStudyGoals, useStudyGoalMutations } from './goals-api'
+import { daysUntil } from './api'
+import { celebrate } from '@/lib/celebrate'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,12 +14,41 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import type { StudyGoal } from '@/lib/db/types'
 
-/** 学习目标管理：进度条 + 进度步进 + 截止日 + 完成归档 + 删除 */
+/** 学习目标管理：进度步进（±1/+5/+10/精确设置）+ 截止速率倒推 + 里程碑庆祝 + 完成归档 + 删除 */
 export default function GoalManager() {
   const { data: goals, isLoading } = useStudyGoals()
   const { update, remove } = useStudyGoalMutations()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<StudyGoal | null>(null)
+  // 精确设置进度：editingId 指向正在内联编辑的目标，draft 为输入草稿
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+
+  /** 精确设置进度：草稿转数字后按差值推进（复用 advance 的 clamp 与里程碑反馈），非法输入静默取消 */
+  function commitEdit(g: StudyGoal) {
+    const num = Math.floor(Number(draft))
+    setEditingId(null)
+    if (!Number.isFinite(num) || draft.trim() === '') return
+    advance(g, num - g.progress)
+  }
+
+  /** 推进进度（delta 可负）：clamp 到 [0, target]，跨越 25/50/75 里程碑与达成 100 时给庆祝反馈 */
+  function advance(g: StudyGoal, delta: number) {
+    const before = Math.min(Math.round((g.progress / Math.max(g.target, 1)) * 100), 100)
+    const next = Math.min(Math.max(g.progress + delta, 0), g.target)
+    update.mutate({ id: g.id, patch: { progress: next } })
+    const after = Math.min(Math.round((next / Math.max(g.target, 1)) * 100), 100)
+    if (after >= 100 && before < 100) {
+      void celebrate(null, 'grand')
+      toast.success(`达成目标「${g.title}」🎉 去归档吧`)
+    } else {
+      const crossed = [25, 50, 75].find(q => before < q && after >= q)
+      if (crossed) {
+        void celebrate(null, 'single')
+        toast.success(`「${g.title}」已过 ${crossed}%`)
+      }
+    }
+  }
 
   const sorted = [...(goals ?? [])].sort((a, b) => {
     // 进行中在前（未归档优先），同状态按目标进度高的在前
@@ -49,19 +81,44 @@ export default function GoalManager() {
                       {done && <span className="text-[10px] bg-primary/12 text-primary rounded-full px-2 py-0.5 shrink-0">已完成</span>}
                     </div>
                     <div className="mt-2 flex items-center gap-2">
-                      <Progress value={pct} className="h-2 flex-1" />
-                      <span className="shrink-0 text-xs font-numeric text-muted-foreground">{g.progress} / {g.target}</span>
+                      <div className="relative flex-1">
+                        <Progress value={pct} className="h-2" />
+                        {/* 25/50/75 里程碑刻度线 */}
+                        {[25, 50, 75].map(q => <span key={q} className="absolute top-0 bottom-0 w-px bg-border/80" style={{ left: `${q}%` }} />)}
+                      </div>
+                      {editingId === g.id ? (
+                        <span className="shrink-0 flex items-center gap-1">
+                          <Input autoFocus type="number" min={0} max={g.target} value={draft} onChange={e => setDraft(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && commitEdit(g)} className="h-6 w-16 text-xs font-numeric" />
+                          <button onClick={() => commitEdit(g)} aria-label="确认进度" className="size-6 rounded-lg border border-primary/40 text-primary flex items-center justify-center"><Check className="size-3.5" /></button>
+                        </span>
+                      ) : (
+                        <button onClick={() => { setEditingId(g.id); setDraft(String(g.progress)) }} title="点击精确设置进度"
+                          className="shrink-0 text-xs font-numeric text-muted-foreground hover:text-primary underline decoration-dotted underline-offset-2">
+                          {g.progress} / {g.target}
+                        </button>
+                      )}
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
-                      {g.deadline && <span>截止 {g.deadline}</span>}
+                      {g.deadline && !done && (() => {
+                        const d = daysUntil(g.deadline)
+                        const remain = Math.max(g.target - g.progress, 0)
+                        if (d < 0) return <span className="text-destructive font-medium">已逾期 {Math.abs(d)} 天</span>
+                        if (remain === 0) return <span>进度已满 · 截止 {g.deadline}</span>
+                        if (d === 0) return <span className="text-amber-600 dark:text-amber-400 font-medium">今天截止 · 还差 {remain}</span>
+                        return <span>截止 {g.deadline} · 剩 {d} 天，每天约 {Math.ceil(remain / d)}</span>
+                      })()}
+                      {g.deadline && done && <span>截止 {g.deadline}</span>}
                       {g.note && <span className="truncate max-w-[16rem]">备注：{g.note}</span>}
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
                     {!done ? (
                       <div className="flex items-center gap-1">
-                        <button onClick={() => update.mutate({ id: g.id, patch: { progress: Math.max(0, g.progress - 1) } })} aria-label="进度 -1" className="size-7 rounded-lg border border-border text-muted-foreground hover:border-primary/40 flex items-center justify-center"><Minus className="size-3.5" /></button>
-                        <button onClick={() => update.mutate({ id: g.id, patch: { progress: g.progress + 1 } })} aria-label="进度 +1" className="size-7 rounded-lg border border-border text-muted-foreground hover:border-primary/40 flex items-center justify-center"><Plus className="size-3.5" /></button>
+                        <button onClick={() => advance(g, -1)} aria-label="进度 -1" className="size-7 rounded-lg border border-border text-muted-foreground hover:border-primary/40 flex items-center justify-center"><Minus className="size-3.5" /></button>
+                        <button onClick={() => advance(g, 1)} aria-label="进度 +1" className="size-7 rounded-lg border border-border text-muted-foreground hover:border-primary/40 flex items-center justify-center"><Plus className="size-3.5" /></button>
+                        {g.target >= 10 && <button onClick={() => advance(g, 5)} aria-label="进度 +5" className="h-7 px-1.5 rounded-lg border border-border text-[10px] font-numeric text-muted-foreground hover:border-primary/40 flex items-center justify-center">+5</button>}
+                        {g.target >= 10 && <button onClick={() => advance(g, 10)} aria-label="进度 +10" className="h-7 px-1.5 rounded-lg border border-border text-[10px] font-numeric text-muted-foreground hover:border-primary/40 flex items-center justify-center">+10</button>}
                       </div>
                     ) : (
                       <button onClick={() => update.mutate({ id: g.id, patch: { status: 'active' } })} aria-label="恢复进行中" title="恢复进行中" className="size-7 rounded-lg border border-border text-muted-foreground hover:border-primary/40 flex items-center justify-center"><RotateCcw className="size-3.5" /></button>

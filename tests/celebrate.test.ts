@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { celebrate, prefersReducedMotion, streakMilestone } from '../src/modules/growth/celebrate'
+import { celebrate, prefersReducedMotion, streakMilestone } from '../src/lib/celebrate'
 
 const confettiMock = vi.fn()
 vi.mock('canvas-confetti', () => ({ default: (...args: unknown[]) => confettiMock(...args) }))
