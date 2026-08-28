@@ -1,6 +1,9 @@
 import { useState } from 'react'
-import { Flame, Scale, Moon, Dumbbell, Trash2, Plus } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ChevronRight, Flame, Scale, Moon, Dumbbell, Trash2, Plus } from 'lucide-react'
 import { useHabits, useHabitLogs, useSetHabitLog, useHealthLogs, useHealthMutations } from './api'
+import { growthBoundHabitIds, partitionHabits } from './derive'
+import { useGrowthActions } from '../growth/api'
 import { HabitManager } from './habit-manager'
 import { todayStr } from '@/lib/db/types'
 import { Button } from '@/components/ui/button'
@@ -30,14 +33,18 @@ export default function Health() {
 
 function CheckinPanel() {
   const { data: habits } = useHabits()
+  const { data: actions } = useGrowthActions()
   const { data: logs } = useHabitLogs()
   const setLog = useSetHabitLog()
   const today = todayStr()
 
+  // 行动绑定的习惯打卡归「自我提升」，这里只列健康自有习惯
+  const { own, linked } = partitionHabits((habits ?? []).filter(h => h.active), growthBoundHabitIds(actions ?? []))
+
   return (
     <div className="space-y-2">
-      {(habits ?? []).filter(h => h.active).length === 0 && <p className="text-sm text-muted-foreground py-6 text-center">先去「习惯管理」添加习惯</p>}
-      {(habits ?? []).filter(h => h.active).map(h => {
+      {own.length === 0 && linked.length === 0 && <p className="text-sm text-muted-foreground py-6 text-center">先去「习惯管理」添加习惯</p>}
+      {own.map(h => {
         const done = logs?.find(l => l.habitId === h.id && l.logDate === today)?.count ?? 0
         return (
           <div key={h.id} className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3">
@@ -53,6 +60,11 @@ function CheckinPanel() {
           </div>
         )
       })}
+      {linked.length > 0 && (
+        <Link to="/growth" className="flex items-center justify-center gap-1 rounded-xl border border-dashed border-border px-4 py-2.5 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors">
+          {linked.length} 项行动在「自我提升」中打卡<ChevronRight className="size-3.5" />
+        </Link>
+      )}
     </div>
   )
 }

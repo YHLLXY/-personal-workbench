@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { taskKeys } from '@/modules/overview/api'
 import { noteKeys } from '@/modules/news/api'
 import { habitLogKeys } from '@/modules/health/api'
+import { growthBoundHabitIds } from '@/modules/health/derive'
 
 const TABS = [
   { id: 'task', label: '任务' },
@@ -40,8 +41,10 @@ export function QuickCapture() {
   const addNote = useMutation({ mutationFn: () => repository.createNote(content), onSuccess: () => { qc.invalidateQueries({ queryKey: noteKeys.all }); toast.success('已记下'); reset() }, onError: () => toast.error('保存失败') })
   const addLog = useMutation({
     mutationFn: async () => {
-      // 优化：日志列表只查一次（计划原文在循环内重复查询，属低效写法）
-      const habits = (await repository.listHabits()).filter(h => h.active)
+      // 日志列表只查一次；行动绑定的习惯打卡归「自我提升」，一键打卡只覆盖健康自有习惯
+      const actions = await repository.listGrowthActions().catch(() => [])
+      const bound = growthBoundHabitIds(actions)
+      const habits = (await repository.listHabits()).filter(h => h.active && !bound.has(h.id))
       const logs = await repository.listHabitLogs()
       const today = todayStr()
       await Promise.all(habits.map(h => {
@@ -49,8 +52,9 @@ export function QuickCapture() {
         if (hit) return repository.setHabitLog(h.id, today, Math.min(h.targetPerDay, hit.count + 1))
         return repository.setHabitLog(h.id, today, 1)
       }))
+      return habits.length
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: habitLogKeys.all }); toast.success('今日习惯已打卡'); reset() },
+    onSuccess: n => { qc.invalidateQueries({ queryKey: habitLogKeys.all }); if (n === 0) toast.info('没有可打卡的个人习惯'); else toast.success('今日习惯已打卡'); reset() },
     onError: () => toast.error('打卡失败'),
   })
 
@@ -83,7 +87,7 @@ export function QuickCapture() {
         )}
         {tab === 'habit' && (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">给今天的全部习惯打一次卡</p>
+            <p className="text-sm text-muted-foreground">给今天的个人习惯打一次卡（行动打卡去「自我提升」）</p>
             <Button className="w-full" onClick={() => addLog.mutate()} disabled={addLog.isPending}>全部打卡</Button>
           </div>
         )}

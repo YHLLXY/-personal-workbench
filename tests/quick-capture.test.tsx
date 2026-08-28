@@ -45,3 +45,40 @@ describe('QuickCapture', () => {
     expect(logs[0].count).toBe(1)
   })
 })
+
+describe('QuickCapture 打卡去重', () => {
+  beforeEach(() => { localStorage.clear(); useUiStore.setState({ captureOpen: true, paletteOpen: false, captureTab: 'habit', shortcutsOpen: false }) })
+
+  it('一键打卡跳过被行动绑定的习惯（打卡归「自我提升」）', async () => {
+    const boundHabit = await repository.createHabit({ name: '行动习惯' })
+    const ownHabit = await repository.createHabit({ name: '自有习惯' })
+    await repository.createGrowthAction({
+      no: 1, title: '行动一', emoji: '📈', category: '学业', why: '', steps: [], targets: [], verify: '', habitId: boundHabit.id,
+    })
+
+    renderCapture()
+    fireEvent.click(screen.getByText('全部打卡'))
+
+    const logs = await vi.waitFor(async () => {
+      const l = await repository.listHabitLogs()
+      if (l.length < 1) throw new Error('waiting')
+      return l
+    })
+    expect(logs).toHaveLength(1)
+    expect(logs[0].habitId).toBe(ownHabit.id)
+  })
+
+  it('全部习惯都被行动绑定时，一键打卡不写入任何日志', async () => {
+    const h = await repository.createHabit({ name: '只有行动习惯' })
+    await repository.createGrowthAction({
+      no: 1, title: '行动一', emoji: '📈', category: '学业', why: '', steps: [], targets: [], verify: '', habitId: h.id,
+    })
+
+    renderCapture()
+    fireEvent.click(screen.getByText('全部打卡'))
+    await new Promise(r => setTimeout(r, 50))
+
+    const logs = await repository.listHabitLogs()
+    expect(logs).toHaveLength(0)
+  })
+})

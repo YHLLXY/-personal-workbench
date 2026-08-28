@@ -1,6 +1,9 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Plus, Trash2 } from 'lucide-react'
 import { useHabits, useHabitMutations } from './api'
+import { growthBoundHabitIds, partitionHabits } from './derive'
+import { useGrowthActions } from '../growth/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
@@ -9,8 +12,12 @@ const PRESETS = ['早起', '运动', '背单词', '不熬夜']
 
 export function HabitManager() {
   const { data: habits } = useHabits()
+  const { data: actions } = useGrowthActions()
   const { create, remove } = useHabitMutations()
   const [name, setName] = useState('')
+
+  // 行动绑定的习惯单独展示（只读），删除入口留给「自我提升」模块，避免误删打断行动打卡
+  const { own, linked } = partitionHabits(habits ?? [], growthBoundHabitIds(actions ?? []))
 
   return (
     <div>
@@ -24,7 +31,7 @@ export function HabitManager() {
         {PRESETS.map(p => <button key={p} onClick={() => create.mutate({ name: p }, { onSuccess: () => toast.success(`已添加「${p}」`) })} className="text-[11px] border border-border rounded-full px-2.5 py-1 text-muted-foreground hover:border-primary hover:text-primary">{p} +</button>)}
       </div>
       <div className="space-y-1.5">
-        {(habits ?? []).map(h => (
+        {own.map(h => (
           <div key={h.id} className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2">
             <span className="text-sm">{h.icon}</span>
             <span className="text-sm flex-1">{h.name}</span>
@@ -32,8 +39,24 @@ export function HabitManager() {
             <button onClick={() => remove.mutate(h.id)} aria-label={`删除习惯 ${h.name}`} className="p-1 text-muted-foreground/50 hover:text-destructive"><Trash2 className="size-3.5" /></button>
           </div>
         ))}
-        {(habits ?? []).length === 0 && <p className="text-xs text-muted-foreground py-3 text-center">还没有习惯，从上面预设开始</p>}
+        {own.length === 0 && linked.length === 0 && <p className="text-xs text-muted-foreground py-3 text-center">还没有习惯，从上面预设开始</p>}
       </div>
+      {linked.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs text-muted-foreground mb-1.5">
+            由「自我提升」管理 · <Link to="/growth" className="text-primary">前往查看 →</Link>
+          </p>
+          <div className="space-y-1.5">
+            {linked.map(h => (
+              <div key={h.id} className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2">
+                <span className="text-sm">{h.icon}</span>
+                <span className="text-sm flex-1 truncate">{h.name}</span>
+                <span className="text-[10px] text-muted-foreground shrink-0">每日 {h.targetPerDay} 次</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
