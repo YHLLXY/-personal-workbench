@@ -28,12 +28,15 @@
 2. **语义修正（待拍板 ①）**：体重/睡眠这类"一天一个数"的记录改为**当日 upsert 覆盖**（再记一次 = 更新今天的值，不新增条目）；运动保留多条（一天多次运动是合理的）。云端 `createHealthLog` 对 weight/sleep 先查当日同类型 → 有则 update、无则 insert（一次额外查询可接受）；本地仓储同样处理。
 3. **存量清理**（一次性，Supabase Dashboard SQL 编辑器执行，保留每组最新一条）：
    ```sql
+   -- 注意：wb_health_logs 实际只有 id/user_id/log_date/type/value 五列，没有时间戳列。
+   -- id 由 genId() 生成（Date.now() base36 前缀），id 字典序越大 = 创建越晚，故用 id 比较定"最新"。
    delete from wb_health_logs a
    using wb_health_logs b
    where a.user_id = b.user_id and a.type = b.type and a.log_date = b.log_date
-     and a.created_at < b.created_at;   -- 仅 weight/sleep 需要去重时加 and a.type in ('weight','sleep')
+     and a.id < b.id
+     and a.type in ('weight', 'sleep');
    ```
-   （执行前先 `select` 一遍确认行数符合预期；执行窗口放低峰期。）
+   （执行前先 select 分组确认行数与值；42703 "column does not exist" 说明引用了不存在的列，先查 migrations 里的真实表结构。）
 
 **验收**：快速连点记录按钮只产生一条；记录体重两次，当天列表只有最新一条；运动可多条；存量重复清零。
 
