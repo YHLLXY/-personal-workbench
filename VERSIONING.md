@@ -61,6 +61,8 @@ changelog 条目的 items 沿用现有中文风格，但每条开头用类别词
 
 ## §4 发版流程（checklist，每次发布必须完整走一遍）
 
+> 推荐用 `node scripts/release.mjs --dry-run` 预览判级与条目，确认后 `node scripts/release.mjs --yes --title "标题"` 一键完成 3-7 步（含质量门禁）。脚本只认 feat/fix/! 前缀判级，纯 docs/chore 会拒绝发版。
+
 1. **清点改动**：`git log` 自上个版本 tag 以来的全部提交，按 §2 表归类。
 2. **判级**：取最高档 → 得出新版本号。
 3. **changelog**：`src/app/changelog.ts` 数组顶部插入条目（version 用完整三段 `vX.Y.Z`、date=当天、title 一句话概括、items 按类别词开头）。

@@ -18,7 +18,7 @@ const ROOT = resolve(decodeURIComponent(new URL('..', import.meta.url).pathname)
 const args = new Set(process.argv.slice(2))
 const titleArg = process.argv.find(a => a.startsWith('--title='))?.slice('--title='.length)
 const DRY = args.has('--dry-run')
-const YES = args.has('--yes') || DRY
+const YES = args.has('--yes')
 const NO_PUSH = args.has('--no-push') || DRY
 
 const sh = (cmd) => execSync(cmd, { cwd: ROOT, encoding: 'utf8' }).trim()
@@ -36,8 +36,10 @@ if (subjects.length === 0) { console.error('✗ 上个版本以来没有任何�
 const isBreaking = s => /^[a-z]+(\([^)]*\))?!:/.test(s) || /^BREAKING CHANGE:/m.test(s)
 const isFeat = s => /^feat(\(|:)/.test(s)
 const isFix = s => /^(fix|perf)(\(|:)/.test(s)
-const releaseable = subjects.filter(s => isBreaking(s) || isFeat(s) || isFix(s) || /^(docs|chore|refactor|test|style)(\(|:)/.test(s))
-if (releaseable.length === 0) { console.error('✗ 只有 docs/chore 等不可发版提交，按制度不发版'); process.exit(1) }
+// 纯 docs/chore/refactor/test/style 按 VERSIONING §2 不发版（只认 feat/fix/BREAKING）
+if (!subjects.some(s => isBreaking(s) || isFeat(s) || isFix(s))) {
+  console.error('✗ 上个版本以来只有 docs/chore/refactor 等不可发版提交，按 VERSIONING §2 不发版'); process.exit(1)
+}
 const level = subjects.some(isBreaking) ? 'major' : subjects.some(isFeat) ? 'minor' : 'patch'
 
 // 3. 计算新版本号
@@ -67,9 +69,10 @@ if (!YES) { console.log('（dry-run 结束；确认无误后加 --yes --title ".
 // 5. 写 changelog.ts + package.json
 const clPath = resolve(ROOT, 'src/app/changelog.ts')
 let cl = readFileSync(clPath, 'utf8')
-const anchor = 'export const CHANGELOG: ChangelogEntry[] = [\n'
-if (!cl.includes(anchor)) { console.error('✗ changelog.ts 结构不符（找不到数组锚点）'); process.exit(1) }
-cl = cl.replace(anchor, anchor + entry)
+// 锚点容忍 CRLF/LF（Windows autocrlf 检出）
+const anchorRe = /export const CHANGELOG: ChangelogEntry\[\] = \[\r?\n/
+if (!anchorRe.test(cl)) { console.error('✗ changelog.ts 结构不符（找不到数组锚点）'); process.exit(1) }
+cl = cl.replace(anchorRe, m => m + entry)
 writeFileSync(clPath, cl)
 pkg.version = next
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
