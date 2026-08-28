@@ -1,23 +1,27 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useReviews, useSaveReview } from './api'
-import { useTasks } from '../overview/api'
+import { useTasks, useTaskMutations } from '../overview/api'
 import { useFocusSessions } from '../study/api'
 import { useHabitLogs, useHealthLogs } from '../health/api'
 import { useExams } from '../study/api'
 import { buildDailySummary } from '../../lib/review-summary'
-import { todayStr } from '../../lib/db/types'
+import { todayStr, type Review } from '../../lib/db/types'
+import { streakFromLogDates } from '@/lib/heatmap'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { BookOpen, CalendarClock, ChevronDown, CheckCircle2, FileText, Flame, Heart, HeartHandshake, Lightbulb, Scale, Timer, Trophy, type LucideIcon } from 'lucide-react'
+import { BookOpen, CalendarClock, ChevronDown, CheckCircle2, FileText, Flame, Heart, HeartHandshake, Lightbulb, ListTodo, Scale, Timer, TrendingUp, Trophy, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { parsePlan, buildTrend, tomorrowStr } from './review-utils'
 
 const MOODS = ['很差', '较差', '一般', '不错', '很棒']
 
 export default function Review() {
   const { data: reviews } = useReviews()
   const save = useSaveReview()
+  const tasksMut = useTaskMutations()
+  const generatedRef = useRef(new Set<string>()) // 会话内已生成过明日待办的 reviewDate，防重复生成
   const today = todayStr()
   const { data: tasks } = useTasks()
   const { data: sessions } = useFocusSessions()
@@ -56,6 +60,8 @@ export default function Review() {
   const s = buildDailySummary(today, { tasks: tasks ?? [], focusSessions: sessions ?? [], habitLogs: logs ?? [], healthLogs: health ?? [], exams: exams ?? [] })
   const history = [...(reviews ?? [])].sort((a, b) => b.reviewDate.localeCompare(a.reviewDate))
   const isToday = activeDate === today
+  const streak = streakFromLogDates((reviews ?? []).map(r => r.reviewDate)) // 连续复盘天数（复用打卡连击算法）
+  const trend = buildTrend(reviews ?? [])
 
   function doSave() {
     save.mutate({ reviewDate: activeDate, mood, score, summary, planTomorrow: plan, achievements, reflection, gratitude, learnings }, {
@@ -63,11 +69,31 @@ export default function Review() {
     })
   }
 
+  // 明日计划一键转待办：逐条创建（dueDate=明天，title=条目文本），同一 reviewDate 会话内只允许生成一次
+  async function genTomorrow() {
+    if (generatedRef.current.has(activeDate)) return
+    const items = parsePlan(plan)
+    if (items.length === 0) { toast.error('明日计划为空或没有有效条目'); return }
+    const due = tomorrowStr()
+    try {
+      await Promise.all(items.map(title => tasksMut.create.mutateAsync({ title, dueDate: due })))
+      generatedRef.current.add(activeDate)
+      toast.success(`已生成 ${items.length} 条明日待办`)
+    } catch {
+      toast.error('生成明日待办失败，请重试') // mutation 自身有逐条错误 toast，这里兜底汇总
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-xl font-bold">今日复盘</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">数据自动汇总 · 睡前 5 分钟</p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-bold">今日复盘</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">数据自动汇总 · 睡前 5 分钟</p>
+        </div>
+        {streak > 0 && (
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"><Flame className="size-3.5" strokeWidth={1.7} />连续 {streak} 天</span>
+        )}
       </div>
 
       {/* 自动汇总 */}
@@ -77,6 +103,17 @@ export default function Review() {
         <Stat icon={Flame} label="打卡" value={`${s.habitChecks}`} sub="次" />
         <Stat icon={Scale} label="体重" value={s.weightLog ? `${s.weightLog.value}kg` : '—'} sub={s.weightLog?.logDate === today ? '今天' : '未记录'} />
       </div>
+
+      {/* 近 14 次复盘趋势迷你图（数据 <2 条不渲染） */}
+      {trend.dates.length >= 2 && (
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="text-sm font-semibold mb-2 flex items-center gap-2">
+            <TrendingUp className="size-4 text-primary" strokeWidth={1.7} />近 14 次趋势
+            <span className="text-xs font-normal text-muted-foreground">心情（强调色）/ 评分（主色）</span>
+          </div>
+          <TrendChart trend={trend} />
+        </div>
+      )}
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="max-w-full overflow-x-auto">
@@ -134,6 +171,10 @@ export default function Review() {
             </FormSection>
             <FormSection icon={CalendarClock} title="明日计划">
               <Textarea value={plan} onChange={e => setPlan(e.target.value)} rows={3} placeholder="明天最重要的 1-3 件事…" />
+              {/* 一键转待办：isPending 或该日期已生成过则禁用 */}
+              <Button size="sm" variant="outline" className="w-full text-xs" onClick={genTomorrow} disabled={tasksMut.create.isPending || generatedRef.current.has(activeDate)}>
+                <ListTodo className="size-3.5" strokeWidth={1.7} />{tasksMut.create.isPending ? '生成中…' : '生成明日待办'}
+              </Button>
             </FormSection>
             <Button className="w-full" onClick={doSave} disabled={save.isPending}>{save.isPending ? '保存中…' : '保存复盘'}</Button>
           </div>
@@ -194,5 +235,20 @@ function Stat({ icon: Icon, label, value, sub }: { icon: typeof CheckCircle2; la
       <div className="text-lg font-extrabold font-numeric mt-1">{value}</div>
       <div className="text-[10px] text-muted-foreground">{sub}</div>
     </div>
+  )
+}
+
+/** 14 条趋势迷你图：手绘 SVG 双系列折线（写法参考 weekly-trend-chart 但从简无交互），值已归一到 0-1 */
+function TrendChart({ trend }: { trend: ReturnType<typeof buildTrend> }) {
+  const W = 560, H = 64, PAD = 4 // 视口坐标，随 h-16 w-full 拉伸铺满
+  const step = (W - PAD * 2) / (trend.dates.length - 1)
+  const pts = (ys: number[]) => ys.map((y, i) => `${PAD + i * step},${H - PAD - y * (H - PAD * 2)}`).join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="block h-16 w-full" preserveAspectRatio="none" role="img" aria-label={`最近 ${trend.dates.length} 次复盘的心情与评分趋势`}>
+      {/* mood 系列（强调色） */}
+      <polyline fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={pts(trend.moodY)} />
+      {/* score 系列（主色） */}
+      <polyline fill="none" stroke="var(--primary)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={pts(trend.scoreY)} />
+    </svg>
   )
 }
