@@ -128,7 +128,15 @@ export class LocalRepository implements WorkbenchRepository {
   }
 
   async listHealthLogs() { return read<HealthLog>('healthLogs') }
-  async createHealthLog(input: HealthLogInput) { return insert<HealthLog>('healthLogs', { id: genId(), ...input }) }
+  async createHealthLog(input: HealthLogInput) {
+    // 体重/睡眠"一天一个数"：再记一次=更新当日值（与云端 SupabaseRepository 语义一致）
+    if (input.type !== 'exercise') {
+      const rows = read<HealthLog>('healthLogs')
+      const i = rows.findIndex(r => r.logDate === input.logDate && r.type === input.type)
+      if (i >= 0) { rows[i] = { ...rows[i], value: input.value }; write('healthLogs', rows); return rows[i] }
+    }
+    return insert<HealthLog>('healthLogs', { id: genId(), ...input })
+  }
   async deleteHealthLog(id: string) { remove('healthLogs', id) }
 
   async listReviews() {

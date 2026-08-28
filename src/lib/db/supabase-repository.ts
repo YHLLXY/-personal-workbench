@@ -215,7 +215,20 @@ export class SupabaseRepository implements WorkbenchRepository {
   }
 
   async listHealthLogs() { const { data, error } = await this.sb.from('wb_health_logs').select('*').order('log_date', { ascending: false }); if (error) throw error; return (data ?? []).map(healthFromRow) }
-  async createHealthLog(input: HealthLogInput) { const { data, error } = await this.sb.from('wb_health_logs').insert({ id: genId(), log_date: input.logDate, type: input.type, value: input.value }).select().single(); if (error) throw error; return healthFromRow(data) }
+  async createHealthLog(input: HealthLogInput) {
+    // 体重/睡眠是"一天一个数"：再记一次=更新当日值而非新增条目（运动一天多次合理，保留多条）
+    if (input.type !== 'exercise') {
+      const { data: existing } = await this.sb.from('wb_health_logs').select('id').eq('log_date', input.logDate).eq('type', input.type).limit(1).maybeSingle()
+      if (existing?.id) {
+        const { data, error } = await this.sb.from('wb_health_logs').update({ value: input.value }).eq('id', existing.id).select().single()
+        if (error) throw error
+        return healthFromRow(data)
+      }
+    }
+    const { data, error } = await this.sb.from('wb_health_logs').insert({ id: genId(), log_date: input.logDate, type: input.type, value: input.value }).select().single()
+    if (error) throw error
+    return healthFromRow(data)
+  }
   async deleteHealthLog(id: string) { const { error } = await this.sb.from('wb_health_logs').delete().eq('id', id); if (error) throw error }
 
   async listReviews() { const { data, error } = await this.sb.from('wb_reviews').select('*'); if (error) throw error; return (data ?? []).map(reviewFromRow) }

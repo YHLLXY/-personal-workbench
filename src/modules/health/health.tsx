@@ -84,7 +84,8 @@ function RecordsPanel() {
           <button key={t} onClick={() => { setType(t); setValue('') }} className={cn('text-xs px-3 py-1.5 rounded-full border', type === t ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground')}>{label}</button>
         ))}
         <Input type="number" step="0.1" min="0" max={type === 'sleep' ? 24 : undefined} value={value} onChange={e => setValue(e.target.value)} placeholder={type === 'weight' ? 'kg' : type === 'sleep' ? '小时' : '分钟'} className="flex-1 min-w-24 h-8 text-sm" />
-        <Button size="sm" disabled={!value || Number(value) <= 0} onClick={() => { create.mutate({ logDate: todayStr(), type, value: Number(value) }, { onSuccess: () => { setValue(''); toast.success('已记录') } }) }}>记录</Button>
+        {/* isPending 禁用防连击：网络慢时重复点击会产生重复记录（2026-08 线上反馈） */}
+        <Button size="sm" disabled={!value || Number(value) <= 0 || create.isPending} onClick={() => { create.mutate({ logDate: todayStr(), type, value: Number(value) }, { onSuccess: () => { setValue(''); toast.success('已记录') } }) }}>{create.isPending ? '记录中…' : '记录'}</Button>
       </div>
       <div className="bg-card border border-border rounded-2xl divide-y divide-border/70">
         {records.length === 0 ? <p className="text-sm text-muted-foreground py-8 text-center">还没有身体记录</p> : records.slice(0, 20).map(r => (

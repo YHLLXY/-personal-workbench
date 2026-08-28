@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { repository } from '../../lib/db'
 import { todayStr } from '../../lib/db/types'
 import { buildHeatCells, streakFromLogDates } from '../../lib/heatmap'
@@ -36,7 +37,11 @@ export function useHealthLogs() { return useQuery({ queryKey: healthKeys.all, qu
 export function useHealthMutations() {
   const qc = useQueryClient(); const inv = () => qc.invalidateQueries({ queryKey: healthKeys.all })
   return {
-    create: useMutation({ mutationFn: (input: { logDate: string; type: 'weight' | 'sleep' | 'exercise'; value: number }) => repository.createHealthLog(input), onSuccess: inv }),
+    create: useMutation({
+      mutationFn: (input: { logDate: string; type: 'weight' | 'sleep' | 'exercise'; value: number }) => repository.createHealthLog(input),
+      onSuccess: inv,
+      onError: () => toast.error('记录失败，请重试'), // 失败必须有反馈，否则用户重按造成重复记录
+    }),
     remove: useMutation({ mutationFn: (id: string) => repository.deleteHealthLog(id), onSuccess: inv }),
   }
 }
