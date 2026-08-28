@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { todayTasks, overdueTasks, recentOverdue, oldOverdue, isTodayScope } from '../src/modules/overview/api'
+import { todayTasks, overdueTasks, recentOverdue, oldOverdue, isTodayScope, filterTasks } from '../src/modules/overview/api'
 import type { Task } from '../src/lib/db/types'
 
 function t(partial: Partial<Task>): Task { return { id: 'x', title: 't', focus: false, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, focusDate: null, tags: [], sort: 0, completedAt: null, createdAt: '', ...partial } }
@@ -111,5 +111,29 @@ describe('isTodayScope（今日口径，历史逾期不计入）', () => {
   })
   it('done 的今日任务也在口径内（供 done/total 统计使用）', () => {
     expect(isTodayScope(t({ id: 'g', status: 'done', dueDate: '2026-08-04' }), '2026-08-04')).toBe(true)
+  })
+})
+
+describe('filterTasks', () => {
+  const tasks = [
+    t({ id: 'a', title: '买菜', tags: ['生活'] }),
+    t({ id: 'b', title: 'Buy milk', tags: ['生活', '购物'] }),
+    t({ id: 'c', title: '写报告', tags: [] }),
+  ]
+  it('tag 过滤：只保留含该标签的任务', () => {
+    expect(filterTasks(tasks, { tag: '生活', query: '' }).map(x => x.id)).toEqual(['a', 'b'])
+    expect(filterTasks(tasks, { tag: '购物', query: '' }).map(x => x.id)).toEqual(['b'])
+  })
+  it('query 过滤：标题不区分大小写 contains', () => {
+    expect(filterTasks(tasks, { tag: null, query: 'milk' }).map(x => x.id)).toEqual(['b'])
+    expect(filterTasks(tasks, { tag: null, query: 'BUY' }).map(x => x.id)).toEqual(['b'])
+  })
+  it('组合：tag 与 query 同时生效（AND 语义）', () => {
+    expect(filterTasks(tasks, { tag: '购物', query: 'buy' }).map(x => x.id)).toEqual(['b'])
+    expect(filterTasks(tasks, { tag: '购物', query: '报告' })).toHaveLength(0)
+  })
+  it('空参不过滤：tag=null 或 "全部"、query 空白串均返回原列表', () => {
+    expect(filterTasks(tasks, { tag: null, query: '' })).toHaveLength(3)
+    expect(filterTasks(tasks, { tag: '全部', query: '  ' })).toHaveLength(3)
   })
 })

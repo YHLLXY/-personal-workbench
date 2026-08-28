@@ -65,6 +65,13 @@ export function oldOverdue(tasks: Task[], today: string, windowDays = 7): Task[]
   const start = daysBefore(today, windowDays)
   return tasks.filter(t => t.status !== 'done' && t.dueDate !== null && t.dueDate < start)
 }
+/** 按标签 + 标题关键词过滤（tag=null 或 '全部' 不过滤；query trim 后空串不过滤；不区分大小写 contains），供今日/逾期/someday 三区块共用 */
+export function filterTasks(tasks: Task[], opts: { tag: string | null; query: string }): Task[] {
+  const q = opts.query.trim().toLowerCase()
+  return tasks.filter(t =>
+    (!opts.tag || opts.tag === '全部' || t.tags.includes(opts.tag)) &&
+    (!q || t.title.toLowerCase().includes(q)))
+}
 function daysBefore(dateStr: string, n: number): string {
   const d = new Date(`${dateStr}T00:00:00`)
   d.setDate(d.getDate() - n)

@@ -15,6 +15,7 @@ import type { Task } from '@/lib/db/types'
 export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (v: boolean) => void; editing?: Task | null }) {
   const { create, update } = useTaskMutations()
   const [title, setTitle] = useState('')
+  const [status, setStatus] = useState<'todo' | 'someday'>('todo') // 状态 pills：待办 / 将来
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium')
   const [focus, setFocus] = useState(false)
   const [dueDate, setDueDate] = useState(todayStr())
@@ -24,6 +25,7 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
   useEffect(() => {
     if (open) {
       setTitle(editing?.title ?? '')
+      setStatus(editing?.status === 'someday' ? 'someday' : 'todo') // 仅暴露 todo/someday 两态，done/doing 回落为 todo
       setPriority(editing?.priority ?? 'medium')
       setFocus(editing?.focus ?? false)
       setDueDate(editing?.dueDate ?? todayStr())
@@ -37,6 +39,7 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
     const tags = tagsText.split(/[,，]/).map(s => s.trim()).filter(Boolean)
     const payload = {
       title: title.trim(),
+      status, // someday 时截止日期可留空（dueDate 已是空串 → null，不强制）
       priority,
       focus,
       focusDate: focus ? todayStr() : null,
@@ -67,8 +70,15 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
               <Star className={cn('size-3.5 mr-1.5', focus && 'fill-current')} strokeWidth={1.7} />{focus ? '今日焦点' : '设为焦点'}
             </Button>
           </div>
+          {/* 状态 pills（样式参考 health RecordsPanel 类型 pills）：someday 即收件箱，可无日期 */}
+          <div className="flex gap-2">
+            {([['todo', '待办'], ['someday', '将来']] as const).map(([v, label]) => (
+              <button key={v} type="button" onClick={() => setStatus(v)}
+                className={cn('flex-1 text-xs px-3 py-1.5 rounded-full border transition-colors', status === v ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground')}>{label}</button>
+            ))}
+          </div>
           <div className="space-y-1.5">
-            <Label htmlFor="task-due-date">日期（可清空；焦点任务仅在所选日期显示）</Label>
+            <Label htmlFor="task-due-date">{status === 'someday' ? '日期（将来任务可留空）' : '日期（可清空；焦点任务仅在所选日期显示）'}</Label>
             <Input id="task-due-date" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
