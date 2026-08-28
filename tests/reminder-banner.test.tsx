@@ -38,6 +38,8 @@ describe('ReminderBanner', () => {
     renderBanner()
     await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
     expect(screen.getByText(/到点了，记得处理/)).toBeTruthy()
+    // 回归：正文用前景色（曾误用 primary-foreground 白字落在浅底上不可读）
+    expect(screen.getByText(/到点了，记得处理/)).toHaveClass('text-foreground')
     expect(screen.getByText('1')).toBeTruthy()
     expect(screen.getByRole('link')).toHaveAttribute('href', '/reminders')
   })

@@ -24,16 +24,33 @@ async function fetchReminders(): Promise<Reminder[]> {
 }
 
 export function useReminders() {
-  return useQuery({ queryKey: reminderKeys.all, queryFn: fetchReminders })
+  // staleTime：check-reminders 是重接口（服务端每次全量扫描+生成+推送），窗口聚焦/挂载不必反复打
+  return useQuery({ queryKey: reminderKeys.all, queryFn: fetchReminders, staleTime: 30_000 })
 }
 
 export function useReminderMutations() {
   const qc = useQueryClient()
-  const inv = () => qc.invalidateQueries({ queryKey: reminderKeys.all })
-  return {
-    dismiss: useMutation({ mutationFn: (id: string) => repository.dismissReminder(id), onSuccess: inv, onError: () => toast.error('操作失败') }),
-    restore: useMutation({ mutationFn: (id: string) => repository.restoreReminder(id), onSuccess: inv, onError: () => toast.error('操作失败') }),
+  // 乐观更新：忽略/恢复只改一条记录，写库可信（本地同步/云端单条 update）。
+  // 成功后不再 invalidate——否则会触发 check-reminders 全量重跑（扫三表+发送推送），UI 卡数秒（2026-08 线上反馈）。
+  function useOptimisticToggle(dismissed: boolean) {
+    return useMutation({
+      mutationFn: (id: string) => (dismissed ? repository.dismissReminder(id) : repository.restoreReminder(id)),
+      onMutate: async (id: string) => {
+        await qc.cancelQueries({ queryKey: reminderKeys.all })
+        const prev = qc.getQueryData<Reminder[]>(reminderKeys.all)
+        qc.setQueryData<Reminder[]>(reminderKeys.all, old =>
+          (old ?? []).map(r => (r.id === id ? { ...r, dismissedAt: dismissed ? new Date().toISOString() : null } : r)))
+        return { prev }
+      },
+      onError: (_e, _id, ctx) => {
+        if (ctx?.prev) qc.setQueryData(reminderKeys.all, ctx.prev)
+        toast.error('操作失败')
+      },
+    })
   }
+  const dismiss = useOptimisticToggle(true)
+  const restore = useOptimisticToggle(false)
+  return { dismiss, restore }
 }
 
 /** 订阅提醒数据并同步角标未读数（在 layout 调用一次即可；useEffect 内更新 store 避免渲染期副作用） */

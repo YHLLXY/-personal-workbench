@@ -46,7 +46,7 @@ export default function ReminderBanner() {
   return (
     <Link to="/reminders" className="mb-4 flex items-center gap-2.5 rounded-xl border border-primary/25 bg-primary/8 px-4 py-3 text-sm hover:bg-primary/12 transition-colors">
       <Bell className="size-4 shrink-0 text-primary" strokeWidth={1.7} />
-      <span className="truncate text-primary-foreground/90">{newest ? textOf(newest) : `${unread} 条提醒`}</span>
+      <span className="truncate text-foreground font-medium">{newest ? textOf(newest) : `${unread} 条提醒`}</span>
       <span className="ml-auto shrink-0 rounded-full bg-primary text-primary-foreground text-[10px] px-2 py-0.5">{unread}</span>
     </Link>
   )
