@@ -19,8 +19,11 @@ export function ExamDialog({ open, onOpenChange, editing }: { open: boolean; onO
     if (open) { setTitle(editing?.title ?? ''); setDate(editing?.examDate ?? ''); setSubject(editing?.subject ?? ''); setExamTime(editing?.examTime ?? ''); setNote(editing?.note ?? '') }
   }, [open, editing])
 
+  // 提交防连击：云端写入有网络往返，等待期间再点会重复创建
+  const pending = create.isPending || update.isPending
+
   function submit() {
-    if (!title.trim() || !date) return
+    if (!title.trim() || !date || pending) return
     const input = { title: title.trim(), examDate: date, subject: subject.trim() || null, examTime: examTime || null, note: note.trim() || null }
     if (editing) update.mutate({ id: editing.id, patch: input }, { onSuccess: () => onOpenChange(false) })
     else create.mutate(input, { onSuccess: () => onOpenChange(false) })
@@ -35,7 +38,7 @@ export function ExamDialog({ open, onOpenChange, editing }: { open: boolean; onO
           <div className="space-y-1.5"><Label htmlFor="exam-subject">科目（可选）</Label><Input id="exam-subject" value={subject} onChange={e => setSubject(e.target.value)} placeholder="如：英语" /></div>
           <div className="space-y-1.5"><Label htmlFor="exam-time">考试时间（可选，填写后考前 1 小时提醒）</Label><Input id="exam-time" type="time" value={examTime} onChange={e => setExamTime(e.target.value)} /></div>
           <div className="space-y-1.5"><Label htmlFor="exam-note">备注（可选）</Label><Textarea id="exam-note" value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="考点、复习资料、注意事项…" /></div>
-          <Button className="w-full" onClick={submit} disabled={!title.trim() || !date}>{editing ? '保存' : '添加'}</Button>
+          <Button className="w-full" onClick={submit} disabled={!title.trim() || !date || pending}>{pending ? '保存中…' : editing ? '保存' : '添加'}</Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -28,6 +28,7 @@ export function FolderTree({ folders, selectedId, onSelect }: Props) {
   }
 
   function newFolder(parentId: string | null) {
+    if (create.isPending) return
     const name = window.prompt(parentId ? '新建子文件夹名称' : '新建文件夹名称')
     if (!name?.trim()) return
     create.mutate({ name: name.trim(), parentId }, { onSuccess: () => toast.success('已创建') })

@@ -160,8 +160,11 @@ function GoalDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChan
     }
   }, [open, editing])
 
+  // 提交防连击：云端 insert 有网络往返，等待期间再点会重复创建（2026-08 线上反馈：一设一个变两个）
+  const pending = create.isPending || update.isPending
+
   function submit() {
-    if (!title.trim()) return
+    if (!title.trim() || pending) return
     const num = Math.max(1, Math.floor(Number(target) || 100))
     const input = { title: title.trim(), target: num, deadline: deadline || null, note: note.trim() || null }
     const onDone = () => onOpenChange(false)
@@ -177,7 +180,7 @@ function GoalDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChan
           <div className="space-y-1.5"><Label htmlFor="goal-target">目标量</Label><Input id="goal-target" type="number" min={1} value={target} onChange={e => setTarget(e.target.value)} /></div>
           <div className="space-y-1.5"><Label htmlFor="goal-deadline">截止日（可选）</Label><Input id="goal-deadline" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} /></div>
           <div className="space-y-1.5"><Label htmlFor="goal-note">备注（可选）</Label><Textarea id="goal-note" value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="怎么拆解？每天做多少？" /></div>
-          <Button className="w-full" onClick={submit} disabled={!title.trim()}>{editing ? '保存' : '创建'}</Button>
+          <Button className="w-full" onClick={submit} disabled={!title.trim() || pending}>{pending ? '保存中…' : editing ? '保存' : '创建'}</Button>
         </div>
       </DialogContent>
     </Dialog>
