@@ -1,7 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
+import { isCloudMode } from '../../lib/db'
+import { getSupabaseClient } from '../../lib/db/supabase-client'
 
 export interface ProjectInfo {
   name: string
+  /** 知识库 30-项目/ 下的目录名（详情寻址用；旧缓存可能缺失，取值时回退 name） */
+  dir?: string
   emoji: string
   phase: string
   stack: string[]
@@ -13,6 +17,16 @@ export interface ProjectsResponse {
   updatedAt: string | null
   source: 'github' | 'fallback'
   projects: ProjectInfo[]
+}
+
+export interface ProjectDetail {
+  dir: string
+  name: string
+  html: string | null
+  markdown: string | null
+  rendered: boolean
+  gatewayPath: string | null
+  files: { name: string; path: string }[]
 }
 
 export async function loadProjects(): Promise<ProjectsResponse> {
@@ -35,6 +49,35 @@ export function useProjects() {
     queryKey: ['projects'],
     queryFn: loadProjects,
     staleTime: 10 * 60 * 1000,
+  })
+}
+
+async function accessToken(): Promise<string | null> {
+  if (!isCloudMode) return null
+  try {
+    const { data } = await getSupabaseClient().auth.getSession()
+    return data.session?.access_token ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function fetchProjectDetail(dir: string): Promise<ProjectDetail> {
+  const token = await accessToken()
+  const r = await fetch(`/api/projects?entry=detail&dir=${encodeURIComponent(dir)}`, {
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+  })
+  if (!r.ok) throw new Error(String(r.status))
+  return r.json() as Promise<ProjectDetail>
+}
+
+export function useProjectDetail(dir: string | undefined) {
+  return useQuery({
+    queryKey: ['project-detail', dir],
+    queryFn: () => fetchProjectDetail(dir!),
+    enabled: dir != null && dir !== '',
+    staleTime: 10 * 60 * 1000,
+    retry: false,
   })
 }
 

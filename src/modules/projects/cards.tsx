@@ -24,11 +24,12 @@ export function ProjectsCard() {
         {isLoading ? <Skeleton className="h-20 w-full" /> : active.length === 0 ? (
           <p className="text-xs text-muted-foreground py-2">暂无进行中的项目{fallback ? '（离线快照）' : ''}</p>
         ) : active.map(p => (
-          <div key={p.name} className="flex items-center gap-2 text-[13px] py-1.5 hover:text-primary">
+          <Link key={p.name} to={`/projects/${encodeURIComponent(p.dir ?? p.name)}`}
+            className="flex items-center gap-2 text-[13px] py-1.5 hover:text-primary transition-colors">
             <span className="text-base leading-none">{p.emoji}</span>
             <span className="truncate flex-1">{p.name}</span>
             <span className="text-[10px] text-muted-foreground">{p.stack.slice(0, 2).join(' / ')}</span>
-          </div>
+          </Link>
         ))}
       </CardContent>
     </Card>

@@ -8,6 +8,7 @@
  * 职责：读 GitHub 私有仓库 Konwledge-home 的 `30-项目/` 门户口（frontmatter +
  * `## 项目简介`），返回项目摘要列表。GITHUB_TOKEN 缺失 / 网络失败 → 返回内联兜底快照。
  */
+import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const REPO = 'YHLLXY/Konwledge-home'
@@ -21,6 +22,8 @@ const CACHE_FALLBACK = 's-maxage=300'
 
 export interface ProjectInfo {
   name: string
+  /** 知识库 30-项目/ 下的目录名（详情接口按它寻址；可能与 frontmatter 的 project 名称不同） */
+  dir: string
   emoji: string
   phase: string
   stack: string[]
@@ -88,13 +91,14 @@ function extractSummary(body: string): string {
   return bad > 60 ? cut.slice(0, bad).trimEnd() : cut
 }
 
-/** 门户口 Markdown → 项目摘要（frontmatter 缺字段时按默认值降级） */
-export function parseGateway(md: string, fallbackName: string): ProjectInfo {
+/** 门户口 Markdown → 项目摘要（frontmatter 缺字段时按默认值降级；dir 缺省取目录名兜底值） */
+export function parseGateway(md: string, fallbackName: string, dir: string = fallbackName): ProjectInfo {
   const fmMatch = md.match(/^---\r?\n([\s\S]*?)\r?\n---/)
   const fm = fmMatch ? parseFrontmatter(fmMatch[1]) : { aliases: [], stack: [] }
   const body = fmMatch ? md.slice(fmMatch[0].length) : md
   return {
     name: fm.project || fallbackName,
+    dir,
     emoji: extractEmoji(md),
     phase: fm.phase || '进行中',
     stack: fm.stack,
@@ -148,7 +152,7 @@ async function fetchFromGithub(token: string): Promise<ProjectInfo[]> {
       )
       if (!file.content) return null
       const md = Buffer.from(file.content, 'base64').toString('utf-8')
-      return parseGateway(md, dir.name)
+      return parseGateway(md, dir.name, dir.name)
     } finally { clearTimeout(timer) }
   }))
   const projects = settled
@@ -161,21 +165,102 @@ async function fetchFromGithub(token: string): Promise<ProjectInfo[]> {
 // ========== 兜底快照（token 缺失 / GitHub 不可用时返回，与 public/projects-status.json 一致） ==========
 
 export const FALLBACK_PROJECTS: ProjectInfo[] = [
-  { name: 'Horizon', emoji: '🌅', phase: '进行中', stack: ['Python', 'uv', 'Docker'], aliases: ['AI 新闻雷达'], updatedAt: '2026-08-02', summary: 'AI 新闻雷达：7 类信息源同管线抓取（Hacker News/Reddit/Telegram/Twitter/GitHub/RSS/OpenBB），AI 打分过滤（0-10 分），生成中英双语日报并多渠道分发。' },
-  { name: 'couple', emoji: '💑', phase: '进行中', stack: ['小程序'], aliases: ['情侣心愿小程序'], updatedAt: '2026-07-29', summary: '情侣互动小程序，含心愿系统、共同日记、积分系统等功能。' },
-  { name: '个人工作台', emoji: '🧭', phase: '进行中', stack: ['React 19', 'Vite', 'TypeScript', 'Tailwind', 'Supabase', 'Vercel'], aliases: ['工作台'], updatedAt: '2026-08-12', summary: '个人效率工作台 Web 应用（总览/待办/学习/番茄钟/热点/论文库/速记/健康/复盘 + 定时提醒通知），React + Vite + Supabase + Vercel 部署。' },
-  { name: '学生会交流平台', emoji: '🏛️', phase: '进行中', stack: ['React 19', 'Vite', 'Ant Design', 'Supabase'], aliases: ['StudentHub'], updatedAt: '2026-08-04', summary: '学生会内部交流与管理平台（React 19 + Vite + TypeScript + Ant Design + Supabase），含任务管理、部门公告、部门论坛、活动抢票、权限管理、通知中心、数据埋点、PWA 等 13 个模块。' },
-  { name: '小挑', emoji: '🌾', phase: '进行中', stack: ['HTML', 'CSS', 'JavaScript'], aliases: ['AgriAgent', '丰稷智农'], updatedAt: '2026-07-29', summary: '基于农业智能体的数智农业咨询服务平台商业计划书 + 前端页面开发。' },
-  { name: '数学建模', emoji: '📐', phase: '进行中', stack: ['Python', 'GAMM', 'DE'], aliases: ['数模'], updatedAt: '2026-07-29', summary: '数学建模竞赛相关，含光热发电定日镜场、蔬菜定价优化等项目。' },
-  { name: '本地模型测试', emoji: '🧪', phase: '进行中', stack: ['HTML', 'JavaScript'], aliases: ['贪吃蛇'], updatedAt: '2026-08-18', summary: '本地模型测试工作区，含贪吃蛇游戏原型（单 HTML 文件，浏览器直接运行）。' },
-  { name: '海报设计', emoji: '🎨', phase: '已完成', stack: ['AI 生成', '提示词'], aliases: ['海报'], updatedAt: '2026-07-29', summary: '招新海报提示词方案（用于 AI 生成海报），含多版提示词迭代。' },
-  { name: '自我画像', emoji: '🖼️', phase: '进行中', stack: ['PWA', 'IndexedDB', 'Service Worker'], aliases: ['ME', '自我认知测评'], updatedAt: '2026-08-03', summary: '自我认知测评 PWA：400 题 / 6 领域 × 3 层次 / 8 题型 / 11 心理学框架评分 / 虚拟滚动 / IndexedDB / 报告页。' },
-  { name: '视频文案提取器', emoji: '🎬', phase: '进行中', stack: ['Python', 'yt-dlp', 'FunASR', 'GPU'], aliases: ['文案提取'], updatedAt: '2026-08-12', summary: '视频文案提取工具：抖音/B站/YouTube 视频下载（yt-dlp）+ 本地转写（FunASR SenseVoiceSmall，GPU）。' },
+  { name: 'Horizon', dir: 'Horizon', emoji: '🌅', phase: '进行中', stack: ['Python', 'uv', 'Docker'], aliases: ['AI 新闻雷达'], updatedAt: '2026-08-02', summary: 'AI 新闻雷达：7 类信息源同管线抓取（Hacker News/Reddit/Telegram/Twitter/GitHub/RSS/OpenBB），AI 打分过滤（0-10 分），生成中英双语日报并多渠道分发。' },
+  { name: 'couple', dir: 'couple', emoji: '💑', phase: '进行中', stack: ['小程序'], aliases: ['情侣心愿小程序'], updatedAt: '2026-07-29', summary: '情侣互动小程序，含心愿系统、共同日记、积分系统等功能。' },
+  { name: '个人工作台', dir: '个人工作台', emoji: '🧭', phase: '进行中', stack: ['React 19', 'Vite', 'TypeScript', 'Tailwind', 'Supabase', 'Vercel'], aliases: ['工作台'], updatedAt: '2026-08-12', summary: '个人效率工作台 Web 应用（总览/待办/学习/番茄钟/热点/论文库/速记/健康/复盘 + 定时提醒通知），React + Vite + Supabase + Vercel 部署。' },
+  { name: '学生会交流平台', dir: '学生会交流平台', emoji: '🏛️', phase: '进行中', stack: ['React 19', 'Vite', 'Ant Design', 'Supabase'], aliases: ['StudentHub'], updatedAt: '2026-08-04', summary: '学生会内部交流与管理平台（React 19 + Vite + TypeScript + Ant Design + Supabase），含任务管理、部门公告、部门论坛、活动抢票、权限管理、通知中心、数据埋点、PWA 等 13 个模块。' },
+  { name: '小挑', dir: '小挑', emoji: '🌾', phase: '进行中', stack: ['HTML', 'CSS', 'JavaScript'], aliases: ['AgriAgent', '丰稷智农'], updatedAt: '2026-07-29', summary: '基于农业智能体的数智农业咨询服务平台商业计划书 + 前端页面开发。' },
+  { name: '数学建模', dir: '数学建模', emoji: '📐', phase: '进行中', stack: ['Python', 'GAMM', 'DE'], aliases: ['数模'], updatedAt: '2026-07-29', summary: '数学建模竞赛相关，含光热发电定日镜场、蔬菜定价优化等项目。' },
+  { name: '本地模型测试', dir: '本地模型测试', emoji: '🧪', phase: '进行中', stack: ['HTML', 'JavaScript'], aliases: ['贪吃蛇'], updatedAt: '2026-08-18', summary: '本地模型测试工作区，含贪吃蛇游戏原型（单 HTML 文件，浏览器直接运行）。' },
+  { name: '海报设计', dir: '海报设计', emoji: '🎨', phase: '已完成', stack: ['AI 生成', '提示词'], aliases: ['海报'], updatedAt: '2026-07-29', summary: '招新海报提示词方案（用于 AI 生成海报），含多版提示词迭代。' },
+  { name: '自我画像', dir: '自我画像', emoji: '🖼️', phase: '进行中', stack: ['PWA', 'IndexedDB', 'Service Worker'], aliases: ['ME', '自我认知测评'], updatedAt: '2026-08-03', summary: '自我认知测评 PWA：400 题 / 6 领域 × 3 层次 / 8 题型 / 11 心理学框架评分 / 虚拟滚动 / IndexedDB / 报告页。' },
+  { name: '视频文案提取器', dir: '视频文案提取器', emoji: '🎬', phase: '进行中', stack: ['Python', 'yt-dlp', 'FunASR', 'GPU'], aliases: ['文案提取'], updatedAt: '2026-08-12', summary: '视频文案提取工具：抖音/B站/YouTube 视频下载（yt-dlp）+ 本地转写（FunASR SenseVoiceSmall，GPU）。' },
 ]
+
+// ========== 详情入口：单项目门户口全文（登录后可访问） ==========
+
+export interface ProjectDetail {
+  dir: string
+  name: string
+  /** GitHub Markdown API 渲染并消毒的 HTML；rendered=false 时为 null */
+  html: string | null
+  /** 渲染失败时的原文降级 */
+  markdown: string | null
+  rendered: boolean
+  /** 门户口文件的完整仓库路径 */
+  gatewayPath: string | null
+  files: { name: string; path: string }[]
+}
+
+/** 校验 Authorization Bearer JWT（anon client getUser，同 reminders.ts 的 authUser 思路，单文件内自包含） */
+async function authed(req: VercelRequest): Promise<boolean> {
+  const token = (req.headers.authorization ?? '').replace(/^Bearer /i, '')
+  const url = process.env.VITE_SUPABASE_URL
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY
+  if (!token || !url || !anonKey) return false
+  try {
+    const anon = createClient(url, anonKey, { auth: { persistSession: false } })
+    const { data } = await anon.auth.getUser(token)
+    return Boolean(data.user)
+  } catch {
+    return false
+  }
+}
+
+/** 拉取单项目门户口并经 GitHub Markdown API 渲染为 HTML；单点失败抛错由 handler 分级 */
+async function fetchDetail(dir: string, token: string): Promise<ProjectDetail> {
+  const dirPath = `${ROOT_DIR}/${encodeURIComponent(dir)}`
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 8000)
+  try {
+    const entries = await ghJson(dirPath, token, ctrl.signal)
+    const files = entries.filter(e => e.type === 'file').map(e => ({ name: e.name, path: e.path }))
+    const gateway = entries.find(e => e.type === 'file' && e.name === `${dir} - 门户口.md`)
+      ?? entries.find(e => e.type === 'file' && e.name.endsWith('- 门户口.md'))
+    if (!gateway) throw Object.assign(new Error('no_gateway'), { code: 'no_gateway' })
+    const file = await ghFile(`${dirPath}/${encodeURIComponent(gateway.name)}`, token, ctrl.signal)
+    const md = file.content ? Buffer.from(file.content, 'base64').toString('utf-8') : ''
+    let html: string | null = null
+    try {
+      const r = await fetch('https://api.github.com/markdown', {
+        method: 'POST',
+        headers: ghHeaders(token),
+        body: JSON.stringify({ text: md, mode: 'gfm' }),
+        signal: ctrl.signal,
+      })
+      if (r.ok) html = await r.text()
+    } catch { /* 渲染失败降级为原文 */ }
+    return { dir, name: dir, html, markdown: html == null ? md : null, rendered: html != null, gatewayPath: gateway.path, files }
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 // ========== 函数入口 ==========
 
-export default async function handler(_req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const entry = typeof req.query.entry === 'string' ? req.query.entry : ''
+
+  if (entry === 'detail') {
+    // 鉴权前置：详情返回整篇私有知识库文档，未登录一律 401，不做 GitHub 请求
+    if (!(await authed(req))) return res.status(401).json({ error: 'unauthorized' })
+    const token = process.env.GITHUB_TOKEN
+    const dir = typeof req.query.dir === 'string' ? req.query.dir.trim() : ''
+    if (!token || !dir) return res.status(503).json({ error: 'unavailable' })
+    try {
+      const detail = await fetchDetail(dir, token)
+      // private：内容因鉴权而因人而异，禁止 CDN 共享缓存
+      res.setHeader('Cache-Control', 'private, s-maxage=600')
+      return res.json(detail)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg.includes('no_gateway')) return res.status(404).json({ error: 'no_gateway' })
+      if (msg.includes('HTTP 404')) return res.status(404).json({ error: 'not_found' })
+      console.error('[projects] detail:', msg)
+      return res.status(502).json({ error: 'upstream' })
+    }
+  }
+
   try {
     const token = process.env.GITHUB_TOKEN
     if (!token) throw new Error('GITHUB_TOKEN 未配置')

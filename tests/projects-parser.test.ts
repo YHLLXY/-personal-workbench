@@ -42,6 +42,11 @@ describe('parseGateway', () => {
     expect(p.summary).toContain('个人效率工作台 Web 应用')
     expect(p.summary).not.toContain('外部项目')
   })
+  it('dir 显式传入时透传，缺省时回退目录名兜底值', () => {
+    const md = '---\nproject: "p"\n---\n\n## 项目简介\n\nx'
+    expect(parseGateway(md, 'fallback', '真实目录').dir).toBe('真实目录')
+    expect(parseGateway(md, 'fallback').dir).toBe('fallback')
+  })
   it('updated 优先于 date 作为更新时间', () => {
     const p = parseGateway('---\ndate: 2026-07-01\nupdated: 2026-08-04\nproject: "学生会交流平台"\n---\n\n## 项目简介\n\n测试', 'x')
     expect(p.updatedAt).toBe('2026-08-04')

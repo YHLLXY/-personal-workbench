@@ -1,25 +1,15 @@
+import { Link } from 'react-router-dom'
+import { ChevronRight, FolderKanban, RefreshCcw } from 'lucide-react'
 import { useProjects, sortProjects, PHASE_ORDER, type ProjectInfo } from './api'
-import { Skeleton } from '@/components/ui/skeleton'
+import { PHASE_STYLE, fmtDate } from './shared'
 import { Badge } from '@/components/ui/badge'
-import { FolderKanban, RefreshCcw } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-
-const PHASE_STYLE: Record<string, string> = {
-  '进行中': 'bg-primary/12 text-primary',
-  '已完成': 'bg-muted text-muted-foreground',
-  '已归档': 'bg-muted/60 text-muted-foreground/60',
-  '暂停': 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-}
-
-function fmtDate(d: string | null): string {
-  if (!d) return '未知'
-  const [y, m, day] = d.split('-')
-  return `${Number(m)}-${Number(day)}` + (y === new Date().getFullYear().toString() ? '' : ` (${y})`)
-}
 
 function ProjectCard({ p }: { p: ProjectInfo }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
+    <Link to={`/projects/${encodeURIComponent(p.dir ?? p.name)}`}
+      className="block rounded-2xl border border-border bg-card p-4 hover:border-primary/50 transition-colors">
       <div className="flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-xl">{p.emoji}</div>
         <div className="min-w-0 flex-1">
@@ -27,6 +17,7 @@ function ProjectCard({ p }: { p: ProjectInfo }) {
             <span className="text-sm font-semibold truncate">{p.name}</span>
             <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', PHASE_STYLE[p.phase] ?? 'bg-muted text-muted-foreground')}>{p.phase}</span>
             {p.updatedAt && <span className="text-[10px] text-muted-foreground">更新 {fmtDate(p.updatedAt)}</span>}
+            <ChevronRight className="size-4 text-muted-foreground/50 shrink-0 ml-auto" />
           </div>
           {p.summary && <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-2">{p.summary}</p>}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -35,11 +26,11 @@ function ProjectCard({ p }: { p: ProjectInfo }) {
           </div>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }
 
-/** 我的项目页：知识库门户口动态同步（GitHub API 拉取，10 分钟缓存） */
+/** 我的项目页：知识库门户口动态同步（GitHub API 拉取，10 分钟缓存），卡片可点进详情 */
 export default function Projects() {
   const { data, isLoading, isError, refetch, isFetching } = useProjects()
   const projects = sortProjects(data?.projects ?? [])

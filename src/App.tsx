@@ -12,6 +12,9 @@ import { isCloudMode } from './lib/db'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SettingsPage } from './modules/me/settings'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { lazyRetry } from './lib/lazy-retry'
+
+const ProjectDetailPage = lazyRetry(() => import('./modules/projects/project-detail'))
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1 } } })
 
@@ -37,6 +40,7 @@ export default function App() {
                   <Route element={<Guard><Shell /></Guard>}>
                     {allSubModules.map(s => <Route key={s.id} path={s.path} element={<s.component />} />)}
                     <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/projects/:name" element={<ProjectDetailPage />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Route>
                 </Routes>
