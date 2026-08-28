@@ -1,7 +1,7 @@
 /**
  * 版本更新日志（今日概览弹窗底部展示）
- * 发版约定：每次发布新版本，在数组【顶部】插入一条（最新在前）。
- * 同步更新 README.md 的「更新日志」区块，保持两处一致。
+ * 发版约定：按 VERSIONING.md 制度执行——查表判级（feat→minor / fix→patch / 破坏性→major），
+ * 数组【顶部】插入完整三段版本号（最新在前），package.json 同步，打 git tag。
  */
 export interface ChangelogEntry {
   version: string
@@ -12,7 +12,7 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: 'v1.12',
+    version: 'v1.12.0',
     date: '2026-08-28',
     title: '功能激活大版本：让存了的数据真正可用',
     items: [
