@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Search, Plus, Film, FileText, Trash2, FolderTree as FolderTreeIcon, Library, CircleHelp } from 'lucide-react'
+import { Search, Plus, Film, FileText, Trash2, Quote, FolderTree as FolderTreeIcon, Library, CircleHelp } from 'lucide-react'
 import { usePapers, usePaperMutations, useFolders, useFolderMutations } from './api'
+import { formatCitation } from './cite'
 import { FolderTree } from './folder-tree'
 import { PaperDetail } from './paper-detail'
 import { AddPaper } from './add-paper'
@@ -19,6 +20,10 @@ import type { Paper } from '@/lib/db/types'
 
 const STATUS_LABEL = { want: '想读', reading: '在读', done: '读完' } as const
 const TYPE_LABEL = { all: '全部', paper: '论文', note: '文案' } as const
+/** 评分筛选 pills：0 = 全部（含未评分），其余为最低星级门槛 */
+const RATING_FILTERS = [{ v: 0, label: '全部' }, { v: 3, label: '≥3★' }, { v: 4, label: '≥4★' }, { v: 5, label: '≥5★' }] as const
+/** 排序 pills：default = 现有顺序；rating = 评分高→低（null 最后）；title = 标题 A→Z */
+const SORT_OPTS = [{ v: 'default', label: '默认' }, { v: 'rating', label: '评分高→低' }, { v: 'title', label: '标题 A→Z' }] as const
 /** 'all' = 全部资料；'__none__' = 未分类；其他 = 文件夹 id */
 type FolderFilter = 'all' | '__none__' | string
 
@@ -30,6 +35,8 @@ export default function Papers() {
   const [folderFilter, setFolderFilter] = useState<FolderFilter>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | Paper['status']>('all')
   const [typeFilter, setTypeFilter] = useState<'all' | 'paper' | 'note'>('all')
+  const [ratingFilter, setRatingFilter] = useState<0 | 3 | 4 | 5>(0)
+  const [sortBy, setSortBy] = useState<'default' | 'rating' | 'title'>('default')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Paper | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -40,19 +47,28 @@ export default function Papers() {
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return (papers ?? []).filter(p => {
+    const list = (papers ?? []).filter(p => {
       if (folderFilter === 'all') { /* 全部 */ }
       else if (folderFilter === '__none__') { if (p.folderId != null) return false }
       else if (p.folderId !== folderFilter) return false
       if (statusFilter !== 'all' && p.status !== statusFilter) return false
       if (typeFilter !== 'all' && (p.type ?? 'paper') !== typeFilter) return false
+      if (ratingFilter > 0 && !(p.rating != null && p.rating >= ratingFilter)) return false // 未评分只在「全部」出现
       if (q) {
         const hay = [p.title, p.authors, p.content ?? '', (p.keywords ?? []).join(' ')].join(' ').toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
     })
-  }, [papers, folderFilter, statusFilter, typeFilter, query])
+    if (sortBy === 'rating') list.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1)) // null 视为 -1 沉底
+    else if (sortBy === 'title') list.sort((a, b) => a.title.localeCompare(b.title, 'zh-Hans-CN'))
+    return list
+  }, [papers, folderFilter, statusFilter, typeFilter, ratingFilter, sortBy, query])
+
+  /** 复制文本到剪贴板，统一 toast 反馈 */
+  async function copyText(text: string) {
+    try { await navigator.clipboard.writeText(text); toast.success('已复制') } catch { toast.error('复制失败') }
+  }
 
   function newFolderFromMenu() {
     const name = window.prompt('新建文件夹名称')
@@ -131,6 +147,19 @@ export default function Papers() {
             <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索标题 / 作者 / 关键词 / 内容" className="pl-9" />
           </div>
 
+          {/* 评分筛选 + 排序 pills（样式与热点页 chips 一致） */}
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">评分</span>
+            {RATING_FILTERS.map(f => (
+              <button key={f.v} onClick={() => setRatingFilter(f.v)} className={cn('shrink-0 text-xs rounded-full px-3 py-1 border', ratingFilter === f.v ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/50')}>{f.label}</button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+            <span className="text-xs text-muted-foreground">排序</span>
+            {SORT_OPTS.map(o => (
+              <button key={o.v} onClick={() => setSortBy(o.v)} className={cn('shrink-0 text-xs rounded-full px-3 py-1 border', sortBy === o.v ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/50')}>{o.label}</button>
+            ))}
+          </div>
+
           {isLoading ? <div className="space-y-2"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div>
             : (papers ?? []).length === 0 ? (
               <p className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
@@ -162,6 +191,14 @@ export default function Papers() {
                           </SelectContent>
                         </Select>
                       </div>
+                      <button
+                        onClick={() => copyText(formatCitation(p))}
+                        aria-label="复制引用"
+                        title="复制引用"
+                        className="p-1.5 text-muted-foreground/60 hover:text-primary"
+                      >
+                        <Quote className="size-4" />
+                      </button>
                       <button
                         onClick={() => { if (window.confirm('删除该资料？此操作不可恢复')) remove.mutate(p.id) }}
                         aria-label="删除"

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Hot from '../src/modules/news/hot'
 import type { Subscriptions } from '../src/lib/db/types'
 
@@ -36,20 +37,26 @@ const mockedLoadHot = vi.mocked(loadHot)
 describe('Hot 页面', () => {
   beforeEach(() => { vi.clearAllMocks(); mockedLoadHot.mockClear() })
 
+  // hot 页接入了「存速记」mutation（useNoteMutations），需要 QueryClient 上下文
+  function renderHot() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(<QueryClientProvider client={qc}><Hot /></QueryClientProvider>)
+  }
+
   it('渲染列表、来源名与分类标签', async () => {
-    render(<Hot />)
+    renderHot()
     await waitFor(() => expect(screen.getByText('LLM 新论文')).toBeTruthy())
     expect(screen.getByText('arXiv cs.AI')).toBeTruthy()
     expect(screen.getByText('学术')).toBeTruthy()
   })
 
   it('显示「更新于」时间', async () => {
-    render(<Hot />)
+    renderHot()
     await waitFor(() => expect(screen.getByText(/更新于 09:30/)).toBeTruthy())
   })
 
   it('主题 tab：点「考研」只显示匹配条目', async () => {
-    render(<Hot />)
+    renderHot()
     await waitFor(() => expect(screen.getByText('考研经验分享')).toBeTruthy())
     fireEvent.click(screen.getByText('考研'))
     expect(screen.queryByText('LLM 新论文')).toBeNull()
@@ -57,7 +64,7 @@ describe('Hot 页面', () => {
   })
 
   it('管理源对话框：打开回填订阅、添加主题 chip、保存调用 saveSubscriptions', async () => {
-    render(<Hot />)
+    renderHot()
     await waitFor(() => expect(screen.getByText('管理源')).toBeTruthy())
     fireEvent.click(screen.getByText('管理源'))
     await waitFor(() => expect(screen.getAllByText('arXiv cs.AI').length).toBeGreaterThan(1)) // 主列表 + 对话框内的源名

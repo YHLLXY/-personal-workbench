@@ -4,8 +4,9 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Trash2 } from 'lucide-react'
+import { Trash2, Quote, Braces } from 'lucide-react'
 import { usePaperMutations, useFolders } from './api'
+import { formatCitation, toBibTeX } from './cite'
 import { toast } from 'sonner'
 import type { Paper } from '@/lib/db/types'
 
@@ -97,6 +98,11 @@ export function PaperDetail({ paper, open, onOpenChange }: { paper: Paper | null
     remove.mutate(paper.id, { onSuccess: () => { toast.success('已删除'); onOpenChange(false) } })
   }
 
+  /** 复制文本到剪贴板，统一 toast 反馈 */
+  async function copyText(text: string) {
+    try { await navigator.clipboard.writeText(text); toast.success('已复制') } catch { toast.error('复制失败') }
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full max-w-md overflow-y-auto p-0 sm:max-w-md">
@@ -106,6 +112,11 @@ export function PaperDetail({ paper, open, onOpenChange }: { paper: Paper | null
         </SheetHeader>
         {paper && (
           <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-6">
+            {/* 引用导出：写论文场景一键复制 */}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => copyText(formatCitation(paper))}><Quote className="size-3.5 mr-1" />复制引用</Button>
+              <Button variant="outline" size="sm" onClick={() => copyText(toBibTeX(paper))}><Braces className="size-3.5 mr-1" />复制 BibTeX</Button>
+            </div>
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">标题</label>
               <Input value={title} onChange={e => setTitle(e.target.value)} />
