@@ -22,7 +22,8 @@ export function buildDailySummary(date: string, data: {
   const byType = (type: HealthLog['type']) => data.healthLogs.find(h => h.logDate === date && h.type === type) ?? null
   return {
     tasksDone: done.length,
-    tasksTotal: done.length,
+    // 语义是「累计完成」（review.tsx 展示为 sub 累计 N），不要改成当日口径
+    tasksTotal: data.tasks.filter(t => t.status === 'done').length,
     focusMinutes: focus,
     habitChecks: habit,
     weightLog: byType('weight'),
