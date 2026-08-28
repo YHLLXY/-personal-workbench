@@ -31,6 +31,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', resolvedTheme === 'dark')
+    // PWA 状态栏/标题栏颜色跟随主题（index.html 内 meta 由这里动态更新）
+    const meta = document.querySelector('meta[name="theme-color"]')
+    if (meta) meta.setAttribute('content', resolvedTheme === 'dark' ? '#262B28' : '#F8F6F2')
   }, [resolvedTheme])
 
   useEffect(() => {
@@ -53,9 +56,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(t)
   }, [])
 
+  // 一击必变：按当前生效主题明暗互换（「跟随系统」在设置页选择；三态循环会让 system 态的点击看起来没反应）
   const toggle = useCallback(() => {
-    setThemeState(prev => (prev === 'light' ? 'dark' : prev === 'dark' ? 'system' : 'light'))
-  }, [])
+    setThemeState(resolve(theme) === 'dark' ? 'light' : 'dark')
+  }, [theme])
 
   return (
     <ThemeContext.Provider value={{ theme, resolvedTheme, toggle, setTheme }}>

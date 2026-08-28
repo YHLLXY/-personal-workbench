@@ -39,7 +39,7 @@ function Probe() {
 describe('ThemeProvider 三态', () => {
   beforeEach(() => { localStorage.clear(); vi.unstubAllGlobals() })
 
-  it('默认 light；toggle 按 light→dark→system→light 循环', () => {
+  it('默认 light；toggle 按当前生效主题明暗互换（一击必变，v1.11 起）', () => {
     makeMatchMedia(false).install()
     render(<ThemeProvider><Probe /></ThemeProvider>)
     expect(screen.getByTestId('theme').textContent).toBe('light')
@@ -47,8 +47,18 @@ describe('ThemeProvider 三态', () => {
     expect(screen.getByTestId('theme').textContent).toBe('dark')
     expect(document.documentElement.classList.contains('dark')).toBe(true)
     fireEvent.click(screen.getByText('toggle'))
-    expect(screen.getByTestId('theme').textContent).toBe('system')
+    expect(screen.getByTestId('theme').textContent).toBe('light')
     expect(document.documentElement.classList.contains('dark')).toBe(false)
+  })
+
+  it('system（系统浅色）下 toggle 一击变 dark，再击回 light（回归：三态循环第一击无可见变化）', () => {
+    makeMatchMedia(false).install()
+    localStorage.setItem('wb-theme', 'system')
+    render(<ThemeProvider><Probe /></ThemeProvider>)
+    expect(screen.getByTestId('resolved').textContent).toBe('light')
+    fireEvent.click(screen.getByText('toggle'))
+    expect(screen.getByTestId('theme').textContent).toBe('dark')
+    expect(screen.getByTestId('resolved').textContent).toBe('dark')
     fireEvent.click(screen.getByText('toggle'))
     expect(screen.getByTestId('theme').textContent).toBe('light')
   })

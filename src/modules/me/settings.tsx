@@ -18,6 +18,8 @@ import { useFocusSessions } from '@/modules/study/api'
 import { useHabitLogs } from '@/modules/health/api'
 import { useReviews } from '@/modules/review/api'
 import { useNotes, usePapers } from '@/modules/news/api'
+import { useTheme, type Theme } from '@/app/theme'
+import { cn } from '@/lib/utils'
 import { NotificationSection } from './notifications-section'
 
 /** 个人中心页：资料卡 / 数据统计 / 数据管理 / 通知 / 账号 / 关于 */
@@ -26,6 +28,7 @@ export function SettingsPage() {
     <div className="mx-auto max-w-2xl space-y-5">
       <h1 className="text-xl font-bold">个人中心</h1>
       <ProfileCard />
+      <ThemeSection />
       <section className="flex items-center justify-between rounded-2xl border border-border bg-card p-5">
         <div className="flex items-center gap-3">
           <FolderKanban className="size-5 text-primary" strokeWidth={1.7} />
@@ -50,8 +53,26 @@ export function SettingsPage() {
   )
 }
 
-function ProfileCard() {
-  const { user, updateProfile } = useAuth()
+/** 外观设置：主题三选一（顶栏按钮只做明暗互换，「跟随系统」从这里进） */
+function ThemeSection() {
+  const { theme, setTheme } = useTheme()
+  const options: Array<[Theme, string]> = [['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']]
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-semibold">外观</h2>
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-border bg-card p-4">
+        {options.map(([v, label]) => (
+          <button key={v} onClick={() => setTheme(v)}
+            className={cn('text-xs px-3 py-1.5 rounded-full border transition-colors', theme === v ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground hover:text-foreground')}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ProfileCard() {  const { user, updateProfile } = useAuth()
   const [nickname, setNickname] = useState(user?.nickname ?? '')
   const [saving, setSaving] = useState(false)
   const initial = ((user?.nickname || user?.email || '我')[0] ?? '我').toUpperCase()
