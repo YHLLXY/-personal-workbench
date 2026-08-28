@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.9',
+    date: '2026-08-28',
+    title: '代码审查修复：安全加固 + 功能修复',
+    items: [
+      '安全：推送通知 URL 校验（防开放重定向）、CRON_SECRET 常数时间比较、API 错误不外泄内部信息、登录接口 IP 限流',
+      '功能：文件夹移动防循环引用、热点页离线不再无限重试、快速打卡改为并行请求',
+      '修复：复盘摘要完成率统计口径修正、导入解析支持行内 keywords 数组、备份校验覆盖全部 12 张表',
+      '体验：考试卡片加载占位、问候语统一（含夜深了）、命令面板关闭清空搜索词',
+    ],
+  },
+  {
     version: 'v1.8',
     date: '2026-08-18',
     title: '整体优化：永不白屏 + 首屏提速 + 弱网缓存',
