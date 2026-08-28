@@ -40,10 +40,15 @@ export function useTaskMutations() {
   }
 }
 
+/** 今日口径：仅今日到期或今日焦点（历史逾期不计入今日统计，逾期走单独提示，2026-08 反馈：8/8 混入积压旧任务） */
+export function isTodayScope(t: Task, today: string): boolean {
+  return t.dueDate === today || (t.focus && t.focusDate === today)
+}
+
 /** 今日任务（今日到期 + 今日焦点 + 已过期未完成，不含 done） */
 export function todayTasks(tasks: Task[], today: string): Task[] {
   return tasks
-    .filter(t => t.status !== 'done' && (t.dueDate === today || (t.focus && t.focusDate === today) || (t.dueDate && t.dueDate < today)))
+    .filter(t => t.status !== 'done' && (isTodayScope(t, today) || (t.dueDate && t.dueDate < today)))
     .sort((a, b) => Number(b.focus) - Number(a.focus) || priorityRank(a) - priorityRank(b))
 }
 /** 已过期未完成任务（顺延/逾期区用） */

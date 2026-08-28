@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { todayTasks, overdueTasks, recentOverdue, oldOverdue } from '../src/modules/overview/api'
+import { todayTasks, overdueTasks, recentOverdue, oldOverdue, isTodayScope } from '../src/modules/overview/api'
 import type { Task } from '../src/lib/db/types'
 
 function t(partial: Partial<Task>): Task { return { id: 'x', title: 't', focus: false, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, focusDate: null, tags: [], sort: 0, completedAt: null, createdAt: '', ...partial } }
@@ -93,5 +93,23 @@ describe('oldOverdue', () => {
     const recent = recentOverdue(tasks, '2026-08-04').map(x => x.id)
     const old = oldOverdue(tasks, '2026-08-04').map(x => x.id)
     expect([...recent, ...old].sort()).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('isTodayScope（今日口径，历史逾期不计入）', () => {
+  it('仅今日到期或今日焦点算今日；昨日到期、昨日焦点、未来任务都不算', () => {
+    const tasks = [
+      t({ id: 'a', dueDate: '2026-08-04' }),
+      t({ id: 'b', focus: true, focusDate: '2026-08-04', dueDate: '2026-08-10' }),
+      t({ id: 'c', dueDate: '2026-08-03' }),   // 逾期
+      t({ id: 'd', focus: true, focusDate: '2026-08-03' }), // 昨日焦点
+      t({ id: 'e', dueDate: '2026-08-05' }),   // 未来
+      t({ id: 'f' }),                          // 无日期
+    ]
+    const inScope = tasks.filter(x => isTodayScope(x, '2026-08-04')).map(x => x.id)
+    expect(inScope.sort()).toEqual(['a', 'b'])
+  })
+  it('done 的今日任务也在口径内（供 done/total 统计使用）', () => {
+    expect(isTodayScope(t({ id: 'g', status: 'done', dueDate: '2026-08-04' }), '2026-08-04')).toBe(true)
   })
 })

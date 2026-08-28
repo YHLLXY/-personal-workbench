@@ -26,7 +26,9 @@ export default function TodayTasks() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold">今日待办</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">共 {list.length} 项 · 标记 ⭐ 为今日焦点（最多 3 项）</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            今日 {todayList.length} 项{overdue.length > 0 && <span className="text-destructive"> · 逾期 {overdue.length} 项</span>} · 标记 ⭐ 为今日焦点（最多 3 项）
+          </p>
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true) }}><Plus className="size-4 mr-1" />新建</Button>
       </div>

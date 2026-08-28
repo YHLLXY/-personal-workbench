@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Star, ArrowRight, Flame } from 'lucide-react'
 import { OverviewSummary } from './overview-summary'
-import { useTasks, todayTasks } from './api'
+import { useTasks, isTodayScope } from './api'
 import { useExamsSoon, daysUntil } from '../study/api'
 import { useHeatCells } from '../health/api'
 import { todayStr } from '@/lib/db/types'
@@ -14,7 +14,8 @@ export default function OverviewHome() {
   const { data: exams, isLoading: el } = useExamsSoon()
   const nextExam = exams?.[0]
   const today = todayStr()
-  const list = todayTasks(tasks ?? [], today).slice(0, 5)
+  // 今日口径：只显示今天的任务（历史逾期由 KPI 条「逾期 N 项」承接，不混入本卡片）
+  const list = (tasks ?? []).filter(t => isTodayScope(t, today) && t.status !== 'done').slice(0, 5)
   const focusList = (tasks ?? []).filter(t => t.focus && t.focusDate === today && t.status !== 'done').slice(0, 3)
 
   return (
