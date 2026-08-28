@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.13.0',
+    date: '2026-08-28',
+    title: '夜间工程：复盘周聚合 + 速记 Markdown + CI 流水线',
+    items: [
+      '新增：复盘页「本周回顾」——近 7 天任务/专注/打卡/复盘聚合与心情、评分均值',
+      '新增：速记编辑器 Markdown 预览（零依赖安全渲染器，先转义再转换）',
+      '内部：GitHub Actions CI（lint + test + build 门禁）、补全 README（部署与环境变量文档）、计划文档归档 docs/plans/',
+    ],
+  },
+  {
     version: 'v1.12.0',
     date: '2026-08-28',
     title: '功能激活大版本：让存了的数据真正可用',
