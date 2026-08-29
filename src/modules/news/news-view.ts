@@ -27,7 +27,7 @@ export function hotNoteText(title: string, url: string): string { return `${titl
 /** 速记过滤：按关键词（content 不区分大小写）与标签，tag 为 null 表示「全部」 */
 export function filterNotes(notes: Note[], query: string, tag: string | null): Note[] {
   const q = query.trim().toLowerCase()
-  return notes.filter(n => (!q || n.content.toLowerCase().includes(q)) && (!tag || n.tag === tag))
+  return notes.filter(n => (!q || n.content.toLowerCase().includes(q)) && (!tag || (n.tags ?? []).includes(tag)))
 }
 
 /** 极简 Markdown → 安全 HTML（零依赖）。

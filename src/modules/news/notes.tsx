@@ -25,7 +25,7 @@ export default function Notes() {
   const [query, setQuery] = useState('')
   const [activeTag, setActiveTag] = useState<string | null>(null)
   // 标签筛选 chips 数据源：未归档笔记的去重 tag（null 跳过）
-  const tags = useMemo(() => Array.from(new Set((notes ?? []).map(n => n.tag).filter((t): t is string => !!t))), [notes])
+  const tags = useMemo(() => Array.from(new Set((notes ?? []).flatMap(n => n.tags ?? []))), [notes])
   const list = filterNotes(notes ?? [], query, activeTag)
 
   const showNew = editing === null && params.get('new') === '1'
@@ -67,7 +67,7 @@ export default function Notes() {
           <div key={n.id} className="bg-card border border-border rounded-2xl p-4 group" onClick={() => setEditing(n)}>
             <div className="flex items-center gap-2 mb-1.5">
               {n.pinned && <span title="已置顶" className="text-[10px]">📌</span>}
-              {n.tag && <Badge variant="secondary" className="text-[10px]">{n.tag}</Badge>}
+              {(n.tags ?? []).map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
               <span className="text-[10px] text-muted-foreground ml-auto">{n.updatedAt.slice(0, 16).replace('T', ' ')}</span>
               {/* 归档：patch { archived: true }，成功后 toast 提示 */}
               <button onClick={e => { e.stopPropagation(); update.mutate({ id: n.id, patch: { pinned: !n.pinned } }, { onSuccess: () => toast.success(n.pinned ? '已取消置顶' : '已置顶') }) }} aria-label={n.pinned ? '取消置顶' : '置顶'} className="text-muted-foreground/50 hover:text-primary opacity-0 group-hover:opacity-100 md:opacity-0 md:group-hover:opacity-100">{n.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}</button>
@@ -92,7 +92,7 @@ export default function Notes() {
             {archived.map(n => (
               <div key={n.id} className="rounded-xl border border-border bg-background p-3 opacity-75 hover:opacity-100 transition-opacity" onClick={() => setEditing(n)}>
                 <div className="flex items-center gap-2 mb-1">
-                  {n.tag && <Badge variant="secondary" className="text-[10px]">{n.tag}</Badge>}
+                  {(n.tags ?? []).map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
                   <span className="text-[10px] text-muted-foreground ml-auto">{n.updatedAt.slice(0, 16).replace('T', ' ')}</span>
                   <button onClick={e => { e.stopPropagation(); update.mutate({ id: n.id, patch: { archived: false } }, { onSuccess: () => toast.success('已恢复') }) }} aria-label="恢复" className="text-muted-foreground/50 hover:text-foreground"><ArchiveRestore className="size-3.5" /></button>
                   <button onClick={e => { e.stopPropagation(); remove.mutate(n.id) }} aria-label="删除" className="text-muted-foreground/50 hover:text-destructive"><Trash2 className="size-3.5" /></button>

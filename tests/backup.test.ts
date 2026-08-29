@@ -9,7 +9,7 @@ const sample: BackupTables = {
   focusSessions: [{ id: 'f1', startAt: '2026-08-05T09:00:00.000Z', minutes: 25, note: null }],
   exams: [{ id: 'e1', title: '期末', examDate: '2026-09-01', examTime: null, subject: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' }],
   studyGoals: [{ id: 'g1', title: '背单词', target: 100, progress: 30, deadline: null, status: 'active', note: null, completedAt: null }],
-  notes: [{ id: 'n1', content: '灵感', tag: null, archived: false, pinned: false, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }],
+  notes: [{ id: 'n1', content: '灵感', tags: [], archived: false, pinned: false, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' }],
   papers: [{ id: 'p1', title: '论文', authors: 'a', arxivId: null, url: null, status: 'want', rating: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' }],
   folders: [{ id: 'd1', name: '机器学习', parentId: null, sort: 1 }],
   healthLogs: [{ id: 'g1', logDate: '2026-08-05', type: 'sleep', value: 7.5 }],

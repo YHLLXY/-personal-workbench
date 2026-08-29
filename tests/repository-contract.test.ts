@@ -176,13 +176,15 @@ async function runScript(repo: WorkbenchRepository) {
   const tick = () => new Promise(r => setTimeout(r, 3))
   const n1 = await repo.createNote('灵感一闪', '想法')
   await tick()
+  await repo.updateNote(n1.id, { tags: ['想法', '灵感'] })
+  await tick()
   await repo.createNote('随手记')
   await tick()
   await repo.updateNote(n1.id, { pinned: true })
   await repo.updateNote(n1.id, { content: '灵感一闪（补充）', archived: true })
   const notes = await repo.listNotes()
   const pinnedFirst = notes[0]?.pinned === true // 置顶笔记必须排最前（pinned 优先于 updated_at）
-  const noteSnap = notes.filter(n => [n1.id].includes(n.id) || n.content === '随手记').map(n => ({ content: n.content, tag: n.tag, archived: n.archived, pinned: n.pinned }))
+  const noteSnap = notes.filter(n => [n1.id].includes(n.id) || n.content === '随手记').map(n => ({ content: n.content, tags: n.tags, archived: n.archived, pinned: n.pinned }))
 
   // —— 复盘：两次 upsert 同日合并（第二次只传 mood，其余字段保留）——
   await repo.upsertReview(TODAY, { mood: 4, summary: '稳', planTomorrow: '明天跑步' })

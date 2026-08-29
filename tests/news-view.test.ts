@@ -2,16 +2,16 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { filterNotes, loadReadIds, saveReadId, hotNoteText } from '../src/modules/news/news-view'
 import type { Note } from '../src/lib/db/types'
 
-function n(partial: Partial<Note>): Note { return { id: 'x', content: '', tag: null, archived: false, pinned: false, createdAt: '', updatedAt: '', ...partial } }
+function n(partial: Partial<Note>): Note { return { id: 'x', content: '', tags: [], archived: false, pinned: false, createdAt: '', updatedAt: '', ...partial } }
 
 beforeEach(() => { localStorage.clear() })
 
 describe('filterNotes（速记搜索 + 标签筛选）', () => {
   const notes = [
-    n({ id: 'a', content: 'React Query 缓存要点', tag: '前端' }),
-    n({ id: 'b', content: '跑步 5 公里', tag: '健康' }),
-    n({ id: 'c', content: 'react hooks 心得', tag: null }),
-    n({ id: 'd', content: '读书笔记', tag: '前端' }),
+    n({ id: 'a', content: 'React Query 缓存要点', tags: ['前端', '学习'] }),
+    n({ id: 'b', content: '跑步 5 公里', tags: ['健康'] }),
+    n({ id: 'c', content: 'react hooks 心得', tags: [] }),
+    n({ id: 'd', content: '读书笔记', tags: ['前端'] }),
   ]
   it('无过滤条件时原样返回全部', () => {
     expect(filterNotes(notes, '', null).map(x => x.id)).toEqual(['a', 'b', 'c', 'd'])
@@ -19,9 +19,10 @@ describe('filterNotes（速记搜索 + 标签筛选）', () => {
   it('按 content 不区分大小写过滤（大小写混合命中全部）', () => {
     expect(filterNotes(notes, 'REACT', null).map(x => x.id)).toEqual(['a', 'c'])
   })
-  it('按 tag 精确过滤；无 tag 的笔记只被「全部」命中', () => {
+  it('按 tag 精确过滤（多标签命中任一即算）；无标签的笔记只被「全部」命中', () => {
     expect(filterNotes(notes, '', '前端').map(x => x.id)).toEqual(['a', 'd'])
     expect(filterNotes(notes, '', '健康').map(x => x.id)).toEqual(['b'])
+    expect(filterNotes(notes, '', '学习').map(x => x.id)).toEqual(['a']) // 多标签的第二个 tag 也能命中
   })
   it('query + tag 组合取交集', () => {
     expect(filterNotes(notes, 'react', '前端').map(x => x.id)).toEqual(['a'])

@@ -10,7 +10,8 @@ import type { Note } from '@/lib/db/types'
 export function NoteEditor({ note, onDone }: { note: Note | null; onDone: () => void }) {
   const { create, update } = useNoteMutations()
   const [content, setContent] = useState(note?.content ?? '')
-  const [tag, setTag] = useState(note?.tag ?? '')
+  // 多标签：逗号/顿号分隔输入，解析为数组（迁移 010：tag → tags）
+  const [tagsText, setTagsText] = useState((note?.tags ?? []).join('、'))
   const [preview, setPreview] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -22,17 +23,18 @@ export function NoteEditor({ note, onDone }: { note: Note | null; onDone: () => 
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       if (!content.trim()) return
-      if (note) update.mutate({ id: note.id, patch: { content, tag: tag || null } })
-      else create.mutate({ content, tag: tag || null })
+      const tags = tagsText.split(/[，,、\s]+/).map(t => t.trim()).filter(Boolean)
+      if (note) update.mutate({ id: note.id, patch: { content, tags } })
+      else create.mutate({ content, tag: tags[0] ?? null })
       setSavedAt(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }))
     }, 1200)
     return () => { if (timer.current) clearTimeout(timer.current) }
-  }, [content, tag])
+  }, [content, tagsText])
 
   return (
     <div className="bg-card border border-border rounded-2xl p-4">
       <div className="flex items-center gap-2 mb-3">
-        <Input value={tag} onChange={e => setTag(e.target.value)} placeholder="标签（如：想法/待办/灵感）" className="max-w-40 h-8 text-xs" />
+        <Input value={tagsText} onChange={e => setTagsText(e.target.value)} placeholder="标签（逗号分隔，如：想法，待办）" className="max-w-48 h-8 text-xs" />
         <span className="ml-auto text-[10px] text-muted-foreground flex items-center gap-1">
           <Save className="size-3" />{savedAt ? `已保存 ${savedAt}` : '自动保存'}
         </span>

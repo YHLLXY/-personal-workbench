@@ -38,7 +38,7 @@ export function NotesCard() {
       <CardContent className="space-y-2">
         {recent.length === 0 ? <p className="text-xs text-muted-foreground py-2">暂无速记</p> : recent.map(n => (
           <div key={n.id} className="text-xs text-muted-foreground truncate">
-            {n.tag && <span className="inline-block bg-accent/25 text-accent-foreground rounded px-1.5 mr-1.5 text-[10px]">{n.tag}</span>}
+            {(n.tags ?? []).slice(0, 1).map(t => <span key={t} className="inline-block bg-accent/25 text-accent-foreground rounded px-1.5 mr-1.5 text-[10px]">{t}</span>)}
             {n.content}
           </div>
         ))}
