@@ -66,24 +66,32 @@ console.log(`changelog items:\n${items.map(i => `  - ${i}`).join('\n')}\n标题:
 
 if (!YES) { console.log('（dry-run 结束；确认无误后加 --yes --title "..." 正式发版）'); process.exit(0) }
 
-// 5. 写 changelog.ts + package.json
+// 5. 写 changelog.ts + package.json；6. 质量门禁——门禁失败必须回滚这两个文件，
+// 否则下次运行会读到半截版本号导致 +1 跳级（2026-08-29 实战翻车：v1.15 跳成 v1.16）
 const clPath = resolve(ROOT, 'src/app/changelog.ts')
-let cl = readFileSync(clPath, 'utf8')
+const clOriginal = readFileSync(clPath, 'utf8')
+let cl = clOriginal
 // 锚点容忍 CRLF/LF（Windows autocrlf 检出）
 const anchorRe = /export const CHANGELOG: ChangelogEntry\[\] = \[\r?\n/
 if (!anchorRe.test(cl)) { console.error('✗ changelog.ts 结构不符（找不到数组锚点）'); process.exit(1) }
 cl = cl.replace(anchorRe, m => m + entry)
-writeFileSync(clPath, cl)
-pkg.version = next
-writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
-console.log(`✓ 已写入 changelog v${next} 并同步 package.json`)
+try {
+  writeFileSync(clPath, cl)
+  pkg.version = next
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
+  console.log(`✓ 已写入 changelog v${next} 并同步 package.json`)
 
-// 6. 质量门禁
-for (const cmd of ['npm test', 'npm run build']) {
-  console.log(`⏳ ${cmd} …`)
-  execSync(cmd, { cwd: ROOT, stdio: 'inherit' })
+  // 6. 质量门禁
+  for (const cmd of ['npm test', 'npm run build']) {
+    console.log(`⏳ ${cmd} …`)
+    execSync(cmd, { cwd: ROOT, stdio: 'inherit' })
+  }
+  console.log('✓ 测试与构建通过')
+} catch {
+  sh('git checkout -- src/app/changelog.ts package.json')
+  console.error('✗ 门禁失败：已回滚 changelog.ts 与 package.json，修复后重跑')
+  process.exit(1)
 }
-console.log('✓ 测试与构建通过')
 
 // 7. commit + tag + push
 sh('git add src/app/changelog.ts package.json')
