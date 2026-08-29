@@ -10,7 +10,8 @@
     "lint": "oxlint",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "check:bundle": "node scripts/check-bundle.mjs"
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -30,6 +31,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",

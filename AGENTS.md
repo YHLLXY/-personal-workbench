@@ -51,7 +51,8 @@ tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 
 2. **知识库是唯一事实源**：项目页只读镜像（10min 缓存），编辑一律跳 github.dev，禁止双写。
 3. **暴露私有内容的 API 必须鉴权**（anon client getUser JWT）；因鉴权而异的响应 `Cache-Control` 必须带 `private`。
 4. **发版按 VERSIONING.md**：feat→minor / fix→patch / 破坏性→major；多 commit 归并取最高档；24h 内追加修复并入当前版本；`docs:/chore:/refactor:` 不发版。
-5. **提交前验证**：`npm test` 全绿 + `npm run build` 通过 + `npm run lint` 警告 ≤ 基线 12 条（对比改动前后数量）。
+5. **提交前验证**：`npm test` 全绿 + `npm run build` 通过 + `npm run lint` 警告 ≤ 基线 12 条（对比改动前后数量）；改动核心流程（待办/目标/速记/复盘/主题）时加跑 `npx playwright test`（e2e/ 冒烟，本地 IndexedDB 模式无需 env）。
+5b. **双实现改动**：动 local-repository 或 supabase-repository 后必须跑 `tests/repository-contract.test.ts`——同脚本双仓储逻辑快照对比，防漂移（曾抓到云端速记不刷新 updated_at）。
 6. **前端表单防连击**：所有 create/update mutation 的提交按钮在 isPending 时禁用（历史上目标/身体记录都因此重复过）。
 
 ## 避坑清单（每条都真实踩过）
