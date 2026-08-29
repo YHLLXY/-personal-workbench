@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.17.0',
+    date: '2026-08-29',
+    title: '今日待办：完成后划线保留可撤销',
+    items: [
+      '新增：今日待办完成后划线保留 + 一键撤销（不再消失）',
+    ],
+  },
+  {
     version: 'v1.16.0',
     date: '2026-08-29',
     title: '速记多标签 + 迁移 010',
