@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.18.0',
+    date: '2026-08-29',
+    title: '时间×天气启动进场动画',
+    items: [
+      '新增：启动进场动画：四时段场景×七种天气，点击跳过，后台恢复重播',
+      '新增：/api/weather 重庆天气代理（Open-Meteo 免 key + WMO 归一化 + CDN 缓存）',
+    ],
+  },
+  {
     version: 'v1.17.0',
     date: '2026-08-29',
     title: '今日待办：完成后划线保留可撤销',
