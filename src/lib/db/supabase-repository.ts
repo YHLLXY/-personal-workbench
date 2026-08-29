@@ -164,7 +164,9 @@ export class SupabaseRepository implements WorkbenchRepository {
 
   async listNotes() { const { data, error } = await this.sb.from('wb_notes').select('*').order('updated_at', { ascending: false }); if (error) throw error; return (data ?? []).map(noteFromRow) }
   async createNote(content: string, tag?: string | null) { const { data, error } = await this.sb.from('wb_notes').insert({ id: genId(), content, tag: tag ?? null }).select().single(); if (error) throw error; return noteFromRow(data) }
-  async updateNote(id: string, p: Partial<Note>) { const { data, error } = await this.sb.from('wb_notes').update({ content: p.content, tag: p.tag, archived: p.archived }).eq('id', id).select().single(); if (error) throw error; return noteFromRow(data) }
+  async updateNote(id: string, p: Partial<Note>) {
+    // updated_at 无触发器（迁移 001 仅 insert default），本地实现会刷新它——云端必须显式写入保持双实现一致（契约测试发现）
+    const { data, error } = await this.sb.from('wb_notes').update({ content: p.content, tag: p.tag, archived: p.archived, updated_at: new Date().toISOString() }).eq('id', id).select().single(); if (error) throw error; return noteFromRow(data) }
   async deleteNote(id: string) { const { error } = await this.sb.from('wb_notes').delete().eq('id', id); if (error) throw error }
 
   async listPapers() { const { data, error } = await this.sb.from('wb_papers').select('*').order('created_at', { ascending: false }); if (error) throw error; return (data ?? []).map(paperFromRow) }

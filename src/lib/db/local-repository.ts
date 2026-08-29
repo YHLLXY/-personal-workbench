@@ -79,7 +79,10 @@ export class LocalRepository implements WorkbenchRepository {
   async updateStudyGoal(id: string, p: Partial<StudyGoal>) { return patch<StudyGoal>('studyGoals', id, p) }
   async deleteStudyGoal(id: string) { remove('studyGoals', id) }
 
-  async listNotes() { return read<Note>('notes') }
+  async listNotes() {
+    // 与云端一致：按 updated_at 倒序（编辑过的笔记浮顶；契约测试发现本地原本无排序）
+    return read<Note>('notes').sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
+  }
   async createNote(content: string, tag?: string | null) {
     const now = new Date().toISOString()
     return insert<Note>('notes', { id: genId(), content, tag: tag ?? null, archived: false, createdAt: now, updatedAt: now })
