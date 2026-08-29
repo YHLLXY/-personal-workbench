@@ -2,9 +2,13 @@ import { test, expect, type Page } from '@playwright/test'
 
 /** 关键链路 E2E 冒烟（本地 IndexedDB 模式，每个用例独立 localStorage 上下文） */
 
-// 每个用例独立上下文 → 新手引导弹层每次都会出现并拦截点击，加载前直接标记已完成
+// 每个用例独立上下文 → 新手引导弹层每次都会出现并拦截点击，加载前直接标记已完成；
+// 启动动画同理打跳过钩子（wb-boot-skip），否则每个用例都要多等 3 秒
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('wb-onboarded', '1'))
+  await page.addInitScript(() => {
+    localStorage.setItem('wb-onboarded', '1')
+    localStorage.setItem('wb-boot-skip', '1')
+  })
 })
 
 async function goto(page: Page, path: string) {
@@ -32,6 +36,28 @@ test('待办闭环：新建 → 显示 → 勾选完成 → 划线保留 → 撤
   // 撤销：再点一次勾选框，任务回到今日待办
   await page.getByLabel('完成').first().click()
   await expect(page.getByText('今日 1 项')).toBeVisible()
+})
+
+test('启动动画：冷启动播放 → 点击任意处跳过', async ({ browser }) => {
+  // 独立上下文：不打 wb-boot-skip 钩子，让动画正常播放
+  const ctx = await browser.newContext({ baseURL: 'http://localhost:5173', viewport: { width: 1280, height: 800 } })
+  const p = await ctx.newPage()
+  await p.addInitScript(() => localStorage.setItem('wb-onboarded', '1'))
+  await p.goto('/tasks')
+  await expect(p.locator('.boot')).toBeVisible()
+  await p.locator('.boot').click()
+  await expect(p.locator('.boot')).toHaveCount(0, { timeout: 2500 })
+  await ctx.close()
+})
+
+test('启动动画：不操作则播放结束自动淡出卸载', async ({ browser }) => {
+  const ctx = await browser.newContext({ baseURL: 'http://localhost:5173', viewport: { width: 1280, height: 800 } })
+  const p = await ctx.newPage()
+  await p.addInitScript(() => localStorage.setItem('wb-onboarded', '1'))
+  await p.goto('/tasks')
+  await expect(p.locator('.boot')).toBeVisible()
+  await expect(p.locator('.boot')).toHaveCount(0, { timeout: 5000 }) // 2.6s 播放 + 0.65s 淡出 + 余量
+  await ctx.close()
 })
 
 test('学习目标：新建 → +10 步进 → 精确进度显示', async ({ page }) => {
