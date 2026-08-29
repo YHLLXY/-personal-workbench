@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { repository } from '../../lib/db'
-import type { Task, TaskInput } from '../../lib/db/types'
+import { localDateOfISO, type Task, type TaskInput } from '../../lib/db/types'
 
 export const taskKeys = { all: ['tasks'] as const }
 
@@ -50,6 +50,12 @@ export function todayTasks(tasks: Task[], today: string): Task[] {
   return tasks
     .filter(t => t.status !== 'done' && (isTodayScope(t, today) || (t.dueDate && t.dueDate < today)))
     .sort((a, b) => Number(b.focus) - Number(a.focus) || priorityRank(a) - priorityRank(b))
+}
+/** 今天完成的任务（completedAt 本地日期 = today，完成时间倒序）——今日页「已完成」分区用：划线保留 + 点方块撤销，不消失（2026-08 反馈） */
+export function todayDone(tasks: Task[], today: string): Task[] {
+  return tasks
+    .filter(t => t.status === 'done' && t.completedAt !== null && localDateOfISO(t.completedAt) === today)
+    .sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)))
 }
 /** 已过期未完成任务（顺延/逾期区用） */
 export function overdueTasks(tasks: Task[], today: string): Task[] {

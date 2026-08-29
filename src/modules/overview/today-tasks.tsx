@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useTasks, useTaskMutations, todayTasks, recentOverdue, oldOverdue, filterTasks } from './api'
+import { useTasks, useTaskMutations, todayTasks, todayDone, recentOverdue, oldOverdue, filterTasks } from './api'
 import { TaskItem } from './task-item'
 import { TaskDialog } from './task-dialog'
 import { Button } from '@/components/ui/button'
@@ -19,12 +19,14 @@ export default function TodayTasks() {
   const [editing, setEditing] = useState<Task | null>(null)
   const [tag, setTag] = useState<string | null>(null) // 当前标签筛选，null=全部
   const [query, setQuery] = useState('') // 标题关键词
+  const [doneOpen, setDoneOpen] = useState(true) // 已完成分区默认展开：刚勾完就能看到划线，误触可立刻撤销
   const today = todayStr()
   // 先按标签/关键词过滤，再走既有口径函数；someday 单独分流（todayTasks 口径不排除 someday，手动拆开避免同任务重复出现）
   const filtered = filterTasks(tasks ?? [], { tag, query })
   const pool = filtered.filter(t => t.status !== 'someday')
   const someday = filtered.filter(t => t.status === 'someday')
   const list = todayTasks(pool, today)
+  const doneToday = todayDone(pool, today)
   const recent = recentOverdue(pool, today)
   const old = oldOverdue(pool, today)
   const overdue = [...recent, ...old]
@@ -38,7 +40,7 @@ export default function TodayTasks() {
         <div>
           <h1 className="text-xl font-bold">今日待办</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            今日 {todayList.length} 项{overdue.length > 0 && <span className="text-destructive"> · 逾期 {overdue.length} 项</span>} · 标记 ⭐ 为今日焦点（最多 3 项）
+            今日 {todayList.length} 项{doneToday.length > 0 && <span className="text-primary"> · 已完成 {doneToday.length} 项</span>}{overdue.length > 0 && <span className="text-destructive"> · 逾期 {overdue.length} 项</span>} · 标记 ⭐ 为今日焦点（最多 3 项）
           </p>
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true) }}><Plus className="size-4 mr-1" />新建</Button>
@@ -55,7 +57,7 @@ export default function TodayTasks() {
         <div className="space-y-2"><Skeleton className="h-14 w-full" /><Skeleton className="h-14 w-full" /></div>
       ) : isError ? (
         <p className="text-sm text-destructive py-10 text-center">加载失败，请重试</p>
-      ) : list.length === 0 && someday.length === 0 ? (
+      ) : list.length === 0 && someday.length === 0 && doneToday.length === 0 ? (
         <EmptyState icon="✓" title={filtering ? '没有匹配的任务' : '今天没有待办'} desc={filtering ? '换个标签或关键词试试' : '点击右上角新建，或按 ⌘K 快速添加'} />
       ) : (
         <div className="space-y-4">
@@ -120,6 +122,27 @@ export default function TodayTasks() {
                     onDelete={() => remove.mutate(t.id)} />
                 ))}
               </div>
+            </section>
+          )}
+          {doneToday.length > 0 && (
+            <section>
+              <details className="group rounded-xl border border-border bg-card" open={doneOpen} onToggle={e => setDoneOpen(e.currentTarget.open)}>
+                <summary className="flex items-center justify-between px-3.5 py-2.5 cursor-pointer list-none select-none text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  <span className="flex items-center gap-1.5">
+                    <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+                    已完成 {doneToday.length} 项 · 点方块可撤销
+                  </span>
+                  <span className="text-[10px]">{doneOpen ? '点击折叠' : '点击展开'}</span>
+                </summary>
+                <div className="px-3 pb-3 space-y-1.5">
+                  {doneToday.map(t => (
+                    <TaskItem key={t.id} task={t}
+                      onToggle={() => update.mutate({ id: t.id, patch: { status: 'todo' } })}
+                      onEdit={() => { setEditing(t); setDialogOpen(true) }}
+                      onDelete={() => remove.mutate(t.id)} />
+                  ))}
+                </div>
+              </details>
             </section>
           )}
         </div>
