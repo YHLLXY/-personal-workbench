@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, CheckCircle2, Minus, Pencil, Plus, PlusCircle, RotateCcw, Target, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useStudyGoals, useStudyGoalMutations } from './goals-api'
 import { daysUntil } from './api'
+import { useTaskMutations } from '@/modules/overview/api'
+import { todayStr } from '@/lib/db/types'
 import { celebrate } from '@/lib/celebrate'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -18,11 +20,26 @@ import { localDateOfISO, type StudyGoal } from '@/lib/db/types'
 export default function GoalManager() {
   const { data: goals, isLoading } = useStudyGoals()
   const { update, remove } = useStudyGoalMutations()
+  const { create: createTask } = useTaskMutations()
   const [dialogOpen, setDialogOpen] = useState(false)
+  // 拆解防重复：每目标每次会话只允许生成一条今日任务
+  const brokenRef = useRef(new Set<string>())
   const [editing, setEditing] = useState<StudyGoal | null>(null)
   // 精确设置进度：editingId 指向正在内联编辑的目标，draft 为输入草稿
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+
+  /** 目标拆解到今日待办：按合理步长生成一条今日任务（目标量≥10 步长 5，否则 1），只推进剩余量 */
+  function breakDown(g: StudyGoal) {
+    if (brokenRef.current.has(g.id) || createTask.isPending) return
+    const remain = Math.max(g.target - g.progress, 0)
+    if (remain === 0) return
+    const step = Math.min(g.target >= 10 ? 5 : 1, remain)
+    createTask.mutate({ title: `【目标】${g.title} · 推进 ${step}`, dueDate: todayStr() }, {
+      onSuccess: () => { brokenRef.current.add(g.id); toast.success('已加入今日待办') },
+      onError: () => toast.error('添加失败'),
+    })
+  }
 
   /** 精确设置进度：草稿转数字后按差值推进（复用 advance 的 clamp 与里程碑反馈），非法输入静默取消 */
   function commitEdit(g: StudyGoal) {
@@ -111,6 +128,12 @@ export default function GoalManager() {
                       {g.deadline && done && <span>截止 {g.deadline}</span>}
                       {done && g.completedAt && <span>完成于 {localDateOfISO(g.completedAt)}</span>}
                       {g.note && <span className="truncate max-w-[16rem]">备注：{g.note}</span>}
+                      {!done && g.progress < g.target && (
+                        <button onClick={() => breakDown(g)} disabled={createTask.isPending}
+                          className="text-primary hover:underline underline-offset-2 disabled:opacity-50">
+                          + 拆解到今日待办
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">

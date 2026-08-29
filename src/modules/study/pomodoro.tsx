@@ -3,7 +3,8 @@ import { Play, Pause, RotateCcw, Minus, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatSeconds, breakForFocusIndex, FOCUS_MIN_MINUTES, FOCUS_MAX_MINUTES, SHORT_BREAK_MIN, LONG_BREAK_MIN, getPomodoroSettings, savePomodoroSettings, type Phase, type PomodoroSettings } from '@/lib/pomodoro'
 import { celebrate } from '@/lib/celebrate'
-import { useCreateFocus } from './api'
+import { useCreateFocus, useFocusSessions } from './api'
+import { localDateOfISO, todayStr } from '@/lib/db/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -71,6 +72,7 @@ function freshState(focusMinutes: number): PersistedPomodoroState {
 export default function Pomodoro() {
   const [settings, setSettings] = useState<PomodoroSettings>(() => getPomodoroSettings())
   const create = useCreateFocus()
+  const { data: sessions } = useFocusSessions()
   const mutate = create.mutate   // stable across renders
 
   // 挂载时恢复持久化状态：损坏数据或陈旧会话（running 超 12h）→ 全新状态
@@ -99,6 +101,12 @@ export default function Pomodoro() {
 
   // 状态转换即持久化（运行中的每秒 tick 不触发，因为 state 对象不变）
   useEffect(() => { saveState(state) }, [state])
+
+  // 标题倒计时：运行中显示剩余时间，停止时恢复默认标题
+  useEffect(() => {
+    document.title = running ? `${formatSeconds(remaining)} · ${phase === 'focus' ? '专注中' : '休息中'}` : '个人工作台'
+    return () => { document.title = '个人工作台' }
+  }, [running, remaining, phase])
 
   // 阶段完成：切换阶段并（专注结束时）按实际时长记录一条专注
   useEffect(() => {
@@ -184,6 +192,39 @@ export default function Pomodoro() {
         <Button size="lg" variant="outline" onClick={reset}><RotateCcw className="size-4 mr-1.5" />重置</Button>
       </div>
       <p className="text-xs text-muted-foreground">完成一个专注自动记录 · 每 4 个专注一次长休息</p>
+
+      {/* 今日专注统计 + 记录列表 */}
+      <TodayFocus sessions={sessions ?? []} />
+    </div>
+  )
+}
+
+/** 今日专注：个数/分钟统计 + 最近 8 条记录（含主题 note） */
+function TodayFocus({ sessions }: { sessions: Array<{ id: string; startAt: string; minutes: number; note: string | null }> }) {
+  const today = todayStr()
+  const todays = sessions
+    .filter(s => localDateOfISO(s.startAt) === today)
+    .sort((a, b) => b.startAt.localeCompare(a.startAt))
+  const minutes = todays.reduce((sum, s) => sum + s.minutes, 0)
+  return (
+    <div className="w-full rounded-2xl border border-border bg-card p-4">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-semibold">今日专注</p>
+        <span className="text-xs text-muted-foreground font-numeric">{todays.length} 个番茄 · {minutes} 分钟</span>
+      </div>
+      {todays.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2 text-center">今天还没有专注记录，开始第一个番茄吧</p>
+      ) : (
+        <div className="space-y-1">
+          {todays.slice(0, 8).map(s => (
+            <div key={s.id} className="flex items-center gap-2 text-xs py-1 border-b border-border/50 last:border-0">
+              <span className="text-muted-foreground font-numeric shrink-0">{new Date(s.startAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+              <span className="text-muted-foreground font-numeric shrink-0">{s.minutes} 分钟</span>
+              {s.note && <span className="truncate text-muted-foreground/80">{s.note}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
