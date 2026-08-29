@@ -37,7 +37,7 @@ describe('computeReminders', () => {
   ]
 
   it('任务：仅未完成且有 dueTime 生成 due 节点；spec 携带对应 userId', () => {
-    const specs = computeReminders(tasks, [], NOW)
+    const specs = computeReminders(tasks, [], [], NOW)
     expect(specs).toHaveLength(2)
     expect(specs.find(s => s.refId === 't1')).toMatchObject({ userId: 'u1', refType: 'task', kind: 'due', scheduledAt: '2026-08-08T01:30:00.000Z', title: '交报告' })
     expect(specs.find(s => s.refId === 't2')).toMatchObject({ userId: 'u1', kind: 'due', scheduledAt: '2026-08-09T02:00:00.000Z' })
@@ -45,7 +45,7 @@ describe('computeReminders', () => {
   })
 
   it('考试：-3d/-1d 固定 08:00 上海，-1h 需 examTime；已过考试与已过时刻节点跳过；spec 携带对应 userId', () => {
-    const specs = computeReminders([], exams, NOW)
+    const specs = computeReminders([], exams, [], NOW)
     expect(specs).toHaveLength(4) // e1×2（-3d 已过时刻跳过）+ e3×2
     const e1 = specs.filter(s => s.refId === 'e1')
     expect(e1.every(s => s.userId === 'u2')).toBe(true)
@@ -57,14 +57,14 @@ describe('computeReminders', () => {
   })
 
   it('考试当天：已过时刻的 -3d/-1d 跳过，未来 -1h 生成', () => {
-    const specs = computeReminders([], [{ id: 'e4', userId: 'u3', title: '今天考', examDate: '2026-08-08', examTime: '14:00' }], NOW)
+    const specs = computeReminders([], [{ id: 'e4', userId: 'u3', title: '今天考', examDate: '2026-08-08', examTime: '14:00' }], [], NOW)
     expect(specs).toHaveLength(1) // -3d/-1d（08-05/08-07 08:00 上海）已过 NOW；-1h（14:00−1h=13:00 上海）未来 → 仅生成
     expect(specs[0]).toMatchObject({ userId: 'u3', refType: 'exam', refId: 'e4', kind: 'exam-1h', scheduledAt: '2026-08-08T05:00:00.000Z' })
   })
 
   it('考试节点已过时刻不生成（建「明天考」不触发虚假的考前 3 天）', () => {
     // NOW = 2026-08-08 12:00 上海；考试 08-09（明天）→ -3d 节点（08-06 08:00 上海）已过 → 跳过；-1d 节点（08-08 08:00 上海）也已过 → 跳过；-1h（08-09 08:00 上海）未来 → 生成
-    const specs = computeReminders([], [{ id: 'e5', userId: 'u4', title: '明天考', examDate: '2026-08-09', examTime: '09:00' }], NOW)
+    const specs = computeReminders([], [{ id: 'e5', userId: 'u4', title: '明天考', examDate: '2026-08-09', examTime: '09:00' }], [], NOW)
     expect(specs).toHaveLength(1)
     expect(specs[0].kind).toBe('exam-1h')
   })
@@ -78,8 +78,8 @@ describe('computeReminders', () => {
       { id: 'b3', userId: 'u2', title: '非零填充日期', examDate: '2026-8-8', examTime: '09:00' },
       { id: 'b4', userId: 'u2', title: '非日期考试', examDate: 'whatever', examTime: null },
     ]
-    expect(() => computeReminders(badTasks, badExams, NOW)).not.toThrow()
-    expect(computeReminders(badTasks, badExams, NOW)).toHaveLength(0)
+    expect(() => computeReminders(badTasks, badExams, [], NOW)).not.toThrow()
+    expect(computeReminders(badTasks, badExams, [], NOW)).toHaveLength(0)
   })
 })
 
@@ -109,5 +109,32 @@ describe('isDueNow / reminderText', () => {
     expect(reminderText('exam-3d', '四级', '2026-08-10', null)).toContain('3 天')
     expect(reminderText('exam-1d', '四级', '2026-08-10', null)).toContain('明天')
     expect(reminderText('exam-1h', '四级', '2026-08-10', '09:00')).toContain('1 小时')
+  })
+})
+
+describe('目标截止提醒（v1.14 接入）', () => {
+  const NOW = new Date('2026-08-05T00:00:00.000Z')
+
+  it('有截止日的进行中目标生成 goal-3d 与 goal-due 两个节点（截止 08:00）', () => {
+    const specs = computeReminders([], [], [{ id: 'g1', userId: 'u1', title: '刷题 50 道', status: 'active', deadline: '2026-08-12' }], NOW)
+    const kinds = specs.map(s => s.kind).sort()
+    expect(kinds).toEqual(['goal-3d', 'goal-due'])
+    expect(specs.every(s => s.refType === 'goal' && s.refId === 'g1')).toBe(true)
+    // goal-due 应为截止日 08:00 上海时间 = 00:00 UTC
+    const due = specs.find(s => s.kind === 'goal-due')!
+    expect(due.scheduledAt).toBe('2026-08-12T00:00:00.000Z')
+  })
+
+  it('已归档目标与无截止日目标不生成', () => {
+    const specs = computeReminders([], [], [
+      { id: 'g2', userId: 'u1', title: '已完成', status: 'done', deadline: '2026-08-12' },
+      { id: 'g3', userId: 'u1', title: '无截止', status: 'active', deadline: null },
+    ], NOW)
+    expect(specs).toHaveLength(0)
+  })
+
+  it('截止日在 3 天内的目标只生成 goal-due（3 天节点已过不补发）', () => {
+    const specs = computeReminders([], [], [{ id: 'g4', userId: 'u1', title: '临近截止', status: 'active', deadline: '2026-08-06' }], NOW)
+    expect(specs.map(s => s.kind)).toEqual(['goal-due'])
   })
 })

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import type { StudyGoal } from '@/lib/db/types'
+import { localDateOfISO, type StudyGoal } from '@/lib/db/types'
 
 /** 学习目标管理：进度步进（±1/+5/+10/精确设置）+ 截止速率倒推 + 里程碑庆祝 + 完成归档 + 删除 */
 export default function GoalManager() {
@@ -109,6 +109,7 @@ export default function GoalManager() {
                         return <span>截止 {g.deadline} · 剩 {d} 天，每天约 {Math.ceil(remain / d)}</span>
                       })()}
                       {g.deadline && done && <span>截止 {g.deadline}</span>}
+                      {done && g.completedAt && <span>完成于 {localDateOfISO(g.completedAt)}</span>}
                       {g.note && <span className="truncate max-w-[16rem]">备注：{g.note}</span>}
                     </div>
                   </div>

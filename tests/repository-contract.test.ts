@@ -52,16 +52,22 @@ function fakeSupabase(): SupabaseClient {
     const b: Record<string, unknown> = {
       select: () => {
         ctx.filters = []
+        // 支持链式多列 .order().order()：依次做稳定排序（后序 key 优先级低），语义与 PostgREST 一致
+        const sorts: Array<{ col: string; asc: boolean }> = []
+        const apply = (rows2: Row[]) => {
+          let out = [...rows2]
+          for (const { col, asc } of [...sorts].reverse()) {
+            out = out.sort((a, b2) => (asc ? cmp(a[col], b2[col]) : -cmp(a[col], b2[col])))
+          }
+          return out
+        }
         const node: Record<string, unknown> = {
-          order: (col: string, o?: { ascending?: boolean }) => {
-            const sorted = [...rowsOf(name)].sort((a, b2) => (o?.ascending === false ? -cmp(a[col], b2[col]) : cmp(a[col], b2[col])))
-            return Promise.resolve({ data: sorted, error: null })
-          },
+          order: (col: string, o?: { ascending?: boolean }) => { sorts.push({ col, asc: o?.ascending !== false }); return node },
           eq: (c: string, v: unknown) => { ctx.filters.push(r => r[c] === v); return node },
           limit: () => node,
           maybeSingle: () => Promise.resolve({ data: matched()[0] ?? null, error: null }),
           then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
-            Promise.resolve({ data: matched(), error: null }).then(res, rej),
+            Promise.resolve({ data: apply(matched()), error: null }).then(res, rej),
         }
         return node
       },
@@ -156,7 +162,15 @@ async function runScript(repo: WorkbenchRepository) {
   await repo.updateStudyGoal(g.id, { progress: 50 })
   await repo.updateStudyGoal(g.id, { status: 'done' })
   const goals = await repo.listStudyGoals()
-  const goalSnap = goals.filter(x => x.id === g.id).map(x => ({ title: x.title, target: x.target, progress: x.progress, status: x.status, deadline: x.deadline, note: x.note }))
+  const goalSnap = goals.filter(x => x.id === g.id).map(x => ({ title: x.title, target: x.target, progress: x.progress, status: x.status, deadline: x.deadline, note: x.note, archived: x.completedAt != null }))
+
+  // —— 论文：finishedAt 跟随状态 ——
+  const p1 = await repo.createPaper({ title: '契约论文', authors: 'Someone', arxivId: null, url: null, status: 'reading', rating: 4, note: null, type: 'paper', folderId: null, tags: [], content: null, summary: null, keywords: [], source: null })
+  await repo.updatePaper(p1.id, { status: 'done' })
+  const afterDone = (await repo.listPapers()).find(x => x.id === p1.id)
+  await repo.updatePaper(p1.id, { status: 'reading' })
+  const afterReopen = (await repo.listPapers()).find(x => x.id === p1.id)
+  const paperSnap = { doneAt: afterDone?.finishedAt != null, reopened: afterReopen?.finishedAt == null }
 
   // —— 速记：创建/标签/归档（间隔数毫秒避免同毫秒时间戳碰撞的排序抖动）——
   const tick = () => new Promise(r => setTimeout(r, 3))
@@ -164,9 +178,11 @@ async function runScript(repo: WorkbenchRepository) {
   await tick()
   await repo.createNote('随手记')
   await tick()
+  await repo.updateNote(n1.id, { pinned: true })
   await repo.updateNote(n1.id, { content: '灵感一闪（补充）', archived: true })
   const notes = await repo.listNotes()
-  const noteSnap = notes.filter(n => [n1.id].includes(n.id) || n.content === '随手记').map(n => ({ content: n.content, tag: n.tag, archived: n.archived }))
+  const pinnedFirst = notes[0]?.pinned === true // 置顶笔记必须排最前（pinned 优先于 updated_at）
+  const noteSnap = notes.filter(n => [n1.id].includes(n.id) || n.content === '随手记').map(n => ({ content: n.content, tag: n.tag, archived: n.archived, pinned: n.pinned }))
 
   // —— 复盘：两次 upsert 同日合并（第二次只传 mood，其余字段保留）——
   await repo.upsertReview(TODAY, { mood: 4, summary: '稳', planTomorrow: '明天跑步' })
@@ -174,7 +190,7 @@ async function runScript(repo: WorkbenchRepository) {
   const reviews = await repo.listReviews()
   const reviewSnap = reviews.filter(r => r.reviewDate === TODAY).map(r => ({ mood: r.mood, score: r.score, summary: r.summary, planTomorrow: r.planTomorrow }))
 
-  return { habitSnap, habitCascade, taskSnap, healthSnap, goalSnap, noteSnap, reviewSnap }
+  return { habitSnap, habitCascade, taskSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap }
 }
 
 describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', () => {
@@ -204,6 +220,15 @@ describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', (
   })
   it('速记：标签、归档一致', () => {
     expect(supaSnap.noteSnap).toEqual(localSnap.noteSnap)
+  })
+  it('论文：finishedAt 归档写入/恢复清空一致', () => {
+    expect(supaSnap.paperSnap).toEqual(localSnap.paperSnap)
+    expect(supaSnap.paperSnap.doneAt).toBe(true)
+    expect(supaSnap.paperSnap.reopened).toBe(true)
+  })
+  it('速记：置顶排最前（双实现一致）', () => {
+    expect(supaSnap.pinnedFirst).toBe(true)
+    expect(localSnap.pinnedFirst).toBe(true)
   })
   it('复盘：同日 upsert 合并、未传字段保留一致', () => {
     expect(supaSnap.reviewSnap).toEqual(localSnap.reviewSnap)

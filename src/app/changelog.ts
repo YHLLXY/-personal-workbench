@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.14.0',
+    date: '2026-08-29',
+    title: '数据模型批次：目标提醒 + 三个时间戳 + 速记置顶',
+    items: [
+      '新增：学习目标截止提醒——截止前 3 天与截止当天早上 8 点，走提醒中心 + Web Push 双通道',
+      '新增：速记置顶（📌 排最前）、目标完成日期、论文读完时间',
+      '变更：提醒中心/横幅/推送文案支持目标节点（目标已删除或已归档自动跳过）',
+    ],
+  },
+  {
     version: 'v1.13.0',
     date: '2026-08-28',
     title: '夜间工程：复盘周聚合 + 速记 Markdown + CI 流水线',

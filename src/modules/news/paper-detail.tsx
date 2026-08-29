@@ -150,6 +150,7 @@ export function PaperDetail({ paper, open, onOpenChange }: { paper: Paper | null
                     {(['want', 'reading', 'done'] as const).map(s => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {paper?.finishedAt && <p className="text-[10px] text-muted-foreground">读完于 {new Date(paper.finishedAt).toLocaleDateString('zh-CN')}</p>}
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">文件夹</label>

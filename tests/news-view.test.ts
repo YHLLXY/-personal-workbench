@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { filterNotes, loadReadIds, saveReadId, hotNoteText } from '../src/modules/news/news-view'
 import type { Note } from '../src/lib/db/types'
 
-function n(partial: Partial<Note>): Note { return { id: 'x', content: '', tag: null, archived: false, createdAt: '', updatedAt: '', ...partial } }
+function n(partial: Partial<Note>): Note { return { id: 'x', content: '', tag: null, archived: false, pinned: false, createdAt: '', updatedAt: '', ...partial } }
 
 beforeEach(() => { localStorage.clear() })
 

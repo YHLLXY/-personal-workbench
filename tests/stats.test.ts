@@ -27,8 +27,8 @@ describe('stats', () => {
 
   it('activeNoteCount 只计未归档笔记', () => {
     const notes: Note[] = [
-      { id: 'a', content: 'x', tag: null, archived: false, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
-      { id: 'b', content: 'y', tag: null, archived: true, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
+      { id: 'a', content: 'x', tag: null, archived: false, pinned: false, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
+      { id: 'b', content: 'y', tag: null, archived: true, pinned: false, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z' },
     ]
     expect(activeNoteCount(notes)).toBe(1)
   })

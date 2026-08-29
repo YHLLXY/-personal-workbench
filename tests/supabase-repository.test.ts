@@ -14,13 +14,25 @@ const { insertCalls, upsertCalls, deleteCalls, updateCalls, mockTable, setRows }
     const rows = rowsByName[name] ?? []
     return {
       // select('*') 直接 await 或 .order(...) / .maybeSingle() 均返回 { data, error }（list 查询 / getChannelConfigs / listPushSubscriptions）
-      select: vi.fn(() => ({
-        data: rows,
-        error: null,
-        order: vi.fn(() => ({ data: rows, error: null })),
-        single: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
-        maybeSingle: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
-      })),
+      select: vi.fn(() => {
+        const sorts: Array<{ col: string; asc: boolean }> = []
+        const sorted = () => {
+          const cmp = (a: Record<string, unknown>, b: Record<string, unknown>, col: string) => {
+            const av = a[col] ?? '', bv = b[col] ?? ''
+            return typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))
+          }
+          let out = [...rows]
+          for (const { col, asc } of [...sorts].reverse()) out = out.sort((a, b) => (asc ? cmp(a, b, col) : -cmp(a, b, col)))
+          return out
+        }
+        const node = {
+          order: vi.fn((col: string, o?: { ascending?: boolean }) => { sorts.push({ col, asc: o?.ascending !== false }); return node }),
+          then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve({ data: sorted(), error: null }).then(res, rej),
+          single: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
+          maybeSingle: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
+        }
+        return node
+      }),
       // 链式调用：insert(payload).select().single() —— single() 解析为 { data, error }
       insert: vi.fn((payload: Record<string, unknown>) => {
         insertCalls.push(payload)
@@ -206,7 +218,7 @@ describe('SupabaseRepository', () => {
 
       setRows('wb_study_goals', [{ id: 'g1', title: '背单词', target: 50, progress: 20, deadline: '2026-08-20', status: 'done', note: null, created_at: '2026-08-01T00:00:00.000Z' }])
       const [row] = await repo.listStudyGoals()
-      expect(row).toEqual({ id: 'g1', title: '背单词', target: 50, progress: 20, deadline: '2026-08-20', status: 'done', note: null })
+      expect(row).toEqual({ id: 'g1', title: '背单词', target: 50, progress: 20, deadline: '2026-08-20', status: 'done', note: null, completedAt: null })
 
       await repo.updateStudyGoal('g1', { progress: 21 })
       expect(updateCalls[0].payload).toHaveProperty('progress', 21)
