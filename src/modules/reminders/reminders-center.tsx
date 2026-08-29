@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useReminderMutations, useReminders } from './api'
 import { useTasks } from '@/modules/overview/api'
 import { useExams } from '@/modules/study/api'
@@ -10,12 +11,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/empty-state'
 import { cn } from '@/lib/utils'
 
+type Filter = 'all' | 'unread' | 'ignored'
+
 export default function RemindersCenter() {
   const { data: reminders, isLoading, isError } = useReminders()
   const { data: tasks } = useTasks()
   const { data: exams } = useExams()
   const { data: goals } = useStudyGoals()
-  const { dismiss, restore } = useReminderMutations()
+  const { dismiss, restore, dismissAll } = useReminderMutations()
+  const [filter, setFilter] = useState<Filter>('all')
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]))
   const examById = new Map((exams ?? []).map(e => [e.id, e]))
   const goalById = new Map((goals ?? []).map(g => [g.id, g]))
@@ -33,23 +37,37 @@ export default function RemindersCenter() {
     return { title: e?.title ?? '（考试已删除）', text: reminderText(r.kind, e?.title ?? '', e?.examDate ?? '', e?.examTime ?? null), date: e?.examDate ?? '', time: e?.examTime ?? null }
   }
 
+  const all = reminders ?? []
+  const unreadCount = all.filter(r => !r.dismissedAt).length
+  const list = filter === 'unread' ? all.filter(r => !r.dismissedAt) : filter === 'ignored' ? all.filter(r => r.dismissedAt) : all
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold">提醒中心</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">任务到期与考试节点提醒 · 应用内与系统推送双通道</p>
+          <p className="text-xs text-muted-foreground mt-0.5">任务到期、考试节点与目标截止 · 应用内与系统推送双通道</p>
         </div>
+        {unreadCount > 0 && (
+          <Button size="sm" variant="outline" onClick={() => { if (window.confirm(`忽略全部 ${unreadCount} 条未读提醒？之后可在「已忽略」里恢复`)) dismissAll.mutate(all.filter(r => !r.dismissedAt).map(r => r.id)) }} disabled={dismissAll.isPending}>
+            {dismissAll.isPending ? '忽略中…' : '全部忽略'}
+          </Button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {([['all', `全部 ${all.length}`], ['unread', `未读 ${unreadCount}`], ['ignored', `已忽略 ${all.length - unreadCount}`]] as const).map(([f, label]) => (
+          <button key={f} onClick={() => setFilter(f)} className={cn('text-xs px-3 py-1.5 rounded-full border transition-colors', filter === f ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground hover:text-foreground')}>{label}</button>
+        ))}
       </div>
       {isLoading ? (
         <div className="space-y-2"><Skeleton className="h-14 w-full" /><Skeleton className="h-14 w-full" /></div>
       ) : isError ? (
         <p className="text-sm text-destructive py-10 text-center">加载失败，请重试</p>
-      ) : (reminders ?? []).length === 0 ? (
-        <EmptyState icon="⏰" title="暂无提醒" desc="给待办设置提醒时间、给考试设置考试时间后，这里会按节点出现提醒" />
+      ) : list.length === 0 ? (
+        <EmptyState icon="⏰" title={filter === 'all' ? '暂无提醒' : filter === 'unread' ? '没有未读提醒' : '没有已忽略的提醒'} desc={filter === 'all' ? '给待办设置提醒时间、给考试设置考试时间后，这里会按节点出现提醒' : '切换筛选看看其他提醒'} />
       ) : (
         <div className="space-y-1.5">
-          {(reminders ?? []).map(r => {
+          {list.map(r => {
             const d = describe(r)
             const unread = !r.dismissedAt
             return (

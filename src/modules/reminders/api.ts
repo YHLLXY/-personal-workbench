@@ -50,7 +50,22 @@ export function useReminderMutations() {
   }
   const dismiss = useOptimisticToggle(true)
   const restore = useOptimisticToggle(false)
-  return { dismiss, restore }
+  // 全部忽略：批量 dismiss + 一次乐观更新（同一套「不 invalidate」纪律）
+  const dismissAll = useMutation({
+    mutationFn: async (ids: string[]) => { await Promise.all(ids.map(id => repository.dismissReminder(id))); return ids.length },
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: reminderKeys.all })
+      const prev = qc.getQueryData<Reminder[]>(reminderKeys.all)
+      const at = new Date().toISOString()
+      qc.setQueryData<Reminder[]>(reminderKeys.all, old => (old ?? []).map(r => (r.dismissedAt ? r : { ...r, dismissedAt: at })))
+      return { prev }
+    },
+    onError: (_e, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(reminderKeys.all, ctx.prev)
+      toast.error('操作失败')
+    },
+  })
+  return { dismiss, restore, dismissAll }
 }
 
 /** 订阅提醒数据并同步角标未读数（在 layout 调用一次即可；useEffect 内更新 store 避免渲染期副作用） */

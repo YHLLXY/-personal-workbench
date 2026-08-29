@@ -14,6 +14,7 @@ vi.mock('@/lib/db', () => ({
     restoreReminder: vi.fn(async () => {}),
     listTasks: vi.fn(async () => [{ id: 't1', title: '交报告', focus: false, priority: 'medium', status: 'todo', dueDate: '2026-08-08', dueTime: '09:30', tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }]),
     listExams: vi.fn(async () => [{ id: 'e1', title: '四级', examDate: '2026-08-10', examTime: '09:00', subject: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' }]),
+    listStudyGoals: vi.fn(async () => []),
   } as never,
 }))
 
@@ -44,8 +45,17 @@ describe('RemindersCenter', () => {
   it('点击忽略 → 调 dismissReminder', async () => {
     renderPage()
     await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
-    fireEvent.click(screen.getAllByRole('button', { name: /忽略/ })[0])
+    // 精确匹配行内「忽略」按钮（页头另有「全部忽略」，两条未读取第一条）
+    fireEvent.click(screen.getAllByRole('button', { name: '忽略', exact: true })[0])
     await waitFor(() => expect(repository.dismissReminder).toHaveBeenCalledWith('r1'))
+  })
+
+  it('全部忽略：确认后批量调 dismissReminder', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+    await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '全部忽略' }))
+    await waitFor(() => expect(repository.dismissReminder).toHaveBeenCalledTimes(2))
   })
 
   it('已忽略的提醒显示「恢复」操作', async () => {
