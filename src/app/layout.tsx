@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Search, Settings, Moon, Sun, Plus } from 'lucide-react'
 import { modules } from '@/registry'
@@ -35,6 +35,14 @@ export function Shell() {
   useReminderSync() // 订阅提醒数据 → 更新 store 未读数 → Shell 重渲染 → 侧边栏角标联动
   const navigate = useNavigate()
   const location = useLocation() // 订阅路由变化，确保 active 样式刷新
+  const [offline, setOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)
+  useEffect(() => {
+    const on = () => setOffline(false)
+    const off = () => setOffline(true)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
   const today = new Date()
   const dateStr = `${today.getFullYear()} 年 ${today.getMonth() + 1} 月 ${today.getDate()} 日`
 
@@ -87,6 +95,7 @@ export function Shell() {
 
       {/* 主区 */}
       <div className="flex-1 flex flex-col min-w-0">
+        {offline && <div className="bg-amber-500/90 text-amber-950 text-[11px] text-center py-1">当前离线 · 数据保存在本机，恢复联网后自动同步</div>}
         {/* 顶栏 */}
         <header className="flex items-center gap-3 px-4 md:px-6 py-3 border-b border-border bg-card/60 backdrop-blur sticky top-0 z-20">
           <div className="text-sm font-semibold">

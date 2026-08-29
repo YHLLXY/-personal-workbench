@@ -16,7 +16,6 @@ export interface HomeCardDef {
   /** 桌面端 12 列网格跨度（3/4/5/7/12） */
   span: string
   /** 移动端首页顺序（越小越靠前；-1 不显示） */
-  mobileOrder: number
   /** 桌面端首页顺序 */
   desktopOrder: number
   component: ComponentType
@@ -50,12 +49,12 @@ export const modules: ModuleDef[] = [
       {
         id: 'home', name: '工作台总览', icon: LayoutDashboard, path: '/',
         component: lazyRetry(() => import('./app/home')),
-        homeCard: { id: 'home-trend', span: '5', mobileOrder: -1, desktopOrder: 8, component: WeeklyTrendCard },
+        homeCard: { id: 'home-trend', span: '5', desktopOrder: 8, component: WeeklyTrendCard },
       },
       {
         id: 'tasks', name: '今日待办', icon: CheckCircle2, path: '/tasks',
         component: lazyRetry(() => import('./modules/overview/today-tasks')),
-        homeCard: { id: 'home-tasks', span: '5', mobileOrder: 1, desktopOrder: 1, component: TodayTasksCard },
+        homeCard: { id: 'home-tasks', span: '5', desktopOrder: 1, component: TodayTasksCard },
       },
       {
         id: 'reminders', name: '提醒', icon: Bell, path: '/reminders',
@@ -65,7 +64,7 @@ export const modules: ModuleDef[] = [
       {
         id: 'projects', name: '我的项目', icon: FolderKanban, path: '/projects',
         component: lazyRetry(() => import('./modules/projects/projects')),
-        homeCard: { id: 'home-projects', span: '5', mobileOrder: 6, desktopOrder: 9, component: ProjectsCard },
+        homeCard: { id: 'home-projects', span: '5', desktopOrder: 9, component: ProjectsCard },
       },
     ],
   },
@@ -75,12 +74,12 @@ export const modules: ModuleDef[] = [
       {
         id: 'study-manager', name: '学习管理', icon: BookOpen, path: '/study',
         component: lazyRetry(() => import('./modules/study/study-manager')),
-        homeCard: { id: 'home-exams', span: '3', mobileOrder: 2, desktopOrder: 2, component: ExamsCard },
+        homeCard: { id: 'home-exams', span: '3', desktopOrder: 2, component: ExamsCard },
       },
       {
         id: 'pomodoro', name: '番茄钟', icon: Timer, path: '/pomodoro',
         component: lazyRetry(() => import('./modules/study/pomodoro')),
-        homeCard: { id: 'home-focus', span: '4', mobileOrder: 3, desktopOrder: 3, component: FocusCard },
+        homeCard: { id: 'home-focus', span: '4', desktopOrder: 3, component: FocusCard },
       },
     ],
   },
@@ -90,7 +89,7 @@ export const modules: ModuleDef[] = [
       {
         id: 'hot', name: '今日热点', icon: Newspaper, path: '/hot',
         component: lazyRetry(() => import('./modules/news/hot')),
-        homeCard: { id: 'home-hot', span: '5', mobileOrder: -1, desktopOrder: 4, component: HotCard },
+        homeCard: { id: 'home-hot', span: '5', desktopOrder: 4, component: HotCard },
       },
       {
         id: 'papers', name: '资料库', icon: Library, path: '/papers',
@@ -99,7 +98,7 @@ export const modules: ModuleDef[] = [
       {
         id: 'notes', name: '灵感速记', icon: Sparkles, path: '/notes',
         component: lazyRetry(() => import('./modules/news/notes')),
-        homeCard: { id: 'home-notes', span: '12', mobileOrder: -1, desktopOrder: 5, component: NotesCard },
+        homeCard: { id: 'home-notes', span: '12', desktopOrder: 5, component: NotesCard },
       },
     ],
   },
@@ -109,7 +108,7 @@ export const modules: ModuleDef[] = [
       {
         id: 'health', name: '运动健康', icon: HeartPulse, path: '/health',
         component: lazyRetry(() => import('./modules/health/health')),
-        homeCard: { id: 'home-heatmap', span: '7', mobileOrder: 4, desktopOrder: 6, component: HeatmapCard },
+        homeCard: { id: 'home-heatmap', span: '7', desktopOrder: 6, component: HeatmapCard },
       },
     ],
   },
@@ -119,7 +118,7 @@ export const modules: ModuleDef[] = [
       {
         id: 'review', name: '今日复盘', icon: RotateCcw, path: '/review',
         component: lazyRetry(() => import('./modules/review/review')),
-        homeCard: { id: 'home-review', span: '12', mobileOrder: 5, desktopOrder: 7, component: ReviewCard },
+        homeCard: { id: 'home-review', span: '12', desktopOrder: 7, component: ReviewCard },
       },
     ],
   },
@@ -129,7 +128,7 @@ export const modules: ModuleDef[] = [
       {
         id: 'growth', name: '自我提升', icon: TrendingUp, path: '/growth',
         component: lazyRetry(() => import('./modules/growth/growth')),
-        homeCard: { id: 'home-growth', span: '5', mobileOrder: 7, desktopOrder: 10, component: GrowthCard },
+        homeCard: { id: 'home-growth', span: '5', desktopOrder: 10, component: GrowthCard },
       },
     ],
   },
