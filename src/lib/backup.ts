@@ -54,3 +54,27 @@ export async function downloadBackupFile(): Promise<void> {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+// ========== 备份节奏提醒（v1.15）：记录上次导出时间，超期提示 ==========
+
+const LAST_BACKUP_KEY = 'wb:last-backup'
+
+/** 导出成功后记录时间（localStorage 不可用时静默） */
+export function markBackupDone(now = new Date()): void {
+  try { localStorage.setItem(LAST_BACKUP_KEY, now.toISOString()) } catch { /* 隐私模式等忽略 */ }
+}
+
+/** 上次备份距今的天数；从未备份返回 null（纯函数便于测试） */
+export function backupAgeDays(lastIso: string | null, now = new Date()): number | null {
+  if (!lastIso) return null
+  const t = Date.parse(lastIso)
+  if (!Number.isFinite(t)) return null
+  return Math.floor((now.getTime() - t) / 86_400_000)
+}
+
+/** 展示文案：null=从未备份；0=今天；n=天前 */
+export function backupAgeLabel(daysAgo: number | null): string {
+  if (daysAgo == null) return '从未备份'
+  if (daysAgo <= 0) return '今天已备份'
+  return `${daysAgo} 天前`
+}

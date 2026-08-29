@@ -10,7 +10,7 @@ import { useAuth } from '@/app/auth'
 import { isCloudMode, repository } from '@/lib/db'
 import { getSupabaseClient } from '@/lib/db/supabase-client'
 import { AVATAR_COLORS } from '@/lib/profile'
-import { validateBackup, formatBytes, downloadBackupFile } from '@/lib/backup'
+import { validateBackup, formatBytes, downloadBackupFile, markBackupDone, backupAgeDays, backupAgeLabel } from '@/lib/backup'
 import { taskCompletionRate, totalFocusMinutes, formatMinutes, activeNoteCount } from '@/lib/stats'
 import { streakFromLogDates } from '@/lib/heatmap'
 import { useTasks } from '@/modules/overview/api'
@@ -152,6 +152,7 @@ function StatsGrid() {
 function DataSection() {
   const qc = useQueryClient()
   const [usage, setUsage] = useState<string | null>(null)
+  const [lastBackup, setLastBackup] = useState<number | null>(() => backupAgeDays(localStorage.getItem('wb:last-backup')))
 
   useEffect(() => {
     // feature-detect：Safari 不支持 storage.estimate
@@ -166,6 +167,8 @@ function DataSection() {
   async function handleExport() {
     try {
       await downloadBackupFile()
+      markBackupDone()
+      setLastBackup(backupAgeDays(localStorage.getItem('wb:last-backup')))
       toast.success('已导出备份文件')
     } catch (err) {
       toast.error(`导出失败：${err instanceof Error ? err.message : '未知错误'}`)
@@ -204,6 +207,9 @@ function DataSection() {
         </label>
       </div>
       <div className="pt-1 text-xs text-muted-foreground">
+        上次备份：{backupAgeLabel(lastBackup)}{lastBackup != null && lastBackup >= 7 && <span className="text-amber-600 dark:text-amber-400 font-medium"> · 建议每周备份一次</span>}
+      </div>
+      <div className="text-xs text-muted-foreground">
         {isCloudMode ? '数据在云端同步，无本地占用' : usage ? `本地存储占用：${usage}` : '本地存储占用：计算中…'}
       </div>
     </section>
