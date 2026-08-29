@@ -45,8 +45,8 @@ describe('RemindersCenter', () => {
   it('点击忽略 → 调 dismissReminder', async () => {
     renderPage()
     await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
-    // 精确匹配行内「忽略」按钮（页头另有「全部忽略」，两条未读取第一条）
-    fireEvent.click(screen.getAllByRole('button', { name: '忽略', exact: true })[0])
+    // 精确匹配行内「忽略」按钮（页头另有「全部忽略」，两条未读取第一条；role 的 name 默认全等匹配）
+    fireEvent.click(screen.getAllByRole('button', { name: '忽略' })[0])
     await waitFor(() => expect(repository.dismissReminder).toHaveBeenCalledWith('r1'))
   })
 
