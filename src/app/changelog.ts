@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.16.0',
+    date: '2026-08-29',
+    title: '速记多标签 + 迁移 010',
+    items: [
+      '新增：速记多标签——编辑器逗号/顿号分隔输入、列表多徽标、筛选 chips 命中任一标签；契约测试覆盖',
+      '新增：迁移 010——速记 tag 升格 tags 数组（含存量回填），双仓储兼容旧数据惰性迁移',
+      '修复：发版门禁失败自动回滚 changelog/package.json（防半截版本号导致下次跳级）',
+    ],
+  },
+  {
     version: 'v1.15.0',
     date: '2026-08-29',
     title: '体验补全批次：提醒筛选 · 番茄统计 · 目标联动 · 备份提醒 · 离线横幅',
