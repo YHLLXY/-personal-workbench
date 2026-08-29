@@ -18,10 +18,10 @@ declare const process: { env: Record<string, string | undefined> }
 
 // ========== 提醒生成引擎（纯函数，可测试） ==========
 
-export type ReminderKind = 'due' | 'exam-3d' | 'exam-1d' | 'exam-1h'
+export type ReminderKind = 'due' | 'exam-3d' | 'exam-1d' | 'exam-1h' | 'goal-3d' | 'goal-due'
 export interface TaskLike { id: string; userId: string; title: string; status: string; dueDate: string | null; dueTime: string | null }
 export interface ExamLike { id: string; userId: string; title: string; examDate: string; examTime: string | null }
-export interface ReminderSpec { userId: string; refType: 'task' | 'exam'; refId: string; kind: ReminderKind; scheduledAt: string; title: string }
+export interface ReminderSpec { userId: string; refType: 'task' | 'exam' | 'goal'; refId: string; kind: ReminderKind; scheduledAt: string; title: string }
 
 /** Asia/Shanghai 固定 +8 偏移（无夏令时） */
 export const TZ_MS = 8 * 60 * 60 * 1000
@@ -40,8 +40,10 @@ export function todayShanghai(now: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
-/** 计算应存在的全部提醒节点（跳过：任务已完成、任务无 dueTime、考试已过、日期格式非法） */
-export function computeReminders(tasks: TaskLike[], exams: ExamLike[], now: Date): ReminderSpec[] {
+interface GoalLike { id: string; userId: string; title: string; status: string; deadline: string | null }
+
+/** 计算应存在的全部提醒节点（跳过：任务已完成、任务无 dueTime、考试已过、目标已归档、日期格式非法） */
+export function computeReminders(tasks: TaskLike[], exams: ExamLike[], goals: GoalLike[], now: Date): ReminderSpec[] {
   const out: ReminderSpec[] = []
   const today = todayShanghai(now)
   for (const t of tasks) {
@@ -64,6 +66,15 @@ export function computeReminders(tasks: TaskLike[], exams: ExamLike[], now: Date
       if (h1.getTime() > now.getTime()) out.push({ userId: e.userId, refType: 'exam', refId: e.id, kind: 'exam-1h', scheduledAt: h1.toISOString(), title: e.title })
     }
   }
+  for (const g of goals) {
+    if (g.status === 'done' || !g.deadline) continue
+    const base = shanghaiMs(g.deadline)
+    if (!Number.isFinite(base)) continue
+    const d3 = new Date(base - 3 * 86400_000 + TZ_MS) // 截止前3天 08:00
+    const due = new Date(base + TZ_MS)                // 截止当天 08:00
+    if (d3.getTime() > now.getTime()) out.push({ userId: g.userId, refType: 'goal', refId: g.id, kind: 'goal-3d', scheduledAt: d3.toISOString(), title: g.title })
+    if (due.getTime() > now.getTime()) out.push({ userId: g.userId, refType: 'goal', refId: g.id, kind: 'goal-due', scheduledAt: due.toISOString(), title: g.title })
+  }
   return out
 }
 
@@ -85,12 +96,14 @@ export function reminderText(kind: ReminderKind, title: string, date: string, ti
     case 'exam-3d': return `考试「${title}」还有 3 天（${date}）`
     case 'exam-1d': return `考试「${title}」就在明天（${date}）`
     case 'exam-1h': return `考试「${title}」1 小时后开始（${date} ${time ?? ''}）`
+    case 'goal-3d': return `学习目标「${title}」还剩 3 天（${date}），每天推进一点`
+    case 'goal-due': return `学习目标「${title}」今天截止（${date}），记得收尾`
   }
 }
 
 /** PostgREST 行 → 前端 Reminder（camelCase） */
 function reminderRowToClient(r: Record<string, unknown>) {
-  return { id: String(r.id), refType: r.ref_type as 'task' | 'exam', refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, dismissedAt: r.dismissed_at ? String(r.dismissed_at) : null, createdAt: String(r.created_at) }
+  return { id: String(r.id), refType: r.ref_type as 'task' | 'exam' | 'goal', refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, dismissedAt: r.dismissed_at ? String(r.dismissed_at) : null, createdAt: String(r.created_at) }
 }
 
 // ========== 工具 ==========
@@ -125,17 +138,20 @@ async function authUser(req: VercelRequest): Promise<SupabaseClient | null> {
 // ========== 核心流程：生成 + 幂等写入 + 到期统计 + 发送 ==========
 
 async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: number; due: number; sent: number; skipped: number }> {
-  const [tasksRes, examsRes, remindersRes] = await Promise.all([
+  const [tasksRes, examsRes, goalsRes, remindersRes] = await Promise.all([
     sb.from('wb_tasks').select('id,user_id,title,status,due_date,due_time'),
     sb.from('wb_exams').select('id,user_id,title,exam_date,exam_time'),
+    sb.from('wb_study_goals').select('id,user_id,title,status,deadline'),
     sb.from('wb_reminders').select('ref_type,ref_id,kind'),
   ])
   if (tasksRes.error) throw tasksRes.error
   if (examsRes.error) throw examsRes.error
+  if (goalsRes.error) throw goalsRes.error
   if (remindersRes.error) throw remindersRes.error
   const tasks: TaskLike[] = (tasksRes.data ?? []).map(r => ({ id: String(r.id), userId: String(r.user_id), title: String(r.title), status: String(r.status), dueDate: r.due_date as string | null, dueTime: r.due_time as string | null }))
   const exams: ExamLike[] = (examsRes.data ?? []).map(r => ({ id: String(r.id), userId: String(r.user_id), title: String(r.title), examDate: String(r.exam_date), examTime: r.exam_time as string | null }))
-  const specs = computeReminders(tasks, exams, now)
+  const goals: GoalLike[] = (goalsRes.data ?? []).map(r => ({ id: String(r.id), userId: String(r.user_id), title: String(r.title), status: String(r.status), deadline: r.deadline as string | null }))
+  const specs = computeReminders(tasks, exams, goals, now)
   const existing = (remindersRes.data ?? []).map(r => ({ refType: String(r.ref_type), refId: String(r.ref_id), kind: String(r.kind) }))
   const fresh = diffReminders(existing, specs)
   if (fresh.length > 0) {
@@ -144,7 +160,7 @@ async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: numbe
     if (error) throw error
   }
   const dueCount = specs.filter(s => isDueNow(s, now)).length
-  const sentResult = await sendDue(sb, tasks, exams, now)
+  const sentResult = await sendDue(sb, tasks, exams, goals, now)
   return { created: fresh.length, due: dueCount, ...sentResult }
 }
 
@@ -163,7 +179,7 @@ function ensureVapid(): void {
 }
 
 /** 到期未发未忽略 → 逐条发送（Web Push + Server酱）；真实送达才标记 sent_at（无通道/全失败保留 NULL 待补发）；410/404 删除过期订阅 */
-async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[], now: Date): Promise<{ sent: number; skipped: number }> {
+async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[], goals: GoalLike[], now: Date): Promise<{ sent: number; skipped: number }> {
   ensureVapid()
   const [dueRes, subsRes, configsRes] = await Promise.all([
     sb.from('wb_reminders').select('*').lte('scheduled_at', now.toISOString()).is('sent_at', null).is('dismissed_at', null),
@@ -175,6 +191,7 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
   if (configsRes.error) throw configsRes.error
   const tasksById = new Map(tasks.map(t => [t.id, t]))
   const examsById = new Map(exams.map(e => [e.id, e]))
+  const goalsById = new Map(goals.map(g => [g.id, g]))
   const subsByUser = new Map<string, string[]>()
   for (const s of subsRes.data ?? []) {
     const uid = String(s.user_id)
@@ -190,14 +207,15 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
   for (const row of dueRes.data ?? []) {
     const uid = String(row.user_id)
     const kind = row.kind as ReminderKind
-    const refType = row.ref_type as 'task' | 'exam'
-    const ref = refType === 'task' ? tasksById.get(String(row.ref_id)) : examsById.get(String(row.ref_id))
-    // 已完成任务 / 已删除引用：跳过（不发送，保留行——任务恢复后可继续提醒）
+    const refType = row.ref_type as 'task' | 'exam' | 'goal'
+    const ref = refType === 'task' ? tasksById.get(String(row.ref_id)) : refType === 'goal' ? goalsById.get(String(row.ref_id)) : examsById.get(String(row.ref_id))
+    // 已完成任务/已归档目标 / 已删除引用：跳过（不发送，保留行——恢复后可继续提醒）
     if (!ref) { skipped++; continue }
     if (refType === 'task' && (ref as TaskLike).status === 'done') { skipped++; continue }
+    if (refType === 'goal' && (ref as GoalLike).status === 'done') { skipped++; continue }
     // refType 决定 ref 来自哪个 map，故按 refType 分支后安全断言具体类型
-    const date = refType === 'task' ? String((ref as TaskLike).dueDate) : String((ref as ExamLike).examDate)
-    const time = refType === 'task' ? String((ref as TaskLike).dueTime) : String((ref as ExamLike).examTime)
+    const date = refType === 'task' ? String((ref as TaskLike).dueDate) : refType === 'goal' ? String((ref as GoalLike).deadline) : String((ref as ExamLike).examDate)
+    const time = refType === 'task' ? String((ref as TaskLike).dueTime) : ''
     const text = reminderText(kind, ref.title, date, time)
     const payload = JSON.stringify({ title: '个人工作台提醒', body: text, url: '/reminders' })
 

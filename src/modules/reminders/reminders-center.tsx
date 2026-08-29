@@ -1,6 +1,7 @@
 import { useReminderMutations, useReminders } from './api'
 import { useTasks } from '@/modules/overview/api'
 import { useExams } from '@/modules/study/api'
+import { useStudyGoals } from '@/modules/study/goals-api'
 import { kindLabel, reminderText } from './format'
 import type { Reminder } from '@/lib/db/types'
 import { Bell, BellOff } from 'lucide-react'
@@ -13,14 +14,20 @@ export default function RemindersCenter() {
   const { data: reminders, isLoading, isError } = useReminders()
   const { data: tasks } = useTasks()
   const { data: exams } = useExams()
+  const { data: goals } = useStudyGoals()
   const { dismiss, restore } = useReminderMutations()
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]))
   const examById = new Map((exams ?? []).map(e => [e.id, e]))
+  const goalById = new Map((goals ?? []).map(g => [g.id, g]))
 
   function describe(r: Reminder): { title: string; text: string; date: string; time: string | null } {
     if (r.refType === 'task') {
       const t = taskById.get(r.refId)
       return { title: t?.title ?? '（任务已删除）', text: reminderText(r.kind, t?.title ?? '', t?.dueDate ?? '', t?.dueTime ?? null), date: t?.dueDate ?? '', time: t?.dueTime ?? null }
+    }
+    if (r.refType === 'goal') {
+      const g = goalById.get(r.refId)
+      return { title: g?.title ?? '（目标已删除）', text: reminderText(r.kind, g?.title ?? '', g?.deadline ?? '', null), date: g?.deadline ?? '', time: null }
     }
     const e = examById.get(r.refId)
     return { title: e?.title ?? '（考试已删除）', text: reminderText(r.kind, e?.title ?? '', e?.examDate ?? '', e?.examTime ?? null), date: e?.examDate ?? '', time: e?.examTime ?? null }

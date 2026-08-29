@@ -4,6 +4,7 @@ import { Bell } from 'lucide-react'
 import { useReminders } from './api'
 import { useTasks } from '@/modules/overview/api'
 import { useExams } from '@/modules/study/api'
+import { useStudyGoals } from '@/modules/study/goals-api'
 import { countUnread, reminderText } from './format'
 import type { Reminder } from '@/lib/db/types'
 
@@ -12,6 +13,7 @@ export default function ReminderBanner() {
   const { data: reminders } = useReminders()
   const { data: tasks } = useTasks()
   const { data: exams } = useExams()
+  const { data: goals } = useStudyGoals()
   const unread = countUnread(reminders ?? [])
   const notifiedRef = useRef(new Set<string>())
 
@@ -31,11 +33,16 @@ export default function ReminderBanner() {
   if (unread === 0) return null
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]))
   const examById = new Map((exams ?? []).map(e => [e.id, e]))
+  const goalById = new Map((goals ?? []).map(g => [g.id, g]))
 
   function textOf(r: Reminder): string {
     if (r.refType === 'task') {
       const t = taskById.get(r.refId)
       return reminderText(r.kind, t?.title ?? '', t?.dueDate ?? '', t?.dueTime ?? null)
+    }
+    if (r.refType === 'goal') {
+      const g = goalById.get(r.refId)
+      return reminderText(r.kind, g?.title ?? '', g?.deadline ?? '', null)
     }
     const e = examById.get(r.refId)
     return reminderText(r.kind, e?.title ?? '', e?.examDate ?? '', e?.examTime ?? null)
