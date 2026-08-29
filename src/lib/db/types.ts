@@ -30,7 +30,7 @@ export interface Exam {
 }
 export interface ExamInput { title: string; examDate: string; examTime?: string | null; subject?: string | null; note?: string | null }
 
-export interface Note { id: string; content: string; tag: string | null; archived: boolean; pinned: boolean; createdAt: string; updatedAt: string }
+export interface Note { id: string; content: string; tags: string[]; archived: boolean; pinned: boolean; createdAt: string; updatedAt: string }
 
 export interface Paper {
   id: string; title: string; authors: string; arxivId: string | null; url: string | null; status: 'want' | 'reading' | 'done'; rating: number | null; note: string | null; createdAt: string

@@ -90,11 +90,14 @@ export class LocalRepository implements WorkbenchRepository {
 
   async listNotes() {
     // 与云端一致：置顶优先，再按 updated_at 倒序（编辑过的笔记浮顶；契约测试发现本地原本无排序）
-    return read<Note>('notes').sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false) || String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
+    // tags 惰性迁移：老数据只有 tag 单标签 → 升格为 [tag]
+    return read<Note>('notes')
+      .map(n => ({ ...n, tags: Array.isArray(n.tags) ? n.tags : (n as unknown as { tag?: string }).tag ? [(n as unknown as { tag: string }).tag] : [] }))
+      .sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false) || String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
   }
   async createNote(content: string, tag?: string | null) {
     const now = new Date().toISOString()
-    return insert<Note>('notes', { id: genId(), content, tag: tag ?? null, archived: false, pinned: false, createdAt: now, updatedAt: now })
+    return insert<Note>('notes', { id: genId(), content, tags: tag ? [tag] : [], archived: false, pinned: false, createdAt: now, updatedAt: now })
   }
   async updateNote(id: string, p: Partial<Note>) {
     return patch<Note>('notes', id, { ...p, updatedAt: new Date().toISOString() })

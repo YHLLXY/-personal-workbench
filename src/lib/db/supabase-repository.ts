@@ -16,7 +16,12 @@ function habitFromRow(r: Row): Habit { return { id: String(r.id), name: String(r
 function logFromRow(r: Row): HabitLog { return { id: String(r.id), habitId: String(r.habit_id), logDate: String(r.log_date), count: Number(r.count) } }
 function focusFromRow(r: Row): FocusSession { return { id: String(r.id), startAt: String(r.start_at), minutes: Number(r.minutes), note: r.note as string | null } }
 function examFromRow(r: Row): Exam { return { id: String(r.id), title: String(r.title), examDate: String(r.exam_date), examTime: r.exam_time as string | null, subject: r.subject as string | null, note: r.note as string | null, createdAt: String(r.created_at) } }
-function noteFromRow(r: Row): Note { return { id: String(r.id), content: String(r.content), tag: r.tag as string | null, archived: Boolean(r.archived), pinned: Boolean(r.pinned), createdAt: String(r.created_at), updatedAt: String(r.updated_at) } }
+function noteFromRow(r: Row): Note {
+  // tags 兼容旧行（迁移 010 之前的 tag 单标签列）：有 tags 数组用之，否则从 tag 升格
+  const legacyTag = r.tag ? String(r.tag) : null
+  const tags = Array.isArray(r.tags) ? (r.tags as unknown[]).map(String) : legacyTag ? [legacyTag] : []
+  return { id: String(r.id), content: String(r.content), tags, archived: Boolean(r.archived), pinned: Boolean(r.pinned), createdAt: String(r.created_at), updatedAt: String(r.updated_at) }
+}
 function paperFromRow(r: Row): Paper {
   return {
     id: String(r.id), title: String(r.title), authors: String(r.authors),
@@ -73,7 +78,7 @@ function habitToRow(h: Habit) { return { id: h.id, name: h.name, icon: h.icon, c
 function logToRow(l: HabitLog) { return { id: l.id, habit_id: l.habitId, log_date: l.logDate, count: l.count } }
 function focusToRow(s: FocusSession) { return { id: s.id, start_at: s.startAt, minutes: s.minutes, note: s.note } }
 function examToRow(e: Exam) { return { id: e.id, title: e.title, exam_date: e.examDate, exam_time: e.examTime, subject: e.subject, note: e.note, created_at: e.createdAt } }
-function noteToRow(n: Note) { return { id: n.id, content: n.content, tag: n.tag, archived: n.archived, created_at: n.createdAt, updated_at: n.updatedAt } }
+function noteToRow(n: Note) { return { id: n.id, content: n.content, tags: n.tags, archived: n.archived, created_at: n.createdAt, updated_at: n.updatedAt } }
 function paperToRow(p: Paper) { return { id: p.id, title: p.title, authors: p.authors, arxiv_id: p.arxivId, url: p.url, status: p.status, rating: p.rating, note: p.note, created_at: p.createdAt, type: p.type ?? 'paper', folder_id: p.folderId ?? null, tags: p.tags ?? [], content: p.content ?? null, summary: p.summary ?? null, keywords: p.keywords ?? [], source: p.source ?? null } }
 function goalToRow(g: StudyGoal) { return { id: g.id, title: g.title, target: g.target, progress: g.progress, deadline: g.deadline, status: g.status, note: g.note } }
 function folderToRow(f: Folder) { return { id: f.id, name: f.name, parent_id: f.parentId, sort: f.sort } }
@@ -164,10 +169,10 @@ export class SupabaseRepository implements WorkbenchRepository {
   async deleteStudyGoal(id: string) { const { error } = await this.sb.from('wb_study_goals').delete().eq('id', id); if (error) throw error }
 
   async listNotes() { const { data, error } = await this.sb.from('wb_notes').select('*').order('pinned', { ascending: false }).order('updated_at', { ascending: false }); if (error) throw error; return (data ?? []).map(noteFromRow) }
-  async createNote(content: string, tag?: string | null) { const { data, error } = await this.sb.from('wb_notes').insert({ id: genId(), content, tag: tag ?? null, pinned: false }).select().single(); if (error) throw error; return noteFromRow(data) }
+  async createNote(content: string, tag?: string | null) { const { data, error } = await this.sb.from('wb_notes').insert({ id: genId(), content, tags: tag ? [tag] : [], pinned: false }).select().single(); if (error) throw error; return noteFromRow(data) }
   async updateNote(id: string, p: Partial<Note>) {
     // updated_at 无触发器（迁移 001 仅 insert default），本地实现会刷新它——云端必须显式写入保持双实现一致（契约测试发现）
-    const { data, error } = await this.sb.from('wb_notes').update({ content: p.content, tag: p.tag, archived: p.archived, pinned: p.pinned, updated_at: new Date().toISOString() }).eq('id', id).select().single(); if (error) throw error; return noteFromRow(data) }
+    const { data, error } = await this.sb.from('wb_notes').update({ content: p.content, tags: p.tags, archived: p.archived, pinned: p.pinned, updated_at: new Date().toISOString() }).eq('id', id).select().single(); if (error) throw error; return noteFromRow(data) }
   async deleteNote(id: string) { const { error } = await this.sb.from('wb_notes').delete().eq('id', id); if (error) throw error }
 
   async listPapers() { const { data, error } = await this.sb.from('wb_papers').select('*').order('created_at', { ascending: false }); if (error) throw error; return (data ?? []).map(paperFromRow) }
