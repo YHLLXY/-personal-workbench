@@ -36,3 +36,6 @@ dist-ssr
 # Playwright
 test-results/
 playwright-report/
+
+# 启动动画预览截图（scripts/boot-preview.mjs 输出）
+.tmp-boot/
