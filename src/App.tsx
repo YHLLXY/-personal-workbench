@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { SettingsPage } from './modules/me/settings'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { lazyRetry } from './lib/lazy-retry'
+import BootAnimation from './app/boot-animation'
 
 const ProjectDetailPage = lazyRetry(() => import('./modules/projects/project-detail'))
 
@@ -32,6 +33,7 @@ export default function App() {
         <BrowserRouter>
           <AuthProvider>
             <Toaster richColors position="top-center" />
+            <BootAnimation />
             <ErrorBoundary>
               <Suspense fallback={<div className="p-6 space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}>
                 <Routes>
