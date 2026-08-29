@@ -177,7 +177,10 @@ export default function Papers() {
                         <span className="truncate text-sm font-medium hover:text-primary">{p.title}</span>
                         {p.arxivId && <span className="shrink-0 text-[10px] text-muted-foreground">{p.arxivId}</span>}
                       </div>
-                      <div className="mt-0.5 truncate text-xs text-muted-foreground">{p.authors || p.source || (p.type === 'note' ? '文案笔记' : '')}</div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {p.authors || p.source || (p.type === 'note' ? '文案笔记' : '')}
+                      {p.status === 'done' && p.finishedAt && <span className="ml-2 text-[10px] text-primary">读完 {new Date(p.finishedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</span>}
+                    </div>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {(p.tags ?? []).slice(0, 2).map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
                       </div>

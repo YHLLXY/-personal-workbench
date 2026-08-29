@@ -5,6 +5,7 @@ import { repository } from '@/lib/db'
 import { HotSettingsDialog } from './hot-settings-dialog'
 import { useNoteMutations } from './api'
 import { loadReadIds, saveReadId, hotNoteText } from './news-view'
+import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -20,6 +21,7 @@ export default function Hot() {
   const [activeTopic, setActiveTopic] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [readIds, setReadIds] = useState<string[]>(() => loadReadIds())
+  const [query, setQuery] = useState('')
   const { create: createNote } = useNoteMutations()
 
   const staleRetriedRef = useRef(false)
@@ -45,7 +47,9 @@ export default function Hot() {
   }, [])
 
   const nameOf = (id: string) => res?.sources.find(s => s.id === id)?.name ?? id
-  const visible = activeTopic ? filterByTopics(res?.items ?? [], [activeTopic]) : res?.items ?? []
+  const q = query.trim().toLowerCase()
+  const visible = (activeTopic ? filterByTopics(res?.items ?? [], [activeTopic]) : res?.items ?? [])
+    .filter(it => !q || it.title.toLowerCase().includes(q))
   const fetchedAt = formatFetchedAt(res?.fetchedAt ?? null)
 
   return (
@@ -65,6 +69,7 @@ export default function Hot() {
 
       {subs.topics.length > 0 && (
         <div className="flex gap-1.5 overflow-x-auto pb-3 mb-1">
+          <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索标题…" className="h-8 w-36 text-xs mr-2" />
           <button onClick={() => setActiveTopic('')} className={`shrink-0 text-xs rounded-full px-3 py-1 border ${activeTopic === '' ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/50'}`}>全部</button>
           {subs.topics.map(t => (
             <button key={t} onClick={() => setActiveTopic(activeTopic === t ? '' : t)} className={`shrink-0 text-xs rounded-full px-3 py-1 border ${activeTopic === t ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/50'}`}>{t}</button>
