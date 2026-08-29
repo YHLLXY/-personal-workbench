@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { todayTasks, overdueTasks, recentOverdue, oldOverdue, isTodayScope, filterTasks } from '../src/modules/overview/api'
-import type { Task } from '../src/lib/db/types'
+import { todayTasks, todayDone, overdueTasks, recentOverdue, oldOverdue, isTodayScope, filterTasks } from '../src/modules/overview/api'
+import { todayStr, type Task } from '../src/lib/db/types'
 
 function t(partial: Partial<Task>): Task { return { id: 'x', title: 't', focus: false, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, focusDate: null, tags: [], sort: 0, completedAt: null, createdAt: '', ...partial } }
 
@@ -22,6 +22,26 @@ describe('todayTasks', () => {
   it('高优先级排前', () => {
     const tasks = [t({ id: 'a', priority: 'low', dueDate: '2026-08-04' }), t({ id: 'b', priority: 'high', dueDate: '2026-08-04' })]
     expect(todayTasks(tasks, '2026-08-04')[0].id).toBe('b')
+  })
+})
+
+describe('todayDone（今日页「已完成」分区：划线保留 + 撤销）', () => {
+  // completedAt 是 UTC ISO，用 Date.now() 构造保证任意时区下都落在「今天」
+  const nowIso = () => new Date().toISOString()
+  it('只包含今天完成的任务：昨天完成的、未完成的不算', () => {
+    const yesterdayIso = new Date(Date.now() - 86400_000).toISOString()
+    const tasks = [
+      t({ id: 'a', status: 'done', dueDate: '2026-08-01', completedAt: nowIso() }),       // 今天完成（哪怕到期日早已过去）
+      t({ id: 'b', status: 'done', dueDate: '2026-08-04', completedAt: yesterdayIso }),   // 昨天完成
+      t({ id: 'c', status: 'done', dueDate: '2026-08-04', completedAt: null }),           // done 但无时间（历史脏数据）
+      t({ id: 'd', dueDate: '2026-08-04' }),                                              // 未完成
+    ]
+    expect(todayDone(tasks, todayStr()).map(x => x.id)).toEqual(['a'])
+  })
+  it('按完成时间倒序：刚完成的排最上（撤销时就在眼前）', () => {
+    const earlier = new Date(Date.now() - 60_000).toISOString()
+    const tasks = [t({ id: 'early', status: 'done', completedAt: earlier }), t({ id: 'just', status: 'done', completedAt: nowIso() })]
+    expect(todayDone(tasks, todayStr())[0].id).toBe('just')
   })
 })
 

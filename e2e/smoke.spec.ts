@@ -19,15 +19,19 @@ test('首页加载：侧边栏导航渲染（KPI 卡在移动端容器，桌面�
   await expect(page.getByRole('link', { name: '今日待办' })).toBeVisible()
 })
 
-test('待办闭环：新建 → 显示 → 勾选完成 → 出列', async ({ page }) => {
+test('待办闭环：新建 → 显示 → 勾选完成 → 划线保留 → 撤销', async ({ page }) => {
   await goto(page, '/tasks')
   await page.getByRole('button', { name: '新建' }).click()
   await page.getByPlaceholder('任务内容').fill('E2E 冒烟任务')
   await page.getByRole('button', { name: '添加', exact: true }).click()
   await expect(page.getByText('今日 1 项')).toBeVisible()
-  // 勾选完成 → 任务从今日列表出列（todayTasks 不含 done，by design）
+  // 勾选完成 → 移入「已完成」分区（划线保留，不消失），今日计数归零
   await page.getByLabel('完成').first().click()
   await expect(page.getByText('今日 0 项')).toBeVisible()
+  await expect(page.getByText('已完成 1 项 · 点方块可撤销')).toBeVisible()
+  // 撤销：再点一次勾选框，任务回到今日待办
+  await page.getByLabel('完成').first().click()
+  await expect(page.getByText('今日 1 项')).toBeVisible()
 })
 
 test('学习目标：新建 → +10 步进 → 精确进度显示', async ({ page }) => {
