@@ -16,7 +16,7 @@ function habitFromRow(r: Row): Habit { return { id: String(r.id), name: String(r
 function logFromRow(r: Row): HabitLog { return { id: String(r.id), habitId: String(r.habit_id), logDate: String(r.log_date), count: Number(r.count) } }
 function focusFromRow(r: Row): FocusSession { return { id: String(r.id), startAt: String(r.start_at), minutes: Number(r.minutes), note: r.note as string | null } }
 function examFromRow(r: Row): Exam { return { id: String(r.id), title: String(r.title), examDate: String(r.exam_date), examTime: r.exam_time as string | null, subject: r.subject as string | null, note: r.note as string | null, createdAt: String(r.created_at) } }
-function noteFromRow(r: Row): Note { return { id: String(r.id), content: String(r.content), tag: r.tag as string | null, archived: Boolean(r.archived), createdAt: String(r.created_at), updatedAt: String(r.updated_at) } }
+function noteFromRow(r: Row): Note { return { id: String(r.id), content: String(r.content), tag: r.tag as string | null, archived: Boolean(r.archived), pinned: Boolean(r.pinned), createdAt: String(r.created_at), updatedAt: String(r.updated_at) } }
 function paperFromRow(r: Row): Paper {
   return {
     id: String(r.id), title: String(r.title), authors: String(r.authors),
@@ -27,13 +27,14 @@ function paperFromRow(r: Row): Paper {
     folderId: r.folder_id as string | null,
     tags: (r.tags as string[]) ?? [],
     content: r.content as string | null,
+    finishedAt: r.finished_at ? new Date(String(r.finished_at)).toISOString() : null,
     summary: r.summary as string | null,
     keywords: (r.keywords as string[]) ?? [],
     source: r.source as string | null,
   }
 }
 function goalFromRow(r: Row): StudyGoal {
-  return { id: String(r.id), title: String(r.title), target: Number(r.target ?? 100), progress: Number(r.progress ?? 0), deadline: r.deadline as string | null, status: r.status as StudyGoal['status'] ?? 'active', note: r.note as string | null }
+  return { id: String(r.id), title: String(r.title), target: Number(r.target ?? 100), progress: Number(r.progress ?? 0), deadline: r.deadline as string | null, status: r.status as StudyGoal['status'] ?? 'active', note: r.note as string | null, completedAt: r.completed_at ? new Date(String(r.completed_at)).toISOString() : null }
 }
 function folderFromRow(r: Row): Folder {
   return { id: String(r.id), name: String(r.name), parentId: r.parent_id as string | null, sort: Number(r.sort ?? 0) }
@@ -157,16 +158,16 @@ export class SupabaseRepository implements WorkbenchRepository {
     if (error) throw error; return goalFromRow(data)
   }
   async updateStudyGoal(id: string, p: Partial<StudyGoal>) {
-    const { data, error } = await this.sb.from('wb_study_goals').update({ title: p.title, target: p.target, progress: p.progress, deadline: p.deadline, status: p.status, note: p.note }).eq('id', id).select().single()
+    const { data, error } = await this.sb.from('wb_study_goals').update({ title: p.title, target: p.target, progress: p.progress, deadline: p.deadline, status: p.status, note: p.note, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : undefined }).eq('id', id).select().single()
     if (error) throw error; return goalFromRow(data)
   }
   async deleteStudyGoal(id: string) { const { error } = await this.sb.from('wb_study_goals').delete().eq('id', id); if (error) throw error }
 
-  async listNotes() { const { data, error } = await this.sb.from('wb_notes').select('*').order('updated_at', { ascending: false }); if (error) throw error; return (data ?? []).map(noteFromRow) }
-  async createNote(content: string, tag?: string | null) { const { data, error } = await this.sb.from('wb_notes').insert({ id: genId(), content, tag: tag ?? null }).select().single(); if (error) throw error; return noteFromRow(data) }
+  async listNotes() { const { data, error } = await this.sb.from('wb_notes').select('*').order('pinned', { ascending: false }).order('updated_at', { ascending: false }); if (error) throw error; return (data ?? []).map(noteFromRow) }
+  async createNote(content: string, tag?: string | null) { const { data, error } = await this.sb.from('wb_notes').insert({ id: genId(), content, tag: tag ?? null, pinned: false }).select().single(); if (error) throw error; return noteFromRow(data) }
   async updateNote(id: string, p: Partial<Note>) {
     // updated_at 无触发器（迁移 001 仅 insert default），本地实现会刷新它——云端必须显式写入保持双实现一致（契约测试发现）
-    const { data, error } = await this.sb.from('wb_notes').update({ content: p.content, tag: p.tag, archived: p.archived, updated_at: new Date().toISOString() }).eq('id', id).select().single(); if (error) throw error; return noteFromRow(data) }
+    const { data, error } = await this.sb.from('wb_notes').update({ content: p.content, tag: p.tag, archived: p.archived, pinned: p.pinned, updated_at: new Date().toISOString() }).eq('id', id).select().single(); if (error) throw error; return noteFromRow(data) }
   async deleteNote(id: string) { const { error } = await this.sb.from('wb_notes').delete().eq('id', id); if (error) throw error }
 
   async listPapers() { const { data, error } = await this.sb.from('wb_papers').select('*').order('created_at', { ascending: false }); if (error) throw error; return (data ?? []).map(paperFromRow) }
@@ -188,6 +189,8 @@ export class SupabaseRepository implements WorkbenchRepository {
       status: p.status, rating: p.rating, note: p.note,
       type: p.type, folder_id: p.folderId, tags: p.tags, content: p.content,
       summary: p.summary, keywords: p.keywords, source: p.source,
+      // finished_at：状态改为「读完」时写入，离开 done 时清空（undefined 键被 JSON 序列化丢弃=不改动）
+      finished_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : undefined,
     }).eq('id', id).select().single(); if (error) throw error; return paperFromRow(data)
   }
   async deletePaper(id: string) { const { error } = await this.sb.from('wb_papers').delete().eq('id', id); if (error) throw error }

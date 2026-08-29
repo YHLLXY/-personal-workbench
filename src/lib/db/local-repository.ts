@@ -74,18 +74,27 @@ export class LocalRepository implements WorkbenchRepository {
 
   async listStudyGoals() { return read<StudyGoal>('studyGoals') }
   async createStudyGoal(input: StudyGoalInput) {
-    return insert<StudyGoal>('studyGoals', { id: genId(), title: input.title, target: input.target ?? 100, progress: 0, deadline: input.deadline ?? null, status: 'active', note: input.note ?? null })
+    return insert<StudyGoal>('studyGoals', { id: genId(), title: input.title, target: input.target ?? 100, progress: 0, deadline: input.deadline ?? null, status: 'active', note: input.note ?? null, completedAt: null })
   }
-  async updateStudyGoal(id: string, p: Partial<StudyGoal>) { return patch<StudyGoal>('studyGoals', id, p) }
+  async updateStudyGoal(id: string, p: Partial<StudyGoal>) {
+    // completedAt 跟随状态（与 updateTask 的 completedAt 模式一致）：归档写入、恢复清空、纯进度更新不动
+    const rows = read<StudyGoal>('studyGoals')
+    const i = rows.findIndex(r => r.id === id)
+    if (i < 0) throw new Error(`not found: ${id}`)
+    const completedAt = p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt !== undefined ? p.completedAt : rows[i].completedAt ?? null
+    rows[i] = { ...rows[i], ...p, completedAt }
+    write('studyGoals', rows)
+    return rows[i]
+  }
   async deleteStudyGoal(id: string) { remove('studyGoals', id) }
 
   async listNotes() {
-    // 与云端一致：按 updated_at 倒序（编辑过的笔记浮顶；契约测试发现本地原本无排序）
-    return read<Note>('notes').sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
+    // 与云端一致：置顶优先，再按 updated_at 倒序（编辑过的笔记浮顶；契约测试发现本地原本无排序）
+    return read<Note>('notes').sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false) || String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
   }
   async createNote(content: string, tag?: string | null) {
     const now = new Date().toISOString()
-    return insert<Note>('notes', { id: genId(), content, tag: tag ?? null, archived: false, createdAt: now, updatedAt: now })
+    return insert<Note>('notes', { id: genId(), content, tag: tag ?? null, archived: false, pinned: false, createdAt: now, updatedAt: now })
   }
   async updateNote(id: string, p: Partial<Note>) {
     return patch<Note>('notes', id, { ...p, updatedAt: new Date().toISOString() })
@@ -102,7 +111,16 @@ export class LocalRepository implements WorkbenchRepository {
   async createPaper(input: Omit<Paper, 'id' | 'createdAt'>) {
     return insert<Paper>('papers', { ...input, type: input.type ?? 'paper', folderId: input.folderId ?? null, tags: input.tags ?? [], keywords: input.keywords ?? [], content: input.content ?? null, summary: input.summary ?? null, source: input.source ?? null, id: genId(), createdAt: new Date().toISOString() })
   }
-  async updatePaper(id: string, p: Partial<Paper>) { return patch<Paper>('papers', id, p) }
+  async updatePaper(id: string, p: Partial<Paper>) {
+    // finishedAt 跟随状态：改为「读完」写入、离开 done 清空、纯其他字段更新不动（与云端语义一致）
+    const rows = read<Paper>('papers')
+    const i = rows.findIndex(r => r.id === id)
+    if (i < 0) throw new Error(`not found: ${id}`)
+    const finishedAt = p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.finishedAt !== undefined ? p.finishedAt : rows[i].finishedAt ?? null
+    rows[i] = { ...rows[i], ...p, finishedAt }
+    write('papers', rows)
+    return rows[i]
+  }
   async deletePaper(id: string) { remove('papers', id) }
 
   async listFolders() { return read<Folder>('folders') }

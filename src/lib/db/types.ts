@@ -30,7 +30,7 @@ export interface Exam {
 }
 export interface ExamInput { title: string; examDate: string; examTime?: string | null; subject?: string | null; note?: string | null }
 
-export interface Note { id: string; content: string; tag: string | null; archived: boolean; createdAt: string; updatedAt: string }
+export interface Note { id: string; content: string; tag: string | null; archived: boolean; pinned: boolean; createdAt: string; updatedAt: string }
 
 export interface Paper {
   id: string; title: string; authors: string; arxivId: string | null; url: string | null; status: 'want' | 'reading' | 'done'; rating: number | null; note: string | null; createdAt: string
@@ -39,6 +39,7 @@ export interface Paper {
   folderId?: string | null
   tags?: string[]
   content?: string | null
+  finishedAt?: string | null  // 状态改为「读完」时由仓储层写入
   summary?: string | null
   keywords?: string[]
   source?: string | null
@@ -73,6 +74,7 @@ export interface StudyGoal {
   deadline: string | null  // YYYY-MM-DD
   status: 'active' | 'done'
   note: string | null
+  completedAt: string | null  // 归档时间（仓储层维护，恢复时清空）
 }
 export interface StudyGoalInput { title: string; target?: number; deadline?: string | null; note?: string | null }
 
@@ -107,10 +109,10 @@ export interface GrowthActionInput {
   habitId?: string | null
 }
 
-export type ReminderKind = 'due' | 'exam-3d' | 'exam-1d' | 'exam-1h'
+export type ReminderKind = 'due' | 'exam-3d' | 'exam-1d' | 'exam-1h' | 'goal-3d' | 'goal-due'
 export interface Reminder {
   id: string
-  refType: 'task' | 'exam'
+  refType: 'task' | 'exam' | 'goal'
   refId: string
   kind: ReminderKind
   scheduledAt: string   // UTC ISO
