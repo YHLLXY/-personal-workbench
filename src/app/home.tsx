@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { homeCards } from '@/registry'
 import OverviewHome from '@/modules/overview/overview-home'
 import { OverviewSummary } from '@/modules/overview/overview-summary'
+import { WeatherCard } from '@/modules/overview/weather-card'
 import ReminderBanner from '@/modules/reminders/reminder-banner'
 import DailySummary from './daily-summary'
 
@@ -55,6 +56,10 @@ export default function Home() {
       </div>
       {/* 桌面端卡片网格 */}
       <div className="hidden md:grid grid-cols-12 gap-3 md:gap-4 auto-rows-min">
+        {/* 天气卡：公共数据（/api/weather），无路由跳转，故不走 registry homeCard（那要求挂在子模块下） */}
+        <div className="col-span-12 md:col-span-4 card-enter">
+          <WeatherCard />
+        </div>
         {cards.map((c, i) => {
           const to = CARD_LINK[c.id]
           return (

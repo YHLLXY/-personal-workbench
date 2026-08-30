@@ -8,6 +8,7 @@ import { todayStr } from '@/lib/db/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MobileHomeEntries } from '@/components/mobile-entries'
 import { WeeklyTrendCard } from './weekly-trend'
+import { WeatherCard } from './weather-card'
 
 export default function OverviewHome() {
   const { data: tasks, isLoading: tl } = useTasks()
@@ -22,6 +23,8 @@ export default function OverviewHome() {
     <div className="md:hidden mx-auto max-w-md space-y-3">
       {/* KPI 条 — 替换为四格概览条 */}
       <OverviewSummary />
+      {/* 重庆天气（实况 + 三日预报，/api/weather 公共接口） */}
+      <WeatherCard />
       {/* 今日焦点 */}
       <div className="bg-card border border-border rounded-2xl p-4">
         <div className="flex items-center gap-2 text-sm font-semibold mb-2"><Star className="size-4 text-primary" strokeWidth={1.7} />今日焦点</div>

@@ -8,8 +8,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig({
   plugins: [
     react(),
-    tailwindcss(),
-    VitePWA({
+    tailwindcss(),    VitePWA({
       registerType: 'autoUpdate',
       strategies: 'injectManifest',
       srcDir: 'src',
@@ -35,9 +34,26 @@ export default defineConfig({
       },
     }),
   ],
+  // Meteocons 动画 SVG 走独立文件（不内联 base64）：14 个图标共 ~51KB，内联会撑爆主 chunk（check-bundle 上限 340KB）；
+  // SW 预缓存 globPatterns 已含 svg，离线启动动画不受影响
+  build: {
+    assetsInlineLimit: (filePath, content) => !filePath.endsWith('.svg') && content.length < 4096,
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
+  server: {
+    // dev 环境没有 Vercel serverless：/api/weather 直连 Open-Meteo 原始 JSON，
+    // 与生产 /api/weather（api/weather.ts 薄代理）返回同构数据，共用前端解析。
+    // 坐标=重庆——改动时同步 api/weather.ts 的 UPSTREAM。
+    proxy: {
+      '/api/weather': {
+        target: 'https://api.open-meteo.com',
+        changeOrigin: true,
+        rewrite: () => '/v1/forecast?latitude=29.563&longitude=106.5516&current=weather_code,temperature_2m,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=Asia%2FShanghai',
+      },
     },
   },
   test: {
