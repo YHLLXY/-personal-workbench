@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { timeSegmentOf, makeStars, makeParticles, seededRandom, SEGMENT_BOUNDS, WEATHER_DIM } from '../src/app/boot-scene'
-import { mapWmoKind } from '../api/weather'
+import {
+  timeSegmentOf, makeStars, makeParticles, seededRandom, SEGMENT_BOUNDS,
+  WEATHER_MOOD, heroOpacity, BOOT_WEATHERS, SEGMENT_PALETTES,
+} from '../src/app/boot-scene'
+import { WEATHER_KINDS } from '../src/lib/weather'
 
 describe('timeSegmentOf（四时段划分）', () => {
   const at = (h: number, m = 0) => new Date(2026, 7, 30, h, m)
@@ -24,35 +27,31 @@ describe('timeSegmentOf（四时段划分）', () => {
   })
 })
 
-describe('mapWmoKind（WMO 天气码 → 七类动画效果）', () => {
-  it('晴/少云/阴', () => {
-    expect(mapWmoKind(0)).toBe('clear')
-    expect(mapWmoKind(1)).toBe('partly')
-    expect(mapWmoKind(2)).toBe('partly')
-    expect(mapWmoKind(3)).toBe('overcast')
+describe('天气氛围参数（WEATHER_MOOD）', () => {
+  it('12 类天气全部有氛围参数（防漏映射）', () => {
+    for (const k of WEATHER_KINDS) {
+      expect(WEATHER_MOOD[k]).toBeDefined()
+      expect(WEATHER_MOOD[k].dim).toBeGreaterThanOrEqual(0)
+      expect(WEATHER_MOOD[k].dim).toBeLessThanOrEqual(1)
+    }
   })
-  it('雾/雨/雪/雷暴', () => {
-    expect(mapWmoKind(45)).toBe('fog')
-    expect(mapWmoKind(48)).toBe('fog')
-    expect(mapWmoKind(51)).toBe('rain')
-    expect(mapWmoKind(65)).toBe('rain')
-    expect(mapWmoKind(67)).toBe('rain')
-    expect(mapWmoKind(80)).toBe('rain')
-    expect(mapWmoKind(82)).toBe('rain')
-    expect(mapWmoKind(71)).toBe('snow')
-    expect(mapWmoKind(77)).toBe('snow')
-    expect(mapWmoKind(85)).toBe('snow')
-    expect(mapWmoKind(86)).toBe('snow')
-    expect(mapWmoKind(95)).toBe('thunder')
-    expect(mapWmoKind(99)).toBe('thunder')
+  it('晴不压暗；雷暴压得最狠；雨重于阴天', () => {
+    expect(WEATHER_MOOD.clear.dim).toBe(0)
+    expect(WEATHER_MOOD['mostly-clear'].dim).toBe(0)
+    expect(WEATHER_MOOD.thunder.dim).toBeGreaterThan(WEATHER_MOOD.rain.dim)
+    expect(WEATHER_MOOD.rain.dim).toBeGreaterThan(WEATHER_MOOD.overcast.dim)
   })
-  it('缺失/非法/未知码一律按晴天（宁要晴天，不要报错）', () => {
-    expect(mapWmoKind(null)).toBe('clear')
-    expect(mapWmoKind(undefined)).toBe('clear')
-    expect(mapWmoKind(Number.NaN)).toBe('clear')
-    expect(mapWmoKind(-5)).toBe('clear')
-    expect(mapWmoKind(68)).toBe('clear')
-    expect(mapWmoKind(4.6)).toBe('clear') // 5 不在任何区间（WMO 无此码）
+  it('恶劣天气天体减淡但不完全消失（下限 0.35）', () => {
+    expect(heroOpacity('clear')).toBe(1)
+    expect(heroOpacity('thunder')).toBeCloseTo(1 - WEATHER_MOOD.thunder.dim * 1.05)
+    for (const k of WEATHER_KINDS) expect(heroOpacity(k)).toBeGreaterThanOrEqual(0.35)
+  })
+  it('四时段调色板齐全（天空 4 色标 + 两层山）', () => {
+    for (const seg of ['dawn', 'noon', 'dusk', 'night'] as const) {
+      expect(SEGMENT_PALETTES[seg].sky).toHaveLength(4)
+      expect(SEGMENT_PALETTES[seg].hillFar).toBeTruthy()
+      expect(SEGMENT_PALETTES[seg].hillNear).toBeTruthy()
+    }
   })
 })
 
@@ -68,18 +67,12 @@ describe('种子随机与粒子生成', () => {
     expect(stars).toHaveLength(64)
     expect(stars.every(s => s.top >= 0 && s.top <= 65)).toBe(true)
   })
-  it('雨雪粒子带 sway 档位（0–2）', () => {
+  it('雨雪增强粒子带 sway 档位（0–2）', () => {
     const drops = makeParticles(42, 3, { sizeMin: 14, sizeMax: 24, durMin: 0.55, durMax: 1 })
     expect(drops).toHaveLength(42)
     expect(drops.every(d => d.drift >= 0 && d.drift <= 2)).toBe(true)
   })
-})
-
-describe('WEATHER_DIM（天气压暗系数）', () => {
-  it('晴/少云不压暗，雷暴压得最狠，雨重于阴天', () => {
-    expect(WEATHER_DIM.clear).toBe(0)
-    expect(WEATHER_DIM.partly).toBe(0)
-    expect(WEATHER_DIM.thunder).toBeGreaterThan(WEATHER_DIM.rain)
-    expect(WEATHER_DIM.rain).toBeGreaterThan(WEATHER_DIM.overcast)
+  it('预览钩子候选表与天气全集一致', () => {
+    expect(BOOT_WEATHERS).toEqual(WEATHER_KINDS)
   })
 })
