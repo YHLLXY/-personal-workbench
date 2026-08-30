@@ -1,4 +1,4 @@
-import { CalendarClock, Check, Clock, Star, Trash2 } from 'lucide-react'
+import { CalendarClock, Check, Clock, RotateCcw, Star, Trash2 } from 'lucide-react'
 import type { Task } from '@/lib/db/types'
 import { cn } from '@/lib/utils'
 
@@ -9,11 +9,20 @@ export function TaskItem({ task, onToggle, onFocus, onEdit, onDelete, onPostpone
 }) {
   const done = task.status === 'done'
   return (
-    <div className={cn('group flex items-center gap-3 bg-card border border-border rounded-xl px-3.5 py-2.5 transition-colors', done && 'opacity-60 bg-muted/40')}>
-      <button onClick={onToggle} aria-label="完成"
-        className={cn('size-[18px] rounded-md border-[1.5px] shrink-0 flex items-center justify-center transition-all active:scale-90',
-          done ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary')}>
-        {done && <Check className="size-3" strokeWidth={3} />}
+    // data-flip-id：FLIP 布局动画锚点（src/lib/flip.ts）——同列表重排平滑（补加星标滑顶，不再瞬跳闪没），
+    // 今日↔已完成跨区块连续滑移（坠落/飞回）。一条任务同一时刻只挂载在一个区块，task.id 全局唯一
+    <div data-flip-id={task.id}
+      className={cn('group flex items-center gap-3 bg-card border border-border rounded-xl px-3.5 py-2.5 transition-colors', done && 'opacity-60 bg-muted/40')}>
+      <button onClick={onToggle} aria-label={done ? '撤销完成' : '完成'} title={done ? '撤销完成' : '标记完成'}
+        className={cn('group/check size-[18px] rounded-md border-[1.5px] shrink-0 flex items-center justify-center transition-all active:scale-90',
+          done ? 'bg-primary border-primary text-primary-foreground hover:brightness-110' : 'border-muted-foreground/40 hover:border-primary')}>
+        {done && (
+          // 完成态：常态对勾，悬停变 ↺ 恢复图标（Todoist/Things 式撤销暗示，修"找不到撤销"）
+          <>
+            <Check className="size-3 group-hover/check:hidden" strokeWidth={3} />
+            <RotateCcw className="hidden size-3 group-hover/check:block" strokeWidth={2.5} />
+          </>
+        )}
       </button>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">

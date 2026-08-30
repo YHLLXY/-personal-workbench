@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useTasks, useTaskMutations, todayTasks, todayDone, recentOverdue, oldOverdue, filterTasks } from './api'
 import { TaskItem } from './task-item'
 import { TaskDialog } from './task-dialog'
@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/empty-state'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { flipIn } from '@/lib/flip'
 import type { Task } from '@/lib/db/types'
 
 export default function TodayTasks() {
@@ -21,6 +22,26 @@ export default function TodayTasks() {
   const [query, setQuery] = useState('') // 标题关键词
   const [doneOpen, setDoneOpen] = useState(true) // 已完成分区默认展开：刚勾完就能看到划线，误触可立刻撤销
   const today = todayStr()
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  // FLIP 布局动画：每次提交后、绘制前对比各任务上一帧位置，位移即从旧位置滑到新位置
+  // （补加星标平滑滑顶；完成/撤销时在今日↔已完成两区间连续滑移而非瞬移闪没，2026-08 反馈）
+  useLayoutEffect(() => { flipIn(rootRef.current) })
+
+  // 完成/撤销的统一入口。乐观更新在 useTaskMutations 落缓存；完成时展开已完成分区（否则任务坠进折叠区等于隐形）
+  // 并弹 toast 撤销（Todoist 式主撤销路径，2026-08 反馈"找不到撤销"）
+  const toggleDone = (t: Task) => {
+    const done = t.status === 'done'
+    update.mutate({ id: t.id, patch: { status: done ? 'todo' : 'done' } })
+    if (done) return
+    setDoneOpen(true)
+    toast.success('已完成', {
+      description: `「${t.title}」已划线保留`,
+      action: { label: '撤销', onClick: () => update.mutate({ id: t.id, patch: { status: 'todo' } }) },
+      duration: 5000,
+    })
+  }
+
   // 先按标签/关键词过滤，再走既有口径函数；someday 单独分流（todayTasks 口径不排除 someday，手动拆开避免同任务重复出现）
   const filtered = filterTasks(tasks ?? [], { tag, query })
   const pool = filtered.filter(t => t.status !== 'someday')
@@ -35,7 +56,7 @@ export default function TodayTasks() {
   const filtering = Boolean(tag || query.trim())
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div ref={rootRef} className="mx-auto max-w-3xl">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold">今日待办</h1>
@@ -69,7 +90,7 @@ export default function TodayTasks() {
                   {recent.map(t => (
                     <div key={t.id} className="rounded-xl border border-destructive/25 bg-destructive/5">
                       <TaskItem task={t}
-                        onToggle={() => update.mutate({ id: t.id, patch: { status: t.status === 'done' ? 'todo' : 'done' } })}
+                        onToggle={() => toggleDone(t)}
                         onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus } })}
                         onEdit={() => { setEditing(t); setDialogOpen(true) }}
                         onDelete={() => remove.mutate(t.id)}
@@ -90,7 +111,7 @@ export default function TodayTasks() {
                   <div className="px-3 pb-3 space-y-1.5">
                     {old.map(t => (
                       <TaskItem key={t.id} task={t}
-                        onToggle={() => update.mutate({ id: t.id, patch: { status: t.status === 'done' ? 'todo' : 'done' } })}
+                        onToggle={() => toggleDone(t)}
                         onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus } })}
                         onEdit={() => { setEditing(t); setDialogOpen(true) }}
                         onDelete={() => remove.mutate(t.id)}
@@ -101,6 +122,10 @@ export default function TodayTasks() {
                       onClick={() => {
                         if (window.confirm(`将 ${old.length} 项更早过期的历史待办标记为已完成？这些任务将不再出现在待办中。`)) {
                           old.forEach(t => update.mutate({ id: t.id, patch: { status: 'done' } }))
+                          toast.success(`已清理 ${old.length} 项历史待办`, {
+                            action: { label: '撤销', onClick: () => old.forEach(t => update.mutate({ id: t.id, patch: { status: 'todo' } })) },
+                            duration: 5000,
+                          })
                         }
                       }}>
                       清理历史待办（全部标记完成）
@@ -116,7 +141,7 @@ export default function TodayTasks() {
               <div className="space-y-1.5">
                 {todayList.map(t => (
                   <TaskItem key={t.id} task={t}
-                    onToggle={() => update.mutate({ id: t.id, patch: { status: t.status === 'done' ? 'todo' : 'done' } })}
+                    onToggle={() => toggleDone(t)}
                     onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus, focusDate: t.focus ? null : today } })}
                     onEdit={() => { setEditing(t); setDialogOpen(true) }}
                     onDelete={() => remove.mutate(t.id)} />
@@ -137,7 +162,7 @@ export default function TodayTasks() {
                 <div className="px-3 pb-3 space-y-1.5">
                   {doneToday.map(t => (
                     <TaskItem key={t.id} task={t}
-                      onToggle={() => update.mutate({ id: t.id, patch: { status: 'todo' } })}
+                      onToggle={() => toggleDone(t)}
                       onEdit={() => { setEditing(t); setDialogOpen(true) }}
                       onDelete={() => remove.mutate(t.id)} />
                   ))}

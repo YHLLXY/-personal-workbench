@@ -25,18 +25,24 @@ test('首页加载：侧边栏导航渲染（KPI 卡在移动端容器，桌面�
   await expect(page.getByRole('link', { name: '今日待办' })).toBeVisible()
 })
 
-test('待办闭环：新建 → 显示 → 勾选完成 → 划线保留 → 撤销', async ({ page }) => {
+test('待办闭环：新建 → 显示 → 勾选完成 → toast 撤销 → 再完成 → 方块撤销', async ({ page }) => {
   await goto(page, '/tasks')
   await page.getByRole('button', { name: '新建' }).click()
   await page.getByPlaceholder('任务内容').fill('E2E 冒烟任务')
   await page.getByRole('button', { name: '添加', exact: true }).click()
   await expect(page.getByText('今日 1 项')).toBeVisible()
-  // 勾选完成 → 移入「已完成」分区（划线保留，不消失），今日计数归零
-  await page.getByLabel('完成').first().click()
+  // 勾选完成 → 移入「已完成」分区（划线保留，不消失），今日计数归零，toast 给出撤销入口
+  await page.getByLabel('完成', { exact: true }).first().click()
   await expect(page.getByText('今日 0 项')).toBeVisible()
   await expect(page.getByText('已完成 1 项 · 点方块可撤销')).toBeVisible()
-  // 撤销：再点一次勾选框，任务回到今日待办
-  await page.getByLabel('完成').first().click()
+  await expect(page.getByText('「E2E 冒烟任务」已划线保留')).toBeVisible()
+  // 撤销路径一：toast「撤销」按钮（Todoist 式），任务回到今日待办
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(page.getByText('今日 1 项')).toBeVisible()
+  // 再完成，撤销路径二：已完成区方块悬停为撤销图标（aria-label 撤销完成）
+  await page.getByLabel('完成', { exact: true }).first().click()
+  await expect(page.getByText('已完成 1 项 · 点方块可撤销')).toBeVisible()
+  await page.getByLabel('撤销完成').click()
   await expect(page.getByText('今日 1 项')).toBeVisible()
 })
 

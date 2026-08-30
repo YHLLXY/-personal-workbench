@@ -39,3 +39,6 @@ playwright-report/
 
 # 启动动画预览截图（scripts/boot-preview.mjs 输出）
 .tmp-boot/
+
+# FLIP 动画截帧自检（scripts/flip-preview.mjs 输出）
+.tmp-flip/
