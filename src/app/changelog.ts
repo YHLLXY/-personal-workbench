@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.20.0',
+    date: '2026-08-30',
+    title: '天气详情弹窗 + 启动动画复合场景',
+    items: [
+      '新增：启动动画多元素复合场景——伴飞云层视差 + 晴天大太阳光环 + 夜晚大月亮',
+      '新增：天气卡可点击弹出详情弹窗——场景化背景 + 日出日落滑条 + 逐小时/七日/详情块',
+      '新增：天气详情数据层——空气质量接口 + 逐小时/七日/日出日落/UV 解析（归一化共享模块）',
+    ],
+  },
+  {
     version: 'v1.19.0',
     date: '2026-08-30',
     title: '启动动画 Meteocons 重做 + 天气卡',
