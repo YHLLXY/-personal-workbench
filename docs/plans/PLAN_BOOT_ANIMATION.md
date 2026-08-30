@@ -1,9 +1,11 @@
 # 启动进场动画（时间 × 天气驱动）调研与方案
 
-> 2026-08-30 调研整理；同日已拍板并实现（v1.18.0）。
+> 2026-08-30 调研整理；同日 v1.18.0 首版（纯 CSS 自绘），次日按反馈重做为 **Meteocons 精致插画风**（v1.19.0）。
 > 需求原话：早上太阳从云洞里升起来；中午太阳释放强烈的光；下午火烧云；晚上月亮升起来；并根据当天天气决定进场动画。
-> **拍板结果**：城市=重庆；播放频率=每次冷启动播放、后台隐藏 ≥5 分钟恢复视为重新打开重播（短暂切窗不重播）；夜晚流星彩蛋=加。
-> **预览钩子**：`?boot=dawn|noon|dusk|night&wx=clear|partly|overcast|rain|snow|fog|thunder` 可强制指定时段/天气（调观感用）；`node scripts/boot-preview.mjs`（dev server 起着时）批量截图到 `.tmp-boot/`。
+> **拍板结果**：城市=重庆；播放频率=每次冷启动播放、后台隐藏 ≥5 分钟恢复视为重新打开重播（短暂切窗不重播）；流星彩蛋=加；风格=**Meteocons 插画精致风**（用户授权成本不限、素材直接网上拉取）。
+> **v1.19.0 重做要点**：①手绘天体/云全部替换为 [Meteocons](https://github.com/basmilius/meteocons) 动画 SVG（MIT，npm @meteocons/svg，提取 14 枚入库 src/assets/meteocons/，经 <img> 引用零运行时）；②天气 7 类→**12 类**（多强度档+雨夹雪），归一化移至 src/lib/weather.ts 与天气卡共用；③天空按天气整体染色（WEATHER_MOOD.tint），不再只是压暗；④分层入场编排（天空→主角→氛围层→品牌）；⑤**dev 环境 /api/weather 经 vite proxy 直连 Open-Meteo**（修复本地验收看不到天气的盲区），归一化前后端同路；⑥新增首页**天气卡**（桌面网格 + 移动 KPI 条下方）：实况温度/Meteocons 动画图标/三日预报。
+> **预览钩子**：`?boot=dawn|noon|dusk|night&wx=<12 类任意>` 强制指定时段/天气；`node scripts/boot-preview.mjs`（dev server 起着时）批量截图到 `.tmp-boot/`。
+> **工程注意**：build.assetsInlineLimit 强制 svg 走独立文件（内联 base64 会撑爆主 chunk 预算 340KB）。
 
 ---
 
