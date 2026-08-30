@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.19.0',
+    date: '2026-08-30',
+    title: '启动动画 Meteocons 重做 + 天气卡',
+    items: [
+      '新增：首页天气卡（实况+三日预报）+ dev 环境天气代理修复 + api 薄代理化',
+      '新增：启动动画重做——Meteocons 动画图标主角 + 天空按天气染色 + 天气 12 类',
+    ],
+  },
+  {
     version: 'v1.18.0',
     date: '2026-08-29',
     title: '时间×天气启动进场动画',
