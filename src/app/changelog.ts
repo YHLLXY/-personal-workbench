@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.21.0',
+    date: '2026-08-30',
+    title: '待办状态切换体验：坠落滑移动画与撤销升级',
+    items: [
+      '新增：任务跨区连续滑移动画（零依赖 FLIP，2KB）+ toast/hover 双撤销路径',
+      '修复：乐观更新镜像 completedAt 派生规则（applyTaskPatch 共享），完成任务不再空帧闪没',
+    ],
+  },
+  {
     version: 'v1.20.0',
     date: '2026-08-30',
     title: '天气详情弹窗 + 启动动画复合场景',
