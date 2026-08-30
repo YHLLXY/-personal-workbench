@@ -45,14 +45,19 @@ export default defineConfig({
     },
   },
   server: {
-    // dev 环境没有 Vercel serverless：/api/weather 直连 Open-Meteo 原始 JSON，
-    // 与生产 /api/weather（api/weather.ts 薄代理）返回同构数据，共用前端解析。
-    // 坐标=重庆——改动时同步 api/weather.ts 的 UPSTREAM。
+    // dev 环境没有 Vercel serverless：两个天气接口直连 Open-Meteo 原始 JSON，
+    // 与生产 api/*.ts 薄代理返回同构数据，共用前端解析（src/lib/weather.ts）。
+    // 坐标=重庆——改动时同步 api/weather.ts、api/air-quality.ts 的 UPSTREAM。
     proxy: {
       '/api/weather': {
         target: 'https://api.open-meteo.com',
         changeOrigin: true,
-        rewrite: () => '/v1/forecast?latitude=29.563&longitude=106.5516&current=weather_code,temperature_2m,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=Asia%2FShanghai',
+        rewrite: () => '/v1/forecast?latitude=29.563&longitude=106.5516&current=weather_code,temperature_2m,relative_humidity_2m,apparent_temperature,is_day,wind_speed_10m&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max&forecast_days=8&timezone=Asia%2FShanghai',
+      },
+      '/api/air-quality': {
+        target: 'https://air-quality-api.open-meteo.com',
+        changeOrigin: true,
+        rewrite: () => '/v1/air-quality?latitude=29.563&longitude=106.5516&current=pm2_5,pm10,us_aqi&timezone=Asia%2FShanghai',
       },
     },
   },

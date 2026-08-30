@@ -14,9 +14,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const UPSTREAM = 'https://api.open-meteo.com/v1/forecast' +
   '?latitude=29.563&longitude=106.5516' +
-  '&current=weather_code,temperature_2m,is_day' +
-  '&daily=weather_code,temperature_2m_max,temperature_2m_min' +
-  '&forecast_days=3&timezone=Asia%2FShanghai'
+  '&current=weather_code,temperature_2m,relative_humidity_2m,apparent_temperature,is_day,wind_speed_10m' +
+  '&hourly=temperature_2m,weather_code,precipitation_probability' +
+  '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max' +
+  '&forecast_days=8&timezone=Asia%2FShanghai'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'method not allowed' }); return }
