@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
-  BOOT_PLAY_MS, BOOT_SEGMENTS, BOOT_WEATHERS, HERO_ENTER_DELAY_S, HERO_FLOAT_S, METEORS, REPLAY_AFTER_HIDDEN_MS,
+  BOOT_PLAY_MS, BOOT_SEGMENTS, BOOT_WEATHERS, EXTRA_ELEMENTS, HERO_ENTER_DELAY_S, HERO_FLOAT_S, METEORS, REPLAY_AFTER_HIDDEN_MS,
   SEGMENT_PALETTES, WEATHER_MOOD, heroOpacity, makeParticles, makeStars, timeSegmentOf,
   type BootSegment,
 } from './boot-scene'
@@ -9,6 +9,17 @@ import { weatherIconUrl } from '@/lib/weather-icons'
 import type { WeatherKind } from '@/lib/weather'
 import { cn } from '@/lib/utils'
 import './boot-animation.css'
+
+/** 伴飞元素记号 → 实际图标（partly 按场景昼夜取变体；其余用通用图标，夜间靠滤镜压暗） */
+function extraIconUrl(icon: string, isDay: boolean): string {
+  if (icon === 'partly') return weatherIconUrl('partly', isDay)
+  if (icon === 'rain') return weatherIconUrl('rain', true)
+  if (icon === 'drizzle') return weatherIconUrl('drizzle', true)
+  if (icon === 'snow') return weatherIconUrl('snow', true)
+  if (icon === 'sleet') return weatherIconUrl('sleet', true)
+  if (icon === 'thunder') return weatherIconUrl('thunder', true)
+  return weatherIconUrl('overcast', true) // cloudy
+}
 
 /** E2E 测试钩子：设为 '1' 时整段跳过（不然每个用例都多等 3 秒） */
 const E2E_SKIP_KEY = 'wb-boot-skip'
@@ -141,9 +152,42 @@ function BootScene({ seg, weather, exiting, onSkip }: { seg: BootSegment; weathe
         </div>
       )}
 
+      {/* 晴昼：主角背后的旋转光晕（ray halo），强化「释放强光」 */}
+      {(weather === 'clear' || weather === 'mostly-clear') && isDay && <div className="boot-halo" />}
+      {/* 晴昼：左上大太阳（Meteocons，自带光芒动画） */}
+      {(weather === 'clear' || weather === 'mostly-clear') && isDay && (
+        <img src={weatherIconUrl('clear', true)} alt="" className="boot-big-sun" draggable={false} />
+      )}
+      {/* 夜晴：右上月亮 */}
+      {(weather === 'clear' || weather === 'mostly-clear') && !isDay && (
+        <img src={weatherIconUrl('clear', false)} alt="" className="boot-big-moon" draggable={false} />
+      )}
+
       {/* 主角：Meteocons 动画图标（自身带雨滴/雪花/闪电/光芒 SMIL 动画） */}
-      <div className={cn('boot-hero', seg === 'dusk' && 'is-dusk')}>
-        <img src={weatherIconUrl(weather, isDay)} alt="" draggable={false} />
+      {!(weather === 'clear' || weather === 'mostly-clear') && (
+        <div className={cn('boot-hero', seg === 'dusk' && 'is-dusk')}>
+          <img src={weatherIconUrl(weather, isDay)} alt="" draggable={false} />
+        </div>
+      )}
+
+      {/* 伴飞云层：视差深度（不同大小/透明度/速度反向漂移） */}
+      <div className="boot-extras" aria-hidden>
+        {EXTRA_ELEMENTS[weather].map((e, i) => (
+          <img
+            key={i}
+            src={extraIconUrl(e.icon, isDay)}
+            alt=""
+            className="boot-extra"
+            draggable={false}
+            style={{
+              left: `${e.left}%`, top: `${e.top}%`, width: `${e.size}vmin`,
+              opacity: e.opacity * heroOpacity(weather),
+              animationDuration: `${e.drift}s`,
+              animationDelay: `${-i * 2.3}s`,
+              filter: isDay ? undefined : 'brightness(0.6)',
+            }}
+          />
+        ))}
       </div>
 
       {/* 高空雾云带（极低透明度做纵深，不再是实心横条） */}

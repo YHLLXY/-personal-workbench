@@ -89,6 +89,54 @@ export function heroOpacity(kind: WeatherKind): number {
 export const HERO_ENTER_DELAY_S = 0.15
 export const HERO_FLOAT_S = 4.2
 
+/** 伴飞元素：主角之外的第二/第三层云（视差深度感）。icon 是图标名记号，组件层解析昼夜变体 */
+export interface ExtraEl { icon: 'cloudy' | 'partly' | 'drizzle' | 'rain' | 'snow' | 'sleet' | 'thunder'; left: number; top: number; size: number; opacity: number; drift: number }
+
+/** 每种天气的伴飞云层配置（left/top %，size vmin，drift 秒）。晴留一朵远云，阴雨雪给足层次 */
+export const EXTRA_ELEMENTS: Record<WeatherKind, ExtraEl[]> = {
+  'clear': [{ icon: 'partly', left: 8, top: 60, size: 17, opacity: 0.4, drift: 13 }],
+  'mostly-clear': [{ icon: 'partly', left: 78, top: 56, size: 14, opacity: 0.38, drift: 12 }],
+  'partly': [
+    { icon: 'cloudy', left: -4, top: 60, size: 23, opacity: 0.55, drift: 12 },
+    { icon: 'cloudy', left: 74, top: 18, size: 14, opacity: 0.42, drift: 9 },
+  ],
+  'overcast': [
+    { icon: 'cloudy', left: -6, top: 52, size: 34, opacity: 0.7, drift: 10 },
+    { icon: 'cloudy', left: 66, top: 10, size: 24, opacity: 0.55, drift: 14 },
+    { icon: 'cloudy', left: 74, top: 46, size: 18, opacity: 0.45, drift: 8 },
+  ],
+  'fog': [{ icon: 'cloudy', left: 58, top: 30, size: 20, opacity: 0.3, drift: 12 }],
+  'drizzle': [
+    { icon: 'drizzle', left: 66, top: 14, size: 20, opacity: 0.55, drift: 11 },
+    { icon: 'cloudy', left: -4, top: 58, size: 22, opacity: 0.45, drift: 13 },
+  ],
+  'rain': [
+    { icon: 'rain', left: 66, top: 12, size: 22, opacity: 0.55, drift: 11 },
+    { icon: 'cloudy', left: -6, top: 56, size: 24, opacity: 0.45, drift: 13 },
+  ],
+  'heavy-rain': [
+    { icon: 'rain', left: 68, top: 10, size: 24, opacity: 0.6, drift: 9 },
+    { icon: 'rain', left: -8, top: 54, size: 20, opacity: 0.5, drift: 12 },
+    { icon: 'cloudy', left: 30, top: 20, size: 16, opacity: 0.38, drift: 10 },
+  ],
+  'sleet': [
+    { icon: 'sleet', left: 66, top: 14, size: 20, opacity: 0.5, drift: 11 },
+    { icon: 'cloudy', left: -6, top: 56, size: 20, opacity: 0.42, drift: 13 },
+  ],
+  'snow': [
+    { icon: 'snow', left: 66, top: 12, size: 22, opacity: 0.5, drift: 11 },
+    { icon: 'cloudy', left: -6, top: 56, size: 22, opacity: 0.42, drift: 13 },
+  ],
+  'heavy-snow': [
+    { icon: 'snow', left: 68, top: 10, size: 24, opacity: 0.55, drift: 9 },
+    { icon: 'snow', left: -8, top: 54, size: 20, opacity: 0.45, drift: 12 },
+  ],
+  'thunder': [
+    { icon: 'thunder', left: 66, top: 12, size: 24, opacity: 0.55, drift: 10 },
+    { icon: 'cloudy', left: -8, top: 56, size: 24, opacity: 0.45, drift: 12 },
+  ],
+}
+
 export interface ParticleSpec { left: number; top: number; size: number; opacity: number; duration: number; delay: number; drift: number }
 
 /** mulberry32 种子随机：粒子布局每次挂载完全一致（StrictMode 双挂载/E2E 都稳定） */
