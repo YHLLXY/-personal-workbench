@@ -3,8 +3,10 @@ import { test, expect, type Page } from '@playwright/test'
 /** 关键链路 E2E 冒烟（本地 IndexedDB 模式，每个用例独立 localStorage 上下文） */
 
 // 每个用例独立上下文 → 新手引导弹层每次都会出现并拦截点击，加载前直接标记已完成；
-// 启动动画同理打跳过钩子（wb-boot-skip），否则每个用例都要多等 3 秒
+// 启动动画同理打跳过钩子（wb-boot-skip），否则每个用例都要多等 3 秒；
+// /api/* 一律拦断（502）——动画/天气卡自带降级链，E2E 不依赖外网、不受上游抖动影响
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/**', route => route.fulfill({ status: 502, body: '{}' }))
   await page.addInitScript(() => {
     localStorage.setItem('wb-onboarded', '1')
     localStorage.setItem('wb-boot-skip', '1')
@@ -41,6 +43,7 @@ test('待办闭环：新建 → 显示 → 勾选完成 → 划线保留 → 撤
 test('启动动画：冷启动播放 → 点击任意处跳过', async ({ browser }) => {
   // 独立上下文：不打 wb-boot-skip 钩子，让动画正常播放
   const ctx = await browser.newContext({ baseURL: 'http://localhost:5173', viewport: { width: 1280, height: 800 } })
+  await ctx.route('**/api/**', route => route.fulfill({ status: 502, body: '{}' }))
   const p = await ctx.newPage()
   await p.addInitScript(() => localStorage.setItem('wb-onboarded', '1'))
   await p.goto('/tasks')
@@ -52,6 +55,7 @@ test('启动动画：冷启动播放 → 点击任意处跳过', async ({ browse
 
 test('启动动画：不操作则播放结束自动淡出卸载', async ({ browser }) => {
   const ctx = await browser.newContext({ baseURL: 'http://localhost:5173', viewport: { width: 1280, height: 800 } })
+  await ctx.route('**/api/**', route => route.fulfill({ status: 502, body: '{}' }))
   const p = await ctx.newPage()
   await p.addInitScript(() => localStorage.setItem('wb-onboarded', '1'))
   await p.goto('/tasks')
