@@ -1,4 +1,4 @@
-import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput } from './types'
+import { applyTaskPatch, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput } from './types'
 import { assertNoCycle } from './folder-tree'
 
 const PREFIX = 'wb:'
@@ -33,12 +33,7 @@ export class LocalRepository implements WorkbenchRepository {
     const rows = read<Task>('tasks')
     const i = rows.findIndex(r => r.id === id)
     if (i < 0) throw new Error(`not found: ${id}`)
-    const completedAt = p.status === 'done'
-      ? new Date().toISOString()
-      : p.status !== undefined ? null
-      : p.completedAt !== undefined ? p.completedAt
-      : rows[i].completedAt ?? null
-    rows[i] = { ...rows[i], ...p, completedAt }
+    rows[i] = applyTaskPatch(rows[i], p) // completedAt 派生规则与乐观更新共用（types.applyTaskPatch）
     write('tasks', rows)
     return rows[i]
   }

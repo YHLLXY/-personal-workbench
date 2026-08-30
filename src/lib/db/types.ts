@@ -222,3 +222,13 @@ export function localDateOfISO(iso: string): string {
   const d = new Date(iso)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+/** 任务 patch 的唯一派生规则：status→done 写完成时间、改回未完成清空、不带 status 时维持/采纳显式 completedAt。
+ *  乐观更新与仓储层必须共用此函数——乐观对象要和落库对象完全一致，否则已完成区（todayDone 依赖 completedAt）会先失去任务再等 refetch 收容，出现空帧闪烁（2026-08 反馈） */
+export function applyTaskPatch(current: Task, patch: Partial<Task>): Task {
+  const completedAt = patch.status === 'done' ? new Date().toISOString()
+    : patch.status !== undefined ? null
+    : patch.completedAt !== undefined ? patch.completedAt
+    : current.completedAt ?? null
+  return { ...current, ...patch, completedAt }
+}

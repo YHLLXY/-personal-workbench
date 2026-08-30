@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { repository } from '../../lib/db'
-import { localDateOfISO, type Task, type TaskInput } from '../../lib/db/types'
+import { applyTaskPatch, localDateOfISO, type Task, type TaskInput } from '../../lib/db/types'
 
 export const taskKeys = { all: ['tasks'] as const }
 
@@ -17,10 +17,11 @@ export function useTaskMutations() {
     update: useMutation({
       mutationFn: ({ id, patch }: { id: string; patch: Partial<Task> }) => repository.updateTask(id, patch),
       onMutate: async ({ id, patch }) => {
-        // 乐观更新
+        // 乐观更新：applyTaskPatch 镜像仓储层的 completedAt 派生规则——status 变 done 时立即带上完成时间，
+        // 否则 todayDone（要求 completedAt）当帧收容不了任务，出现"消失一下再进已完成区"的空帧（2026-08 反馈）
         await qc.cancelQueries({ queryKey: taskKeys.all })
         const prev = qc.getQueryData<Task[]>(taskKeys.all) ?? []
-        qc.setQueryData<Task[]>(taskKeys.all, prev.map(t => t.id === id ? { ...t, ...patch } : t))
+        qc.setQueryData<Task[]>(taskKeys.all, prev.map(t => t.id === id ? applyTaskPatch(t, patch) : t))
         return { prev }
       },
       onError: (_e, _v, ctx) => ctx && qc.setQueryData(taskKeys.all, ctx.prev),
