@@ -80,9 +80,10 @@ export const WEATHER_MOOD: Record<WeatherKind, WeatherMood> = {
   'thunder': { dim: 0.5, tint: 'rgba(28, 36, 58, 0.58)' },
 }
 
-/** 恶劣天气下主角图标的减淡（dim 越大越隐没）；tint 型天气（雪/雾）不减 */
+/** 恶劣天气下主角图标的减淡（dim 越大越隐没）；tint 型天气（雪/雾）不减。
+ *  下限由 0.35 提到 0.55：原版在 canvas 粒子层提上来后，主角过淡会与环境层混在一起"洗"掉 */
 export function heroOpacity(kind: WeatherKind): number {
-  return Math.max(0.35, 1 - WEATHER_MOOD[kind].dim * 1.05)
+  return Math.max(0.55, 1 - WEATHER_MOOD[kind].dim * 1.05)
 }
 
 /** 主角图标入场：延迟与浮动幅度由场景统一编排（秒） */
@@ -137,9 +138,8 @@ export const EXTRA_ELEMENTS: Record<WeatherKind, ExtraEl[]> = {
   ],
 }
 
-export interface ParticleSpec { left: number; top: number; size: number; opacity: number; duration: number; delay: number; drift: number }
-
-/** mulberry32 种子随机：粒子布局每次挂载完全一致（StrictMode 双挂载/E2E 都稳定） */
+/** mulberry32 种子随机：粒子布局每次挂载完全一致（StrictMode 双挂载/E2E 都稳定）。
+ *  环境粒子生成已迁至 boot-atmosphere.ts（Canvas 版），本函数被其复用。 */
 export function seededRandom(seed: number): () => number {
   let a = seed >>> 0
   return () => {
@@ -149,40 +149,6 @@ export function seededRandom(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
-
-/** 星星（夜晚）：top 限定在天空上部 65% */
-export function makeStars(count: number, seed: number): ParticleSpec[] {
-  const rng = seededRandom(seed)
-  return Array.from({ length: count }, () => ({
-    left: rng() * 100,
-    top: rng() * 65,
-    size: 1 + rng() * 1.6,
-    opacity: 0.35 + rng() * 0.6,
-    duration: 1.6 + rng() * 2.8,
-    delay: rng() * 3,
-    drift: 0,
-  }))
-}
-
-/** 雨/雪增强粒子（大雨/雷/大雪在主角云之外的全屏补充层） */
-export function makeParticles(count: number, seed: number, opts: { sizeMin: number; sizeMax: number; durMin: number; durMax: number }): ParticleSpec[] {
-  const rng = seededRandom(seed)
-  return Array.from({ length: count }, () => ({
-    left: rng() * 104 - 2,
-    top: -5 - rng() * 20,
-    size: opts.sizeMin + rng() * (opts.sizeMax - opts.sizeMin),
-    opacity: 0.35 + rng() * 0.55,
-    duration: opts.durMin + rng() * (opts.durMax - opts.durMin),
-    delay: rng() * 1.4,
-    drift: Math.floor(rng() * 3),
-  }))
-}
-
-/** 流星参数（夜晚彩蛋）：出现延迟与起点，2 颗错开 */
-export const METEORS = [
-  { delay: 0.5, left: 72, top: 8, length: 110 },
-  { delay: 1.45, left: 38, top: 4, length: 90 },
-] as const
 
 /** 播放节奏（ms）：主动画 → 开始淡出（组件内卸载 = 开始淡出后 680ms） */
 export const BOOT_PLAY_MS = 3000

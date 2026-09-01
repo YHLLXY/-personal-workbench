@@ -12,6 +12,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.22.0',
+    date: '2026-09-01',
+    title: '启动动画：Canvas 双层氛围层 + 统一光源 + 镜头缓动',
+    items: [
+      '新增：环境氛围层迁至 Canvas 2D（双层景深）—— 雨 46→150-340 条、雪 34→100-240 颗、星 64→80-90 颗',
+      '新增：统一光源表（dawn/noon/dusk/night）—— 主角/伴飞投影方向与天体位置一致',
+      '新增：镜头缓动层（3.2s scale 1.05→1），配合推镜节奏',
+      '新增：闪电 Canvas 绘制（主闪+余闪+折线），全屏补光与粒子联动',
+      '优化：远山加 1px 模糊 + 90% 透明度（大气透视），减弱拼贴感',
+      '重构：粒子生成从 boot-scene 迁至 boot-atmosphere 纯函数层（12 类天气全覆盖，可单测）',
+      '变更：heroOpacity 下限 0.35→0.55 —— canvas 粒子提上密度后，主角过淡会被环境层洗掉',
+    ],
+  },
+  {
     version: 'v1.21.0',
     date: '2026-08-30',
     title: '待办状态切换体验：坠落滑移动画与撤销升级',

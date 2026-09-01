@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  timeSegmentOf, makeStars, makeParticles, seededRandom, SEGMENT_BOUNDS,
+  timeSegmentOf, seededRandom, SEGMENT_BOUNDS,
   WEATHER_MOOD, heroOpacity, EXTRA_ELEMENTS, BOOT_WEATHERS, SEGMENT_PALETTES,
 } from '../src/app/boot-scene'
 import { WEATHER_KINDS } from '../src/lib/weather'
@@ -41,10 +41,12 @@ describe('天气氛围参数（WEATHER_MOOD）', () => {
     expect(WEATHER_MOOD.thunder.dim).toBeGreaterThan(WEATHER_MOOD.rain.dim)
     expect(WEATHER_MOOD.rain.dim).toBeGreaterThan(WEATHER_MOOD.overcast.dim)
   })
-  it('恶劣天气天体减淡但不完全消失（下限 0.35）', () => {
+  it('恶劣天气天体减淡但保持可见（下限 0.55：主角不能被环境粒子层洗掉）', () => {
     expect(heroOpacity('clear')).toBe(1)
-    expect(heroOpacity('thunder')).toBeCloseTo(1 - WEATHER_MOOD.thunder.dim * 1.05)
-    for (const k of WEATHER_KINDS) expect(heroOpacity(k)).toBeGreaterThanOrEqual(0.35)
+    // 雷暴 dim 最重 → 触底取下限，不再继续变淡
+    expect(heroOpacity('thunder')).toBeCloseTo(0.55)
+    expect(heroOpacity('rain')).toBeGreaterThan(heroOpacity('heavy-rain'))
+    for (const k of WEATHER_KINDS) expect(heroOpacity(k)).toBeGreaterThanOrEqual(0.55)
   })
   it('四时段调色板齐全（天空 4 色标 + 两层山）', () => {
     for (const seg of ['dawn', 'noon', 'dusk', 'night'] as const) {
@@ -55,22 +57,12 @@ describe('天气氛围参数（WEATHER_MOOD）', () => {
   })
 })
 
-describe('种子随机与粒子生成', () => {
+// 注：粒子生成（星/雨/雪/雾）已迁至 boot-atmosphere.ts 的 Canvas 版，对应测试见 tests/boot-atmosphere.test.ts
+describe('种子随机（环境粒子确定性的基础）', () => {
   it('同种子输出完全一致（StrictMode 双挂载/E2E 稳定）', () => {
     const a = seededRandom(42)
     const b = seededRandom(42)
     expect([a(), a(), a()]).toEqual([b(), b(), b()])
-    expect(makeStars(64, 20260830)).toEqual(makeStars(64, 20260830))
-  })
-  it('星星数量与分布约束（top ≤ 65%）', () => {
-    const stars = makeStars(64, 20260830)
-    expect(stars).toHaveLength(64)
-    expect(stars.every(s => s.top >= 0 && s.top <= 65)).toBe(true)
-  })
-  it('雨雪增强粒子带 sway 档位（0–2）', () => {
-    const drops = makeParticles(42, 3, { sizeMin: 14, sizeMax: 24, durMin: 0.55, durMax: 1 })
-    expect(drops).toHaveLength(42)
-    expect(drops.every(d => d.drift >= 0 && d.drift <= 2)).toBe(true)
   })
   it('预览钩子候选表与天气全集一致', () => {
     expect(BOOT_WEATHERS).toEqual(WEATHER_KINDS)
