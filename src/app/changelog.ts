@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.23.0',
+    date: '2026-09-02',
+    title: '「我的」页五段式改版（周趋势/状态徽章/更新日志/添加到主屏幕）',
+    items: [
+      '新增：个人中心五段式改版——身份卡/周趋势/累计统计/分组行/关于',
+    ],
+  },
+  {
     version: 'v1.22.1',
     date: '2026-09-02',
     title: '启动动画：替换卡通天体为程序化光源（太阳 + 月亮）',
