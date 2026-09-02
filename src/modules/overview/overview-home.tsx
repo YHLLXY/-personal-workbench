@@ -3,10 +3,10 @@ import { CheckCircle2, Star, ArrowRight, Flame } from 'lucide-react'
 import { OverviewSummary } from './overview-summary'
 import { useTasks, isTodayScope } from './api'
 import { useExamsSoon, daysUntil } from '../study/api'
-import { useHeatCells } from '../health/api'
 import { todayStr } from '@/lib/db/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MobileHomeEntries } from '@/components/mobile-entries'
+import { MiniHeatmap } from '@/components/mini-heatmap'
 import { WeeklyTrendCard } from './weekly-trend'
 import { WeatherCard } from './weather-card'
 
@@ -65,15 +65,6 @@ export default function OverviewHome() {
       {/* 快捷入口 */}
       <MobileHomeEntries />
       <WeeklyTrendCard />
-    </div>
-  )
-}
-
-function MiniHeatmap() {
-  const { data: cells } = useHeatCells(14)
-  return (
-    <div className="grid gap-1" style={{ gridTemplateColumns: 'repeat(14, minmax(0, 1fr))' }}>
-      {cells?.map((c, i) => <span key={i} className={`h-3.5 rounded-[4px] ${c.level === 0 ? 'bg-muted' : c.level === 1 ? 'bg-primary/25' : c.level === 2 ? 'bg-primary/55' : 'bg-primary'}`} />)}
     </div>
   )
 }

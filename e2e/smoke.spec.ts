@@ -108,3 +108,16 @@ test('复盘：展开成就分区 → 填写保存 → 成功反馈', async ({ p
   await page.getByRole('button', { name: '保存复盘' }).click()
   await expect(page.getByText('今日复盘已保存')).toBeVisible()
 })
+
+test('我的页：五段式渲染 → 版本号动态展示 → 更新日志弹窗可见', async ({ page }) => {
+  await goto(page, '/settings')
+  await expect(page.getByRole('heading', { level: 1, name: '我的' })).toBeVisible()
+  await expect(page.getByText('累计统计')).toBeVisible()
+  await expect(page.getByText('💾 本地存储')).toBeVisible()
+  // v1.23：关于区版本号动态读取 CHANGELOG（修复硬编码 v1.2）
+  await expect(page.getByText(/我的工作台 v1\.\d+/)).toBeVisible()
+  await page.getByRole('button', { name: '查看更新日志' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText(/v1\.\d+/).first()).toBeVisible()
+})

@@ -10,12 +10,13 @@ import ResetPasswordPage from './app/reset-password'
 import { allSubModules } from './registry'
 import { isCloudMode } from './lib/db'
 import { Skeleton } from '@/components/ui/skeleton'
-import { SettingsPage } from './modules/me/settings'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { lazyRetry } from './lib/lazy-retry'
 import BootAnimation from './app/boot-animation'
 
 const ProjectDetailPage = lazyRetry(() => import('./modules/projects/project-detail'))
+// v1.23 起「我的」页懒加载（曾静态打进入口 chunk，是全站唯一例外）
+const SettingsPage = lazyRetry(() => import('./modules/me/settings').then(m => ({ default: m.SettingsPage })))
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1 } } })
 
