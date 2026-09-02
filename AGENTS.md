@@ -53,6 +53,7 @@ tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 
 4. **发版按 VERSIONING.md**：feat→minor / fix→patch / 破坏性→major；多 commit 归并取最高档；24h 内追加修复并入当前版本；`docs:/chore:/refactor:` 不发版。
 5. **提交前验证**：`npm test` 全绿 + `npm run build` 通过 + `npm run lint` 警告 ≤ 基线 12 条（对比改动前后数量）；改动核心流程（待办/目标/速记/复盘/主题）时加跑 `npx playwright test`（e2e/ 冒烟，本地 IndexedDB 模式无需 env）。
 5b. **双实现改动**：动 local-repository 或 supabase-repository 后必须跑 `tests/repository-contract.test.ts`——同脚本双仓储逻辑快照对比，防漂移（曾抓到云端速记不刷新 updated_at）。
+5c. **本 IDE 里长命令会被掐断**（验证前必读）：`npm test` / `npm run build` / `npx playwright test` 常被判定为 watch 服务，**10 秒后返回空输出且进程被杀**，拿不到任何结果——不要误读为超时或失败。**解法**：`Start-Process` 后台启动并重定向输出到日志（stdout 与 stderr **必须**写不同文件，PowerShell 否则直接报错），再 `Start-Sleep 8~9` 后 `Get-Content` 轮询，重复几轮即可（全量 vitest 约 60s，E2E 约 30s）。两个连带坑：① **含中文路径的命令会被编码破坏**，改用 `Get-ChildItem -Recurse -Filter package.json` 定位目录再 `Set-Location`；② 因此**中文 commit message 不能走 `-m`**，改走 `git commit -F <UTF-8 文件>`，中文文件名的 `git add` 用 `git add -u`。详见 `经验总结-审查核实与功能迭代执行.md` 第十三节。
 6. **前端表单防连击**：所有 create/update mutation 的提交按钮在 isPending 时禁用（历史上目标/身体记录都因此重复过）。
 
 ## 避坑清单（每条都真实踩过）
