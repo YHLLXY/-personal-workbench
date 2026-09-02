@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  ATMO_PRESETS, LIGHTNING_AT, LIGHT_BY_SEGMENT, METEORS,
+  ATMO_PRESETS, CELESTIAL_BY_SEGMENT, LIGHTNING_AT, LIGHT_BY_SEGMENT, METEORS,
   makeDrops, makeFlakes, makeFog, makeStars, sceneAtmosphere, scaleCount,
   type Viewport,
 } from '../src/app/boot-atmosphere'
@@ -157,5 +157,64 @@ describe('sceneAtmosphere（整场组装）', () => {
     expect(LIGHTNING_AT.length).toBeGreaterThan(0)
     for (const at of LIGHTNING_AT) expect(at).toBeGreaterThan(0)
     expect([...LIGHTNING_AT].sort((a, b) => a - b)).toEqual(LIGHTNING_AT)
+  })
+})
+
+describe('CELESTIAL_BY_SEGMENT（程序化天体，取代卡通太阳）', () => {
+  const SEGS = ['dawn', 'noon', 'dusk', 'night'] as const
+
+  it('四时段都有天体：白天是太阳，夜晚是月亮', () => {
+    expect(CELESTIAL_BY_SEGMENT.dawn.kind).toBe('sun')
+    expect(CELESTIAL_BY_SEGMENT.noon.kind).toBe('sun')
+    expect(CELESTIAL_BY_SEGMENT.dusk.kind).toBe('sun')
+    expect(CELESTIAL_BY_SEGMENT.night.kind).toBe('moon')
+  })
+
+  it('圆盘半径适中：过小失去辨识度，过大又喧宾夺主', () => {
+    for (const seg of SEGS) {
+      const r = CELESTIAL_BY_SEGMENT[seg].coreR
+      expect(r).toBeGreaterThanOrEqual(4)
+      expect(r).toBeLessThanOrEqual(10)
+    }
+  })
+
+  it('辉光两层：外辉范围更大，内辉更浓；都不许糊成一片', () => {
+    for (const seg of SEGS) {
+      const c = CELESTIAL_BY_SEGMENT[seg]
+      expect(c.glowOuter.scale).toBeGreaterThan(c.glowInner.scale)
+      expect(c.glowInner.alpha).toBeGreaterThan(c.glowOuter.alpha)
+      expect(c.glowInner.alpha).toBeLessThanOrEqual(0.5)
+      expect(c.glowOuter.alpha).toBeLessThanOrEqual(0.3)
+    }
+  })
+
+  it('月海只属于月亮，且全部落在月盘内、浓度不脏', () => {
+    for (const seg of ['dawn', 'noon', 'dusk'] as const) {
+      expect(CELESTIAL_BY_SEGMENT[seg].maria).toHaveLength(0)
+    }
+    const moon = CELESTIAL_BY_SEGMENT.night
+    expect(moon.maria.length).toBeGreaterThan(0)
+    for (const m of moon.maria) {
+      // 偏移距离 + 半径 ≤ 1（相对圆盘半径），否则会溢出月盘
+      expect(Math.hypot(m.dx, m.dy) + m.r).toBeLessThanOrEqual(1)
+      expect(m.alpha).toBeGreaterThan(0)
+      expect(m.alpha).toBeLessThan(0.2)
+    }
+  })
+
+  it('呼吸幅度温和（≤8%），不用机械旋转抢戏', () => {
+    for (const seg of SEGS) {
+      expect(CELESTIAL_BY_SEGMENT[seg].breathAmount).toBeLessThanOrEqual(0.08)
+      expect(CELESTIAL_BY_SEGMENT[seg].breathSec).toBeGreaterThan(0)
+    }
+  })
+
+  it('天体只在晴天出现：阴雨等看不见太阳的天气不画', () => {
+    const noSun: Parameters<typeof sceneAtmosphere>[0][] = [
+      'partly', 'overcast', 'fog', 'drizzle', 'rain', 'heavy-rain', 'sleet', 'snow', 'heavy-snow', 'thunder',
+    ]
+    for (const k of noSun) expect(sceneAtmosphere(k, 'noon', VP).celestial).toBeNull()
+    expect(sceneAtmosphere('clear', 'noon', VP).celestial).toBe(CELESTIAL_BY_SEGMENT.noon)
+    expect(sceneAtmosphere('mostly-clear', 'night', VP).celestial).toBe(CELESTIAL_BY_SEGMENT.night)
   })
 })

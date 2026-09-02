@@ -12,6 +12,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.22.1',
+    date: '2026-09-02',
+    title: '启动动画：替换卡通天体为程序化光源（太阳 + 月亮）',
+    items: [
+      '修复：进场动画里的卡通太阳「太扎眼，和现在的版本不吻合」—— 6s 匀速自转的射线轮 + 高饱和 #F8AF18 + 与 .boot-halo 的 26s conic 条纹两个旋转打架',
+      '新增：CELESTIAL_BY_SEGMENT（boot-atmosphere.ts）—— 四时段的天体参数：圆盘 / 内外辉光 / 月海 / 呼吸，颜色由时段调色板派生',
+      '新增：drawCelestial（boot-atmosphere-canvas.tsx）—— 多层 radial-gradient 绘制，视觉重量靠辉光撑、不靠大圆盘；用 5-7s 极缓呼吸替代机械旋转',
+      '月亮：冷白圆盘 + 冷蓝月华 + 4 个月海（maria 暗斑是月亮独有的识别特征，提升辨识度与质感）',
+      '删除：.boot-big-sun / .boot-big-moon / .boot-halo 三个 DOM 元素、boot-spin keyframes、--light-glow CSS 变量',
+      '素材保留：clear-day / clear-night 等 SVG 仍被天气卡复用（小图标场景下射线带来的辨识度有价值，符合 Apple「分语境」原则）',
+    ],
+  },
+  {
     version: 'v1.22.0',
     date: '2026-09-01',
     title: '启动动画：Canvas 双层氛围层 + 统一光源 + 镜头缓动',

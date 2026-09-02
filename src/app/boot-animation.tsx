@@ -125,7 +125,6 @@ function BootScene({ seg, weather, exiting, onSkip }: { seg: BootSegment; weathe
     '--hero-shadow-dy': `${light.shadowDy}px`,
     '--cloud-shadow-dx': `${Math.round(light.shadowDx * 0.6)}px`,
     '--cloud-shadow-dy': `${Math.round(light.shadowDy * 0.6)}px`,
-    '--light-glow': light.glow,
     ['--hero-enter-delay' as string]: `${HERO_ENTER_DELAY_S}s`,
     ['--hero-float-dur' as string]: `${HERO_FLOAT_S}s`,
   } as CSSProperties
@@ -140,17 +139,10 @@ function BootScene({ seg, weather, exiting, onSkip }: { seg: BootSegment; weathe
         <BootAtmosphere weather={weather} seg={seg} paused={exiting} />
 
         {seg === 'dawn' && <div className="boot-lighten" />}
-
-        {/* 晴昼：光源处的柔光，位置与投影方向同源 */}
-        {isClear && isDay && <div className="boot-halo" style={{ left: `${light.x - 18}%`, top: `${light.y - 26}%` }} />}
-        {/* 晴昼：大太阳（Meteocons，自带光芒动画） */}
-        {isClear && isDay && (
-          <img src={weatherIconUrl('clear', true)} alt="" className="boot-big-sun" draggable={false} />
-        )}
-        {/* 夜晴：月亮（位置与夜间光源对齐） */}
-        {isClear && !isDay && (
-          <img src={weatherIconUrl('clear', false)} alt="" className="boot-big-moon" draggable={false} />
-        )}
+        {/* 晴天的太阳 / 夜晚的月亮由 Canvas 程序化绘制（drawCelestial in boot-atmosphere-canvas.tsx）。
+            此处不再使用 Meteocons 卡通天体：其「渐变圆盘 + 8 条硬边射线 + 6s 匀速自转」
+            在 46vmin 的全屏氛围里过于抢戏，且高饱和 #F8AF18 与冷调天空撞色。
+            素材本身保留——天气卡的小图标场景仍需要射线带来的辨识度。 */}
 
         {/* 主角：Meteocons 动画图标（自身带雨滴/雪花/闪电/光芒 SMIL 动画） */}
         {!isClear && (

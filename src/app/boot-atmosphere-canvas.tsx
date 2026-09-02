@@ -8,7 +8,7 @@
  * 大小/速度/透明度，形成真正的远-中-近景深，而不是手调的散点。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LIGHTNING_AT, sceneAtmosphere, type Atmosphere, type Drop, type Flake, type FogBand, type Viewport } from './boot-atmosphere'
+import { LIGHTNING_AT, MARIA_RGB, sceneAtmosphere, type Atmosphere, type Drop, type Flake, type FogBand, type RGB, type Viewport } from './boot-atmosphere'
 import type { BootSegment } from './boot-scene'
 import type { WeatherKind } from '@/lib/weather'
 
@@ -68,6 +68,73 @@ function drawStars(ctx: CanvasRenderingContext2D, atmo: Atmosphere, t: number) {
     ctx.beginPath()
     ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
     ctx.fill()
+  }
+}
+
+const rgba = (c: RGB, a: number) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`
+
+/** 径向渐隐圆：中心峰值 → 三段衰减到透明，用于辉光 / 大气散射层 */
+function drawGlow(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, rgb: RGB, alpha: number) {
+  if (r <= 0) return
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
+  g.addColorStop(0, rgba(rgb, alpha))
+  g.addColorStop(0.42, rgba(rgb, alpha * 0.42))
+  g.addColorStop(0.72, rgba(rgb, alpha * 0.14))
+  g.addColorStop(1, rgba(rgb, 0))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+/**
+ * 天体（太阳 / 月亮）：外辉 → 内辉 → 偏心渐变圆盘 → 月海。
+ * 取代 Meteocons 卡通太阳（渐变圆盘 + 8 条硬边射线 + 6s 匀速自转）；
+ * 这里没有射线、没有机械旋转，只有极缓的呼吸，视觉重量交给辉光而不是大圆盘。
+ */
+function drawCelestial(ctx: CanvasRenderingContext2D, atmo: Atmosphere, vp: Viewport, t: number) {
+  const c = atmo.celestial
+  if (!c) return
+  const cx = (atmo.light.x / 100) * vp.w
+  const cy = (atmo.light.y / 100) * vp.h
+  const r = (c.coreR / 100) * Math.min(vp.w, vp.h)
+  const breath = 1 + Math.sin((t / c.breathSec) * Math.PI * 2) * c.breathAmount
+
+  // 由外向内叠加：大气散射 → 内辉 → 圆盘
+  drawGlow(ctx, cx, cy, r * c.glowOuter.scale * breath, c.glowOuter.rgb, c.glowOuter.alpha)
+  drawGlow(ctx, cx, cy, r * c.glowInner.scale * breath, c.glowInner.rgb, c.glowInner.alpha)
+
+  const cr = r * breath
+  // 偏心渐变：光源偏左上，让圆盘有球体受光的立体感而不是一张平贴纸
+  const g = ctx.createRadialGradient(cx - cr * 0.22, cy - cr * 0.22, cr * 0.06, cx, cy, cr)
+  g.addColorStop(0, rgba(c.core.center, 1))
+  g.addColorStop(0.62, rgba(c.core.center, 0.98))
+  g.addColorStop(1, rgba(c.core.edge, 0.92))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.arc(cx, cy, cr, 0, Math.PI * 2)
+  ctx.fill()
+
+  // 月海：clip 在月盘内，避免暗斑溢出成毛边椭圆
+  if (c.maria.length) {
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(cx, cy, cr, 0, Math.PI * 2)
+    ctx.clip()
+    for (const m of c.maria) {
+      const mx = cx + m.dx * cr
+      const my = cy + m.dy * cr
+      const mr = m.r * cr
+      const mg = ctx.createRadialGradient(mx, my, 0, mx, my, mr)
+      mg.addColorStop(0, rgba(MARIA_RGB, m.alpha))
+      mg.addColorStop(0.6, rgba(MARIA_RGB, m.alpha * 0.7))
+      mg.addColorStop(1, rgba(MARIA_RGB, 0))
+      ctx.fillStyle = mg
+      ctx.beginPath()
+      ctx.arc(mx, my, mr, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
   }
 }
 
@@ -142,6 +209,8 @@ function paint(ctx: CanvasRenderingContext2D, atmo: Atmosphere, vp: Viewport, la
     // 最上面一条雾带属于高空远景，压在主角之下；其余（低空雾）属于近景，压在主角之上
     drawFog(ctx, atmo.fog.slice(0, 1), vp, t)
     drawStars(ctx, atmo, t)
+    // 天体压在星空之上（更近更亮），流星再压在天体之上（大气层现象）
+    drawCelestial(ctx, atmo, vp, t)
     drawMeteors(ctx, atmo, vp, t)
     // 远景降水（depth < 0.5）画在主角之下
     drawDrops(ctx, atmo.drops.filter(d => d.depth < 0.5), atmo.spec.rainTilt, vp.h, t)

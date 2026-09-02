@@ -52,38 +52,11 @@
 .boot-hero.is-dusk { left: 32%; top: 30%; width: min(250px, 38vmin); }
 .boot-hero img { display: block; width: 100%; height: auto; pointer-events: none; }
 
-/* ---------- 晴天专属：大太阳 / 月亮 / 柔光 ---------- */
-.boot-big-sun {
-  position: absolute; left: 5%; top: 5%;
-  width: min(300px, 46vmin);
-  z-index: 3;
-  filter: drop-shadow(var(--hero-shadow-dx, 0px) var(--hero-shadow-dy, 18px) 44px rgb(8 14 30 / 0.25));
-  animation:
-    boot-hero-enter 1.2s cubic-bezier(0.22, 0.8, 0.36, 1) var(--hero-enter-delay, 0.15s) both,
-    boot-hero-float 5s ease-in-out calc(var(--hero-enter-delay, 0.15s) + 1.2s) infinite;
-}
-.boot-big-moon {
-  position: absolute; right: 9%; top: 8%;
-  width: min(210px, 32vmin);
-  z-index: 3;
-  /* 月亮自身是光源，用辉光而非方向性投影 */
-  filter: drop-shadow(0 0 26px var(--light-glow, rgb(190 214 255 / 0.3)));
-  animation:
-    boot-hero-enter 1.4s cubic-bezier(0.22, 0.8, 0.36, 1) var(--hero-enter-delay, 0.15s) both,
-    boot-hero-float 6s ease-in-out calc(var(--hero-enter-delay, 0.15s) + 1.4s) infinite;
-}
-.boot-halo {
-  position: absolute;
-  width: 64vmin; height: 64vmin;
-  z-index: 2;
-  border-radius: 50%;
-  background:
-    radial-gradient(closest-side, var(--light-glow, rgb(255 246 214 / 0.5)) 0%, transparent 62%),
-    repeating-conic-gradient(from 6deg, rgb(255 255 255 / 0.16) 0deg 2.5deg, transparent 2.5deg 12deg);
-  -webkit-mask: radial-gradient(closest-side, #000 0%, transparent 70%);
-  mask: radial-gradient(closest-side, #000 0%, transparent 70%);
-  animation: boot-spin 26s linear infinite;
-}
+/* ---------- 晴天专属天体 ----------
+   太阳 / 月亮改由 Canvas 程序化绘制（boot-atmosphere-canvas.tsx 的 drawCelestial），
+   此处不再有 DOM 天体与条纹光晕。
+   原 .boot-halo 用 repeating-conic-gradient 以 26s 转动，与卡通太阳的 6s 自转
+   在同一区域形成两个速率不同的旋转，是「扎眼」的成因之一，随卡通天体一并移除。 */
 
 /* ---------- 伴飞云层（视差深度） ---------- */
 .boot-extras { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
@@ -148,7 +121,6 @@
 @keyframes boot-hero-float { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -9px); } }
 @keyframes boot-extra-drift { from { transform: translateX(-2.6vw); } to { transform: translateX(2.6vw); } }
 @keyframes boot-camera { from { transform: scale(1.05) translateY(0.8%); } to { transform: scale(1) translateY(0); } }
-@keyframes boot-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes boot-lighten { from { opacity: 0.55; } to { opacity: 0; } }
 @keyframes boot-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes boot-fade-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
