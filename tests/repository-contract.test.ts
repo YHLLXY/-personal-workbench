@@ -34,6 +34,8 @@ function fakeSupabase(): SupabaseClient {
     if (name === 'wb_notes' && out.updated_at == null) out.updated_at = now
     if (name === 'wb_focus_sessions' && out.start_at == null) out.start_at = now
     if (name === 'wb_reviews' && out.updated_at == null) out.updated_at = now
+    if (name === 'wb_folders' && out.sort == null) out.sort = 0
+    if (['wb_push_subscriptions', 'wb_reminders'].includes(name) && out.created_at == null) out.created_at = now
     return out
   }
   const applyUpdate = (name: string, payload: Row, col: string, val: unknown): Row[] => {
@@ -84,6 +86,15 @@ function fakeSupabase(): SupabaseClient {
             then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve({ error: null }).then(res, rej),
           }
         },
+        // deleteFolder 用 .in 批量清 folder_id（v1.24 子树对齐）
+        in: (col: string, vals: unknown[]) => {
+          const updated: Row[] = []
+          for (const val of vals) updated.push(...applyUpdate(name, payload, col, val))
+          return {
+            select: () => ({ single: () => Promise.resolve({ data: updated[0] ?? null, error: null }) }),
+            then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve({ error: null }).then(res, rej),
+          }
+        },
       }),
       upsert: (payload: Row, opts?: { onConflict?: string }) => {
         const keys = (opts?.onConflict ?? '').split(',').map(s => s.trim()).filter(Boolean)
@@ -108,6 +119,12 @@ function fakeSupabase(): SupabaseClient {
           for (const r of [...rows]) if (r[col] === val) rows.splice(rows.indexOf(r), 1)
           // 迁移 001：wb_habit_logs.habit_id 对 wb_habits on delete cascade
           if (name === 'wb_habits') db['wb_habit_logs'] = rowsOf('wb_habit_logs').filter(l => l.habit_id !== val)
+          return Promise.resolve({ error: null })
+        },
+        // deleteFolder 用 .in 批量删子树（v1.24）
+        in: (col: string, vals: unknown[]) => {
+          const rows = rowsOf(name)
+          for (const r of [...rows]) if (vals.includes(r[col])) rows.splice(rows.indexOf(r), 1)
           return Promise.resolve({ error: null })
         },
       }),
@@ -156,13 +173,22 @@ async function runScript(repo: WorkbenchRepository) {
     exerciseRows: health.filter(l => l.type === 'exercise').map(l => l.value).sort((a, b) => a - b),
   }
 
-  // —— 学习目标：创建 → 进度推进 → 完成 ——
+  // —— 学习目标：创建 → 进度推进 → 完成 → 恢复 → 显式 completedAt 采纳（v1.24 对齐云端丢弃的漂移）——
   const g = await repo.createStudyGoal({ title: '刷题 50 道', target: 50, deadline: '2026-09-15', note: '每天 5 道' })
   await repo.updateStudyGoal(g.id, { progress: 10 })
   await repo.updateStudyGoal(g.id, { progress: 50 })
   await repo.updateStudyGoal(g.id, { status: 'done' })
-  const goals = await repo.listStudyGoals()
-  const goalSnap = goals.filter(x => x.id === g.id).map(x => ({ title: x.title, target: x.target, progress: x.progress, status: x.status, deadline: x.deadline, note: x.note, archived: x.completedAt != null }))
+  const goalAfterDone = (await repo.listStudyGoals()).find(x => x.id === g.id)
+  await repo.updateStudyGoal(g.id, { status: 'active' })
+  const goalAfterReopen = (await repo.listStudyGoals()).find(x => x.id === g.id)
+  await repo.updateStudyGoal(g.id, { completedAt: '2026-01-01T00:00:00.000Z' })
+  const goalAfterExplicit = (await repo.listStudyGoals()).find(x => x.id === g.id)
+  const goalSnap = {
+    doneAt: goalAfterDone?.completedAt != null,
+    reopenCleared: goalAfterReopen?.completedAt == null,
+    explicitCompletedAt: goalAfterExplicit?.completedAt === '2026-01-01T00:00:00.000Z',
+    fields: { title: goalAfterExplicit?.title, target: goalAfterExplicit?.target, progress: goalAfterExplicit?.progress, deadline: goalAfterExplicit?.deadline, note: goalAfterExplicit?.note },
+  }
 
   // —— 论文：finishedAt 跟随状态 ——
   const p1 = await repo.createPaper({ title: '契约论文', authors: 'Someone', arxivId: null, url: null, status: 'reading', rating: 4, note: null, type: 'paper', folderId: null, tags: [], content: null, summary: null, keywords: [], source: null })
@@ -192,7 +218,57 @@ async function runScript(repo: WorkbenchRepository) {
   const reviews = await repo.listReviews()
   const reviewSnap = reviews.filter(r => r.reviewDate === TODAY).map(r => ({ mood: r.mood, score: r.score, summary: r.summary, planTomorrow: r.planTomorrow }))
 
-  return { habitSnap, habitCascade, taskSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap }
+  // —— 考试：创建 → 更新 → 删除（v1.24 契约补盲）——
+  const e1 = await repo.createExam({ title: '期中考', examDate: '2026-09-15', examTime: '09:00', subject: '数学' })
+  const e2 = await repo.createExam({ title: '英语听力', examDate: '2026-09-20' })
+  await repo.updateExam(e1.id, { subject: '高等数学' })
+  await repo.deleteExam(e2.id)
+  const examSnap = (await repo.listExams()).filter(x => x.id === e1.id).map(x => ({ title: x.title, examDate: x.examDate, examTime: x.examTime, subject: x.subject }))
+
+  // —— 成长行动：steps/targets JSON 往返 + 状态更新（v1.24 契约补盲）——
+  const ga = await repo.createGrowthAction({ no: 1, title: '深呼吸', emoji: '🌿', category: '身心', why: '降焦虑', steps: ['吸气 4s', '屏息 4s', '呼气 6s'], targets: ['每天 3 次'], verify: '打卡记录', habitId: null })
+  await repo.updateGrowthAction(ga.id, { steps: ['吸气 4s', '屏息 4s', '呼气 6s', '复检 1min'], status: 'paused' })
+  const growthSnap = (await repo.listGrowthActions()).filter(x => x.id === ga.id).map(x => ({ no: x.no, title: x.title, steps: x.steps, targets: x.targets, status: x.status, habitId: x.habitId ?? null }))
+
+  // —— 番茄钟：两条记录，计数/总分钟与排序无关（v1.24 契约补盲）——
+  await repo.createFocusSession(25, '写周报')
+  await repo.createFocusSession(5)
+  const sessions = await repo.listFocusSessions()
+  const focusSnap = { count: sessions.length, minutes: sessions.reduce((s, x) => s + x.minutes, 0), notes: sessions.map(s => s.note ?? null).sort().join(',') }
+
+  // —— 文件夹：子树删除 + 子树内资料全部归未分类（v1.24 对齐云端只清直属的悬空漂移）——
+  const f1 = await repo.createFolder({ name: '父' })
+  const f2 = await repo.createFolder({ name: '子', parentId: f1.id })
+  const pf = await repo.createPaper({ title: '父内资料', authors: '', arxivId: null, url: null, status: 'want', rating: null, note: null, type: 'paper', folderId: f1.id, tags: [], content: null, summary: null, keywords: [], source: null })
+  const pc = await repo.createPaper({ title: '子内资料', authors: '', arxivId: null, url: null, status: 'want', rating: null, note: null, type: 'paper', folderId: f2.id, tags: [], content: null, summary: null, keywords: [], source: null })
+  await repo.deleteFolder(f1.id)
+  const papersAfterFolderDelete = await repo.listPapers()
+  const folderSnap = {
+    foldersLeft: (await repo.listFolders()).length,
+    parentPaperFolderId: papersAfterFolderDelete.find(x => x.id === pf.id)?.folderId ?? null,
+    childPaperFolderId: papersAfterFolderDelete.find(x => x.id === pc.id)?.folderId ?? null,
+  }
+
+  // —— 推送订阅：同 endpoint upsert 合并 → 移除（v1.24 契约补盲）——
+  await repo.savePushSubscription({ endpoint: 'https://push.example/1', keysP256dh: 'k1', keysAuth: 'a1', userAgent: 'ua-1' })
+  await repo.savePushSubscription({ endpoint: 'https://push.example/1', keysP256dh: 'k2', keysAuth: 'a2' })
+  const subsAfterUpsert = await repo.listPushSubscriptions()
+  const pushSnap = {
+    countAfterUpsert: subsAfterUpsert.length,
+    row: subsAfterUpsert.map(s => ({ endpoint: s.endpoint, keysP256dh: s.keysP256dh, keysAuth: s.keysAuth, userAgent: s.userAgent ?? null }))[0] ?? null,
+    countAfterRemove: 0,
+  }
+  await repo.removePushSubscription('https://push.example/1')
+  pushSnap.countAfterRemove = (await repo.listPushSubscriptions()).length
+
+  // —— 通道配置：写入读回 + 清空（v1.24 契约补盲）——
+  await repo.saveChannelConfigs({ serverchanKey: 'SCU-1' })
+  const channelSaved = (await repo.getChannelConfigs()).serverchanKey
+  await repo.saveChannelConfigs({ serverchanKey: null })
+  const channelCleared = (await repo.getChannelConfigs()).serverchanKey
+  const channelSnap = { saved: channelSaved, cleared: channelCleared }
+
+  return { habitSnap, habitCascade, taskSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap }
 }
 
 describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', () => {
@@ -217,8 +293,33 @@ describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', (
   it('身体记录：体重/睡眠当日覆盖、运动多条一致', () => {
     expect(supaSnap.healthSnap).toEqual(localSnap.healthSnap)
   })
-  it('学习目标：进度推进与归档一致', () => {
+  it('学习目标：进度推进、归档/恢复/显式 completedAt 一致', () => {
     expect(supaSnap.goalSnap).toEqual(localSnap.goalSnap)
+  })
+  it('考试：创建/更新/删除语义一致', () => {
+    expect(supaSnap.examSnap).toEqual(localSnap.examSnap)
+    expect(supaSnap.examSnap[0]?.subject).toBe('高等数学')
+  })
+  it('成长行动：steps/targets JSON 往返与状态一致', () => {
+    expect(supaSnap.growthSnap).toEqual(localSnap.growthSnap)
+    expect(supaSnap.growthSnap[0]?.steps).toHaveLength(4)
+  })
+  it('番茄钟：计数与总分钟一致', () => {
+    expect(supaSnap.focusSnap).toEqual(localSnap.focusSnap)
+    expect(supaSnap.focusSnap).toEqual({ count: 2, minutes: 30, notes: ',写周报' })
+  })
+  it('文件夹：子树删除后子树内资料全部归未分类（双实现一致，无悬空 folder_id）', () => {
+    expect(supaSnap.folderSnap).toEqual(localSnap.folderSnap)
+    expect(supaSnap.folderSnap).toEqual({ foldersLeft: 0, parentPaperFolderId: null, childPaperFolderId: null })
+  })
+  it('推送订阅：同 endpoint 合并与移除一致', () => {
+    expect(supaSnap.pushSnap).toEqual(localSnap.pushSnap)
+    expect(supaSnap.pushSnap.countAfterUpsert).toBe(1)
+    expect(supaSnap.pushSnap.row?.keysP256dh).toBe('k2')
+  })
+  it('通道配置：写入读回与清空一致', () => {
+    expect(supaSnap.channelSnap).toEqual(localSnap.channelSnap)
+    expect(supaSnap.channelSnap).toEqual({ saved: 'SCU-1', cleared: null })
   })
   it('速记：标签、归档一致', () => {
     expect(supaSnap.noteSnap).toEqual(localSnap.noteSnap)

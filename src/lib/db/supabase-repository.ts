@@ -163,7 +163,8 @@ export class SupabaseRepository implements WorkbenchRepository {
     if (error) throw error; return goalFromRow(data)
   }
   async updateStudyGoal(id: string, p: Partial<StudyGoal>) {
-    const { data, error } = await this.sb.from('wb_study_goals').update({ title: p.title, target: p.target, progress: p.progress, deadline: p.deadline, status: p.status, note: p.note, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : undefined }).eq('id', id).select().single()
+    // completedAt 派生规则与本地对齐（契约测试防漂移）：归档写入、恢复清空、纯进度更新不动、显式 patch 采纳
+    const { data, error } = await this.sb.from('wb_study_goals').update({ title: p.title, target: p.target, progress: p.progress, deadline: p.deadline, status: p.status, note: p.note, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt !== undefined ? p.completedAt : undefined }).eq('id', id).select().single()
     if (error) throw error; return goalFromRow(data)
   }
   async deleteStudyGoal(id: string) { const { error } = await this.sb.from('wb_study_goals').delete().eq('id', id); if (error) throw error }
@@ -210,10 +211,22 @@ export class SupabaseRepository implements WorkbenchRepository {
     if (error) throw error; return folderFromRow(data)
   }
   async deleteFolder(id: string) {
-    const { error: delErr } = await this.sb.from('wb_folders').delete().eq('id', id)
-    if (delErr) throw delErr
-    const { error: upErr } = await this.sb.from('wb_papers').update({ folder_id: null }).eq('folder_id', id)
+    // 与本地语义一致（repository-contract 防漂移）：收集子树 → 子树内资料归未分类 → 删除子树文件夹。
+    // wb_folders.parent_id 虽有 on delete cascade（002_add_folders），但 wb_papers.folder_id 无外键——
+    // 只清直属会留下指向被级联删除子文件夹的悬空资料（v1.23 架构横扫发现的 P1 漂移）。
+    const { data: all, error: fetchErr } = await this.sb.from('wb_folders').select('id, parent_id')
+    if (fetchErr) throw fetchErr
+    const children = new Set([id])
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const f of all ?? []) if (children.has(String(f.parent_id)) && !children.has(String(f.id))) { children.add(String(f.id)); grew = true }
+    }
+    const ids = [...children]
+    const { error: upErr } = await this.sb.from('wb_papers').update({ folder_id: null }).in('folder_id', ids)
     if (upErr) throw upErr
+    const { error: delErr } = await this.sb.from('wb_folders').delete().in('id', ids)
+    if (delErr) throw delErr
   }
   async moveFolder(id: string, newParentId: string | null) {
     const { data: allFolders, error: fetchErr } = await this.sb.from('wb_folders').select('id, parent_id')
