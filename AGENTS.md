@@ -51,8 +51,8 @@ src/
   lib/            纯函数工具（heatmap/celebrate/pomodoro/hot/backup/stats…）
   components/ui/  shadcn 组件（base-ui 底座，非 radix）
   sw.ts           Service Worker（Workbox injectManifest）
-api/              Vercel Serverless Functions（auth/hot/projects/reminders）—— 单文件约束！
-supabase/migrations/  000-008 全部幂等
+api/              Vercel Serverless Functions（auth/hot/projects/reminders/weather/air-quality）—— 单文件约束！
+supabase/migrations/  001-010 共 11 个文件（002 编号重复：002_add_folders / 002_subscriptions，历史既成不改名）；全部幂等可重复执行（003_reminders 自述策略块除外）
 tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 时走本地仓储真库）
 ```
 

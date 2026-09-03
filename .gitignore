@@ -42,3 +42,6 @@ playwright-report/
 
 # FLIP 动画截帧自检（scripts/flip-preview.mjs 输出）
 .tmp-flip/
+
+# UI 走查截图证据（本地分析产物，不入库）
+gui-test-screenshots/

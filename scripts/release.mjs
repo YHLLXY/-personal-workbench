@@ -81,7 +81,13 @@ try {
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
   console.log(`✓ 已写入 changelog v${next} 并同步 package.json`)
 
-  // 6. 质量门禁
+  // 6. 质量门禁：lint 最快放最前；警告超基线即失败（补齐 VERSIONING §4 的 lint 承诺，此前门禁漏跑）
+  const LINT_BASELINE = 12 // oxlint 警告基线；上调需在发版 commit 说明理由
+  console.log('⏳ npm run lint …')
+  const lintOut = sh('npm run lint')
+  const warnings = Number((lintOut.match(/Found (\d+) warnings?/) ?? [])[1] ?? 0)
+  if (warnings > LINT_BASELINE) throw new Error(`lint 警告 ${warnings} 超基线 ${LINT_BASELINE}`)
+  console.log(`✓ lint 警告 ${warnings}/${LINT_BASELINE}`)
   for (const cmd of ['npm test', 'npm run build']) {
     console.log(`⏳ ${cmd} …`)
     execSync(cmd, { cwd: ROOT, stdio: 'inherit' })
