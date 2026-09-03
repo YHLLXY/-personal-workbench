@@ -272,7 +272,8 @@ function DataSection() {
             <div className="text-sm">导入恢复</div>
             <p className="mt-0.5 text-xs text-muted-foreground">备份文件会覆盖当前全部数据，也可用于本地 ↔ 云端迁移</p>
           </div>
-          <label className="cursor-pointer">
+          {/* relative：sr-only 是 absolute，无 positioned 祖先时会以文档为基准撑出页面级滚动（v1.24 壳层滚动 bug 根因） */}
+          <label className="relative cursor-pointer">
             <span className="sr-only">选择备份文件</span>
             <input type="file" accept=".json" className="hidden" onChange={handleImportFile} />
             <Button type="button" variant="outline" size="sm" tabIndex={-1}>导入</Button>

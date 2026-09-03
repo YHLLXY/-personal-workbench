@@ -77,7 +77,7 @@ export function AddNote({ open, onOpenChange, defaultFolderId }: { open: boolean
             <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/80 py-8">
               <Upload className="size-6 text-muted-foreground/50" />
               <p className="text-xs text-muted-foreground">支持提取器导出的 .json 或 Markdown 笔记 .md</p>
-              <label className="cursor-pointer">
+              <label className="relative cursor-pointer">
                 <span className="sr-only">选择文件</span>
                 <input type="file" accept=".json,.md" className="hidden" onChange={handleFile} />
                 <Button type="button" variant="outline" size="sm" onClick={() => { /* 点击 label 即触发 file input */ }}>选择文件</Button>
