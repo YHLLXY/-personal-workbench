@@ -10,6 +10,7 @@ import { streakFromLogDates } from '../../lib/heatmap'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { EmptyState } from '@/components/empty-state'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { GrowthAction, Habit } from '../../lib/db/types'
@@ -30,6 +31,7 @@ function weekCells(dates: Set<string>): boolean[] {
 }
 
 export default function Growth() {
+  const [tab, setTab] = useState('today')
   const { data: actions } = useGrowthActions()
   const importPresets = useImportPresets()
 
@@ -47,13 +49,13 @@ export default function Growth() {
           </Button>
         </div>
       )}
-      <Tabs defaultValue="today">
+      <Tabs value={tab} onValueChange={v => setTab(v as string)}>
         <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="today">今日行动</TabsTrigger>
           <TabsTrigger value="plans">行动计划</TabsTrigger>
           <TabsTrigger value="review">周复盘</TabsTrigger>
         </TabsList>
-        <TabsContent value="today" className="pt-4"><TodayPanel /></TabsContent>
+        <TabsContent value="today" className="pt-4"><TodayPanel onGoToPlans={() => setTab('plans')} /></TabsContent>
         <TabsContent value="plans" className="pt-4"><PlansPanel /></TabsContent>
         <TabsContent value="review" className="pt-4"><ReviewPanel /></TabsContent>
       </Tabs>
@@ -62,7 +64,7 @@ export default function Growth() {
 }
 
 /** Tab1 今日行动：进行中行动的打卡清单（复用习惯打卡链路） */
-function TodayPanel() {
+function TodayPanel({ onGoToPlans }: { onGoToPlans: () => void }) {
   const { data: actions } = useGrowthActions()
   const { data: habits } = useHabits()
   const { data: logs } = useHabitLogs()
@@ -71,7 +73,10 @@ function TodayPanel() {
   const active = (actions ?? []).filter(a => a.status === 'active').sort((a, b) => a.no - b.no)
   const habitOf = (a: GrowthAction) => habits?.find(h => h.id === a.habitId && h.active)
 
-  if (active.length === 0) return <p className="text-sm text-muted-foreground py-6 text-center">还没有进行中的行动，去「行动计划」导入</p>
+  if (active.length === 0) return (
+    <EmptyState icon={<TrendingUp />} title="还没有进行中的行动" desc="在「行动计划」一键导入十项行动后，这里按天打卡"
+      action={<Button size="sm" onClick={onGoToPlans}>去行动计划</Button>} />
+  )
 
   /** 打卡 + 三层成就感反馈：卡片动效 / 纸屑震动 / 全部完成与连击里程碑加强 toast */
   function checkIn(e: MouseEvent<HTMLButtonElement>, a: GrowthAction, habit: Habit) {

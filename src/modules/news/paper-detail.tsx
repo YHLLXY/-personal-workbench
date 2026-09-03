@@ -128,7 +128,7 @@ export function PaperDetail({ paper, open, onOpenChange }: { paper: Paper | null
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">评分</label>
-                <Select value={rating} onValueChange={v => setRating(String(v))}>
+                <Select value={rating} onValueChange={v => setRating(String(v))} items={{ '': '未评分', ...Object.fromEntries([1, 2, 3, 4, 5].map(n => [String(n), `${n} 分`])) }}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value=""><span className="text-muted-foreground">未评分</span></SelectItem>
@@ -144,7 +144,7 @@ export function PaperDetail({ paper, open, onOpenChange }: { paper: Paper | null
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">状态</label>
-                <Select value={status} onValueChange={v => setStatus(v as Paper['status'])}>
+                <Select value={status} onValueChange={v => setStatus(v as Paper['status'])} items={STATUS_LABEL}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {(['want', 'reading', 'done'] as const).map(s => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}
@@ -154,7 +154,7 @@ export function PaperDetail({ paper, open, onOpenChange }: { paper: Paper | null
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">文件夹</label>
-                <Select value={folder} onValueChange={v => setFolder(String(v))}>
+                <Select value={folder} onValueChange={v => setFolder(String(v))} items={{ '': '未分类', ...Object.fromEntries(folderOptions.map(f => [f.id, f.label])) }}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value=""><span className="text-muted-foreground">未分类</span></SelectItem>

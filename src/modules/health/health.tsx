@@ -8,22 +8,24 @@ import { HabitManager } from './habit-manager'
 import { todayStr } from '@/lib/db/types'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { EmptyState } from '@/components/empty-state'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 export default function Health() {
+  const [tab, setTab] = useState('checkin')
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="text-xl font-bold mb-1">运动健康</h1>
       <p className="text-xs text-muted-foreground mb-4">习惯打卡 · 体重 / 睡眠 / 运动记录</p>
-      <Tabs defaultValue="checkin">
+      <Tabs value={tab} onValueChange={v => setTab(v as string)}>
         <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="checkin">今日打卡</TabsTrigger>
           <TabsTrigger value="habits">习惯管理</TabsTrigger>
           <TabsTrigger value="records">身体记录</TabsTrigger>
         </TabsList>
-        <TabsContent value="checkin" className="pt-4"><CheckinPanel /></TabsContent>
+        <TabsContent value="checkin" className="pt-4"><CheckinPanel onGoToManage={() => setTab('habits')} /></TabsContent>
         <TabsContent value="habits" className="pt-4"><HabitManager /></TabsContent>
         <TabsContent value="records" className="pt-4"><RecordsPanel /></TabsContent>
       </Tabs>
@@ -31,7 +33,7 @@ export default function Health() {
   )
 }
 
-function CheckinPanel() {
+function CheckinPanel({ onGoToManage }: { onGoToManage: () => void }) {
   const { data: habits } = useHabits()
   const { data: actions } = useGrowthActions()
   const { data: logs } = useHabitLogs()
@@ -43,7 +45,10 @@ function CheckinPanel() {
 
   return (
     <div className="space-y-2">
-      {own.length === 0 && linked.length === 0 && <p className="text-sm text-muted-foreground py-6 text-center">先去「习惯管理」添加习惯</p>}
+      {own.length === 0 && linked.length === 0 && (
+        <EmptyState icon={<Flame />} title="还没有习惯" desc="添加习惯后，这里按天打卡"
+          action={<Button size="sm" onClick={onGoToManage}><Plus className="size-4 mr-1" />去习惯管理</Button>} />
+      )}
       {own.map(h => {
         const done = logs?.find(l => l.habitId === h.id && l.logDate === today)?.count ?? 0
         return (

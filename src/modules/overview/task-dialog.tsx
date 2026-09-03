@@ -58,7 +58,7 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
         <div className="space-y-3 pt-2">
           <Input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="任务内容" onKeyDown={e => e.key === 'Enter' && submit()} />
           <div className="flex gap-3">
-            <Select value={priority} onValueChange={v => setPriority(v as typeof priority)}>
+            <Select value={priority} onValueChange={v => setPriority(v as typeof priority)} items={{ high: '高优先级', medium: '中优先级', low: '低优先级' }}>
               <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="high"><span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-destructive" />高优先级</span></SelectItem>

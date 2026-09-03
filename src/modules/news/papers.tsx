@@ -87,7 +87,7 @@ export default function Papers() {
           <Button variant="ghost" size="sm" onClick={() => setGuideOpen(true)} aria-label="新手指引" title="新手指引">
             <CircleHelp className="size-4" />
           </Button>
-          <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
+          <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)} items={{ all: '全部状态', want: '想读', reading: '在读', done: '读完' }}>
             <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部状态</SelectItem>
@@ -96,7 +96,7 @@ export default function Papers() {
               <SelectItem value="done">读完</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={typeFilter} onValueChange={v => setTypeFilter(v as typeof typeFilter)}>
+          <Select value={typeFilter} onValueChange={v => setTypeFilter(v as typeof typeFilter)} items={TYPE_LABEL}>
             <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
             <SelectContent>
               {(['all', 'paper', 'note'] as const).map(t => <SelectItem key={t} value={t}>{TYPE_LABEL[t]}</SelectItem>)}
@@ -187,7 +187,7 @@ export default function Papers() {
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <div onClick={e => e.stopPropagation()}>
-                        <Select value={p.status} onValueChange={v => update.mutate({ id: p.id, patch: { status: v as Paper['status'] } })}>
+                        <Select value={p.status} onValueChange={v => update.mutate({ id: p.id, patch: { status: v as Paper['status'] } })} items={STATUS_LABEL}>
                           <SelectTrigger className={cn('h-8 w-20 text-xs', p.status === 'reading' && 'text-primary')}><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {(['want', 'reading', 'done'] as const).map(s => <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>)}

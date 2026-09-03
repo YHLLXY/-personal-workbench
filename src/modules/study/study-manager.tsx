@@ -5,6 +5,7 @@ import { ExamDialog } from './exam-dialog'
 import GoalManager from './goal-manager'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { EmptyState } from '@/components/empty-state'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { Exam } from '@/lib/db/types'
@@ -59,9 +60,9 @@ function ExamsPanel() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {isLoading ? <Skeleton className="h-28 col-span-2" /> : sorted.length === 0 ? (
-          <p className="text-sm text-muted-foreground col-span-2 py-6 text-center">
-            {subject ? `「${subject}」暂无考试` : '还没有考试，添加第一个倒计时吧'}
-          </p>
+<EmptyState className="col-span-2" icon={<CalendarClock />} title={subject ? `「${subject}」暂无考试` : '还没有考试'}
+            desc="添加考试后，这里显示倒计时"
+            action={<Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true) }}><Plus className="size-4 mr-1" />添加考试</Button>} />
         ) : sorted.map(e => <ExamCard key={e.id} exam={e} onEdit={() => { setEditing(e); setDialogOpen(true) }} onDelete={() => remove.mutate(e.id)} />)}
       </div>
       <ExamDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} />

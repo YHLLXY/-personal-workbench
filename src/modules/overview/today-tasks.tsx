@@ -61,7 +61,7 @@ export default function TodayTasks() {
         <div>
           <h1 className="text-xl font-bold">今日待办</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            今日 {todayList.length} 项{doneToday.length > 0 && <span className="text-primary"> · 已完成 {doneToday.length} 项</span>}{overdue.length > 0 && <span className="text-destructive"> · 逾期 {overdue.length} 项</span>} · 标记 ⭐ 为今日焦点（最多 3 项）
+            今日 {todayList.length} 项{doneToday.length > 0 && <span className="text-primary"> · 已完成 {doneToday.length} 项</span>}{overdue.length > 0 && <span className="text-destructive"> · 逾期 {overdue.length} 项</span>}<span className="hidden sm:inline"> · 标记 ⭐ 为今日焦点（最多 3 项）</span>
           </p>
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true) }}><Plus className="size-4 mr-1" />新建</Button>

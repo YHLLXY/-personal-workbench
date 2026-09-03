@@ -126,7 +126,7 @@ export function AddPaper({ open, onOpenChange, defaultFolderId }: { open: boolea
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">文件夹</label>
-                <Select value={folder} onValueChange={v => setFolder(String(v))}>
+                <Select value={folder} onValueChange={v => setFolder(String(v))} items={{ '': '未分类', ...Object.fromEntries((folders ?? []).map(f => [f.id, f.name])) }}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value=""><span className="text-muted-foreground">未分类</span></SelectItem>
