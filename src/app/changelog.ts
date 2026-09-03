@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.23.1',
+    date: '2026-09-03',
+    title: '技术债与体验修复批：云端删文件夹悬空数据根治、壳层滚动修复、界面细节打磨',
+    items: [
+      '修复：移动端待办头部防挤压 + 空态统一 CTA + Select 收起态中文标签',
+      '修复：壳层文档级滚动根治——sr-only 绝对定位逃逸 + EmptyState 支持 action',
+      '修复：greeting 抽出 lib 斩断 layout→daily-summary→changelog 静态链',
+      '修复：云端 deleteFolder 子树对齐（悬空 folder_id）+ 契约测试补六类盲区',
+    ],
+  },
+  {
     version: 'v1.23.0',
     date: '2026-09-02',
     title: '「我的」页五段式改版（周趋势/状态徽章/更新日志/添加到主屏幕）',
