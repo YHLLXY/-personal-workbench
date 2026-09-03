@@ -16,7 +16,7 @@ import { OnboardingOverlay } from './onboarding'
 import { useGlobalHotkeys } from './hotkeys'
 import { useReminderSync } from '@/modules/reminders/api'
 import { ErrorBoundary } from '@/components/error-boundary'
-import { greeting } from './daily-summary'
+import { greeting } from '@/lib/greeting'
 
 /** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」。
  *  review（今日复盘）不在底部 Tab：移动端仅保留首页卡片入口（home-review），路径 /review 仍可用（侧边栏/命令面板/复盘卡片）。 */

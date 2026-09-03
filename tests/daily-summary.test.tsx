@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import { daysBetween, daysLabel, greeting } from '../src/app/daily-summary'
+import { daysBetween, daysLabel } from '../src/app/daily-summary'
+import { greeting } from '../src/lib/greeting'
 import { todayStr } from '../src/lib/db/types'
 
 // 注意：fixture 日期必须相对「今天」动态生成——硬编码日期会在日期漂移后失效（2026-08-13 曾因此挂掉）

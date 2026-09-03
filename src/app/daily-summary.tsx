@@ -8,6 +8,7 @@ import { useTasks, useTaskMutations, todayTasks } from '@/modules/overview/api'
 import { useExamsSoon } from '@/modules/study/api'
 import { todayStr, localDateOfISO } from '@/lib/db/types'
 import { CHANGELOG } from './changelog'
+import { greeting } from '@/lib/greeting'
 
 const STORAGE_KEY = 'wb:daily-summary-shown'
 
@@ -22,14 +23,6 @@ export function daysLabel(n: number): string {
   if (n <= 0) return '今天'
   if (n === 1) return '明天'
   return `${n} 天后`
-}
-
-export function greeting(date: Date): string {
-  const h = date.getHours()
-  if (h < 6) return '夜深了'
-  if (h < 12) return '早上好'
-  if (h < 18) return '下午好'
-  return '晚上好'
 }
 
 function fmtDate(ymd: string): string {
