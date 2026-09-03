@@ -1,8 +1,8 @@
 # v1.24 技术债 + UX 修复批（六项全做）
 
-> 2026-09-03 整理。来源：2026-09-03 架构横扫（30+ 条发现）+ 浏览器实机走查 16 页（26 张证据图，`gui-test-screenshots/`，不入库）。
+> 2026-09-03 整理并**当日实施完成**。来源：2026-09-03 架构横扫（30+ 条发现）+ 浏览器实机走查 16 页（26 张证据图，`gui-test-screenshots/`，不入库）。
 > 用户拍板：**全做，计划自查通过后执行**。
-> 判级预估：壳层 sticky 为 feat → **v1.24.0（minor）**；发版前以 release.mjs dry-run 实际判级为准。
+> 判级：实施后无 feat（壳层修复最终是两行 className 的 fix 而非重构）→ 实际 **v1.23.1（patch）**，低于预估的 v1.24.0——以 release.mjs 判级为准。
 
 ## 0. 范围（对齐走查报告的执行顺序表 + 顺手 P2/P3）
 
@@ -98,4 +98,11 @@ fake supabase 需增：`.in(col, array)` 过滤（新云端 deleteFolder 用到�
 - [x] 双实现同步改：A 项云端对齐本地 + 契约测试防再漂移 ✓
 - [x] 准则 #1 不留兼容：greeting 删除旧导出、无转发层 ✓；#2 最简实现：壳层修复倾向 fixed inset-0 一行级方案 ✓
 - [x] 不越界：6 Tab、updateTask 重构等明确列入"不做" ✓
-- [ ] （执行中补充）B 项诊断结论
+
+## 实施结论（2026-09-03，六项全部完成）
+
+- **B 项诊断结论（计划要求写回）**：306px 文档溢出根因 = 文件导入 label 里的 `sr-only`（Tailwind 该类含 `position:absolute`）**没有任何 positioned 祖先**，绝对定位基准逃逸到文档根，其静态位置落在页面内容末尾（y≈1105），把 html 撑出 306px 可滚区；main 滚满后滚轮链把整个应用框架（侧栏+顶栏）顶出视野。壳层 `h-dvh overflow-hidden` 本身无罪。修复 = settings/add-note 两处 label 加 `relative`（各一行），未动壳层（#3 不拆能跑的东西）。实测滚动后 `docScrollTop=0 / scrollHeight=800`，单滚动层。
+- **A 项范围修正**：reminders 表契约不可达（由 /api/check-reminders 生成、仓储无创建入口、不入 BackupTables），以注释记录于计划，契约补盲实际覆盖 folders/exams/growthActions/focusSessions/推送订阅/通道配置六类。
+- **C 项扩围**：走查发现的 Select 收起态显示英文原始 value（base-ui Select.Value 解析不到未挂载选项）实为全应用 8 处的系统性问题，统一在用法侧补 `items` 映射修复。
+- **验证**：460 单测（60 文件）全绿、build+check:bundle 通过（总量 1078/1120，入口 chunk **320→296KB**）、lint 11≤12、e2e 9/9 零抖动、浏览器复验 papers 下拉中文/学习健康空态 CTA/壳层滚动。
+- 提交：49375a3c9 (A) → 87f03d23b (F) → aa9443839 (B) → 699c22dc3 (C) → 88eebdd27 (D) → ec0fb6e59 (E)。
