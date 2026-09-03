@@ -73,10 +73,10 @@ async function fetchDirect(): Promise<HotItem[]> {
   return []
 }
 
-const DIRECT_META: HotSourceMeta[] = [
+export const DIRECT_META: HotSourceMeta[] = [
   { id: 'github', name: 'GitHub 热门新库', category: 'tech' },
   { id: 'hackernews', name: 'Hacker News', category: 'tech' },
-  { id: 'v2ex', name: 'V2EX', category: 'tech' },
+  { id: 'v2ex', name: 'V2EX 热门', category: 'tech' },
 ]
 
 export async function loadHot(refresh: boolean, sources: string[] = []): Promise<HotResult> {
