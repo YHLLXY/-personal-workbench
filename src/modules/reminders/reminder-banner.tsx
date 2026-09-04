@@ -25,9 +25,14 @@ export default function ReminderBanner() {
     for (const id of notifiedRef.current) if (!due.some(r => r.id === id)) notifiedRef.current.delete(id)
     const fresh = due.filter(r => !notifiedRef.current.has(r.id))
     if (fresh.length === 0) return
-    const n = new Notification('个人工作台提醒', { body: `${fresh.length} 条提醒待处理，点击查看`, icon: '/pwa-192x192.png' })
-    n.onclick = () => { window.focus(); n.close() }
+    // 去重 id 先登记：通知是 fire-and-forget，失败不重试（每次 effect 重跑都重试反而骚扰）
     for (const r of fresh) notifiedRef.current.add(r.id)
+    // 必须走 SW 通道：Chrome（SW 控制下）与 iOS 均禁用 new Notification 构造器
+    //（TypeError: Illegal constructor，v1.23 全站崩溃根因），registration.showNotification 是唯一跨平台合法路径。
+    // 点击行为由 sw.ts 的 notificationclick（聚焦窗口）承接。通知是增强能力：任何失败静默，绝不冒泡到 ErrorBoundary。
+    void navigator.serviceWorker?.ready
+      .then(reg => reg.showNotification('个人工作台提醒', { body: `${fresh.length} 条提醒待处理，点击查看`, icon: '/pwa-192x192.png' }))
+      .catch(() => { /* 无 SW / 发送失败：静默，应用内提醒中心仍是完整通道 */ })
   }, [reminders])
 
   if (unread === 0) return null
