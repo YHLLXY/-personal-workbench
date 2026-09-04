@@ -121,7 +121,8 @@ export function Shell() {
 
         {/* 内容 */}
         <main className="flex-1 overflow-y-auto px-4 md:px-6 py-4 md:py-6 pb-32 md:pb-6">
-          <ErrorBoundary>
+          {/* key=pathname：路由切换即重置错误状态，单页渲染错误不再传染到其他路由 */}
+          <ErrorBoundary key={location.pathname}>
             <Suspense fallback={<div className="space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}>
               {/* key=pathname 使路由切换时整块重挂载，重播页面入场动画 */}
               <div key={location.pathname} className="page-enter">
