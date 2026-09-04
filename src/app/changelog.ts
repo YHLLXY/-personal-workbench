@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.23.2',
+    date: '2026-09-04',
+    title: '修复：开启通知权限后全站「页面出错了」崩溃（前台通知非法构造 + 错误边界粘死）',
+    items: [
+      '修复：前台通知改走 Service Worker 通道 showNotification——Chrome（含安卓 Edge）SW 控制下 new Notification 抛 Illegal constructor、iOS 全系不支持，权限授予后必崩（详见 docs/plans/FIX_PLAN_NOTIFICATION_CRASH.md）',
+      '修复：去重 id 登记提前到发起通知之前，杜绝重试死循环',
+      '修复：壳层内层 ErrorBoundary 按路由 key 重置，单页渲染错误不再全站粘死',
+      '加固：通知发送全程 catch 静默——通知是增强能力，任何失败不影响界面',
+      '内部：补真机语义回归测试（SW 通道、ready 失败、showNotification 抛错三场景）',
+    ],
+  },
+  {
     version: 'v1.23.1',
     date: '2026-09-03',
     title: '技术债与体验修复批：云端删文件夹悬空数据根治、壳层滚动修复、界面细节打磨',
