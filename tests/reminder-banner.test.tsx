@@ -55,29 +55,33 @@ describe('ReminderBanner', () => {
   })
 })
 
-// --- 前台系统通知测试（jsdom 无 Notification，stub 一个） ---
+// --- 前台系统通知测试（jsdom 无 Notification / serviceWorker，按真机语义 stub） ---
+// 权限载体：组件只读取 Notification.permission。new Notification 构造器在真机上（Chrome SW 控制下、
+// iOS 全系）必抛 Illegal constructor —— v1.23 全站崩溃根因，禁止再回到构造器通道。
 class MockNotification {
   static permission: NotificationPermission = 'granted'
-  static instances: Array<{ title: string; options: NotificationOptions }> = []
-  constructor(title: string, options: NotificationOptions) { MockNotification.instances.push({ title, options }) }
-  close() {}
-  onclick: (() => void) | null = null
+}
+
+/** 按真机语义替换 navigator.serviceWorker（ready 可解析为 reg、可 reject、可整体为 undefined） */
+function stubServiceWorker(value: unknown) {
+  Object.defineProperty(globalThis.navigator, 'serviceWorker', { value, configurable: true })
 }
 
 describe('ReminderBanner 前台通知去重', () => {
+  const showNotification = vi.fn()
   beforeEach(() => {
-    MockNotification.instances = []
     MockNotification.permission = 'granted'
     vi.stubGlobal('Notification', MockNotification)
+    stubServiceWorker({ ready: Promise.resolve({ showNotification }) })
     qc.clear()
     vi.clearAllMocks()
   })
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => { vi.unstubAllGlobals(); stubServiceWorker(undefined) })
 
-  it('授权 + 到期未发 → 弹一次；数据刷新（新数组引用，同一提醒仍在）→ 不重复', async () => {
+  it('授权 + 到期未发 → 走 SW 通道弹一次；数据刷新（新数组引用，同一提醒仍在）→ 不重复', async () => {
     renderBanner()
-    await waitFor(() => expect(MockNotification.instances.length).toBe(1))
-    expect(MockNotification.instances[0].title).toBe('个人工作台提醒')
+    await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+    expect(showNotification.mock.calls[0][0]).toBe('个人工作台提醒')
     // 模拟 focus refetch：重新拉取产生新的数组引用（仍含同一到期提醒）→ 不重复弹
     vi.mocked(repository.listReminders).mockResolvedValueOnce([
       { id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: PAST, sentAt: null, dismissedAt: null, createdAt: PAST, note: 'fresh-read' } as never,
@@ -86,13 +90,47 @@ describe('ReminderBanner 前台通知去重', () => {
     await waitFor(() => expect(repository.listReminders).toHaveBeenCalledTimes(2))
     // 等 refetch 数据提交、effect 执行窗口关闭后再断言通知数
     await act(async () => { await new Promise(r => setTimeout(r, 0)) })
-    expect(MockNotification.instances.length).toBe(1)
+    expect(showNotification).toHaveBeenCalledTimes(1)
   })
 
   it('未授权 → 不弹', async () => {
     MockNotification.permission = 'denied'
     renderBanner()
-    await waitFor(() => expect(repository.listReminders).toHaveBeenCalled())
-    expect(MockNotification.instances.length).toBe(0)
+    await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
+    expect(showNotification).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReminderBanner 通知通道防崩回归（v1.23 全站崩溃根因）', () => {
+  beforeEach(() => {
+    MockNotification.permission = 'granted'
+    vi.stubGlobal('Notification', MockNotification)
+    qc.clear()
+    vi.clearAllMocks()
+  })
+  afterEach(() => { vi.unstubAllGlobals(); stubServiceWorker(undefined) })
+
+  it('serviceWorker.ready reject（dev 无 SW / 注册失败）→ 组件不崩、横幅正常渲染', async () => {
+    // 用 getter 延迟创建 rejected promise：若在此处就构造，reject 会先于组件 effect 里的 .catch 生效，
+    // 被 Node 判为 unhandledrejection（噪音，且与被测行为无关）
+    stubServiceWorker({ get ready() { return Promise.reject(new Error('no sw')) } })
+    renderBanner()
+    await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy()) // 横幅照常显示
+    expect(screen.getByText('1')).toBeTruthy()
+  })
+
+  it('showNotification 抛同步错误 → 不冒泡到 ErrorBoundary', async () => {
+    stubServiceWorker({
+      ready: Promise.resolve({ showNotification: () => { throw new TypeError('Illegal constructor') } }),
+    })
+    renderBanner()
+    await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
+  })
+
+  it('navigator.serviceWorker 不存在（dev 未注册）→ 静默跳过，横幅正常渲染', async () => {
+    stubServiceWorker(undefined)
+    renderBanner()
+    await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
+    expect(screen.getByText('1')).toBeTruthy()
   })
 })
