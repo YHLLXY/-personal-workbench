@@ -87,6 +87,7 @@ tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 
 - 纯函数不要导出在组件文件里（fast-refresh 警告），放 `*-view.ts` / `*-utils.ts` / `lib/`。
 - 测试里 mock 网络时注意 QueryClientProvider 包裹；hot 页等接了 mutation 的组件必须有 Provider。
 - git 后台报 `multi-pack-index: Permission denied` / `geometric repack failed` 不影响 commit/push，用 `git log` + `git status` 确认即可，勿慌。
+- **Web 平台 API 写前必查沙箱约束**（2026-09-04 v1.23.2 全站崩溃教训，详录经验总结第十四节）：前台系统通知一律走 `registration.showNotification()`——`new Notification` 在 SW 控制的页面（本项目 autoUpdate + skipWaiting/clientsClaim，所有页面必被控制）与 iOS 上抛 `TypeError: Illegal constructor`；通知类增强能力调用全程 catch 静默，绝不冒泡到 ErrorBoundary。layout 内层 ErrorBoundary 的 `key={pathname}` 路由重置勿删（删了单页错误会粘死全站）。
 
 ## 工作流程 SOP
 
