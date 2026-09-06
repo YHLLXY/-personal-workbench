@@ -61,6 +61,24 @@ export default function TodayTasks() {
     })
   }
 
+  // v1.24 F：改期（直接写 dueDate）与 repeat「跳过一次」（只推 dueDate 不记完成，「跳过不补」会推进到首个 ≥ today 的槽位）
+  const reschedule = (t: Task, date: string) => update.mutate({ id: t.id, patch: { dueDate: date } })
+  const skipOnce = (t: Task) => {
+    if (!t.repeat) return
+    update.mutate({ id: t.id, patch: { dueDate: nextOccurrence(t.dueDate ?? today, t.repeat, null, today) } })
+  }
+  // 逾期区一键顺延（既有「清理历史待办」同款：confirm + toast 撤销）
+  const postponeAllRecent = () => {
+    if (recent.length === 0) return
+    if (!window.confirm(`将 ${recent.length} 项逾期任务顺延到今天？`)) return
+    recent.forEach(t => update.mutate({ id: t.id, patch: { dueDate: today } }))
+    const originals = new Map(recent.map(t => [t.id, t.dueDate] as const))
+    toast.success(`已顺延 ${recent.length} 项`, {
+      action: { label: '撤销', onClick: () => originals.forEach((d, id) => { if (d) update.mutate({ id, patch: { dueDate: d } }) }) },
+      duration: 5000,
+    })
+  }
+
   // 先按标签/关键词过滤，再走既有口径函数；someday 单独分流（todayTasks 口径不排除 someday，手动拆开避免同任务重复出现）
   const filtered = filterTasks(tasks ?? [], { tag, query })
   const pool = filtered.filter(t => t.status !== 'someday')
@@ -103,7 +121,15 @@ export default function TodayTasks() {
         <div className="space-y-4">
           {overdue.length > 0 && (
             <section>
-              <h2 className="text-xs text-destructive font-medium mb-1.5">已逾期 {recent.length} 项{old.length > 0 && ` · 更早 ${old.length} 项已折叠`}</h2>
+              <h2 className="text-xs text-destructive font-medium mb-1.5 flex items-center">
+                <span>已逾期 {recent.length} 项{old.length > 0 && ` · 更早 ${old.length} 项已折叠`}</span>
+                {recent.length > 0 && (
+                  <button onClick={postponeAllRecent}
+                    className="ml-auto text-[10px] text-destructive/80 hover:text-destructive border border-destructive/30 rounded-full px-2 py-0.5 transition-colors">
+                    全部顺延到今天
+                  </button>
+                )}
+              </h2>
               {recent.length > 0 && (
                 <div className="space-y-1.5">
                   {recent.map(t => (
@@ -114,7 +140,9 @@ export default function TodayTasks() {
                         onEdit={() => { setEditing(t); setDialogOpen(true) }}
                         onDelete={() => remove.mutate(t.id)}
                         onPostpone={() => update.mutate({ id: t.id, patch: { dueDate: today } })}
-                        onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })} />
+                        onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
+                        onReschedule={date => reschedule(t, date)}
+                        onSkip={t.repeat ? () => skipOnce(t) : undefined} />
                     </div>
                   ))}
                 </div>
@@ -136,7 +164,9 @@ export default function TodayTasks() {
                         onEdit={() => { setEditing(t); setDialogOpen(true) }}
                         onDelete={() => remove.mutate(t.id)}
                         onPostpone={() => update.mutate({ id: t.id, patch: { dueDate: today } })}
-                        onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })} />
+                        onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
+                        onReschedule={date => reschedule(t, date)}
+                        onSkip={t.repeat ? () => skipOnce(t) : undefined} />
                     ))}
                     <Button
                       variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/30"
@@ -165,7 +195,10 @@ export default function TodayTasks() {
                     onToggle={() => toggleDone(t)}
                     onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus, focusDate: t.focus ? null : today } })}
                     onEdit={() => { setEditing(t); setDialogOpen(true) }}
-                    onDelete={() => remove.mutate(t.id)} />
+                    onDelete={() => remove.mutate(t.id)}
+                    onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
+                    onReschedule={date => reschedule(t, date)}
+                    onSkip={t.repeat ? () => skipOnce(t) : undefined} />
                 ))}
               </div>
             </section>

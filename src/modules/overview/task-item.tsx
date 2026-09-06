@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { CalendarClock, Check, ChevronDown, Clock, Plus, Repeat, RotateCcw, Star, Trash2, X } from 'lucide-react'
-import { genId, type ChecklistItem, type Task } from '@/lib/db/types'
-import { repeatLabel } from '@/lib/repeat'
+import { CalendarClock, Check, ChevronDown, Clock, MoreHorizontal, Plus, Repeat, RotateCcw, Star, Trash2, X } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { genId, todayStr, type ChecklistItem, type Task } from '@/lib/db/types'
+import { addDays, nextMonday, repeatLabel } from '@/lib/repeat'
 import { cn } from '@/lib/utils'
 
 const PRIORITY_DOT: Record<Task['priority'], string> = { high: 'bg-destructive', medium: 'bg-accent', low: 'bg-muted-foreground/40' }
 
-export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, onDelete, onPostpone, onChecklist }: {
+export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, onDelete, onPostpone, onChecklist, onReschedule, onSkip }: {
   task: Task; done?: boolean; onToggle: () => void; onFocus?: () => void; onEdit: () => void; onDelete: () => void; onPostpone?: () => void
   onChecklist?: (items: ChecklistItem[]) => void
+  onReschedule?: (date: string) => void
+  onSkip?: () => void
 }) {
   // done 覆盖：repeat 任务完成当天 status 仍是 todo（同一行滚动），由调用方传 isDoneForToday 收容进已完成区
   const done = doneOverride ?? task.status === 'done'
@@ -16,12 +19,19 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
   const checklistDone = checklist.filter(c => c.done).length
   const [checklistOpen, setChecklistOpen] = useState(false)
   const [newItem, setNewItem] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false) // 改期菜单受控：自选日期确认后手动收起
+  const [customDate, setCustomDate] = useState('')
   const checklistEditable = Boolean(onChecklist) && !done
   function addChecklistItem() {
     const text = newItem.trim()
     if (!text || !onChecklist) return
     onChecklist([...checklist, { id: genId(), text, done: false }])
     setNewItem('')
+  }
+  function confirmCustomDate() {
+    if (!customDate || !onReschedule) return
+    onReschedule(customDate)
+    setMenuOpen(false)
   }
   return (
     // data-flip-id：FLIP 布局动画锚点（src/lib/flip.ts）——同列表重排平滑（补加星标滑顶，不再瞬跳闪没），
@@ -79,6 +89,33 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
             className="shrink-0 text-muted-foreground/50 hover:text-foreground transition-colors">
             <ChevronDown className={cn('size-4 transition-transform', checklistOpen && 'rotate-180')} />
           </button>
+        )}
+        {/* 改期菜单（v1.24 F）：今日区/逾期区行通用；跳过一次仅 repeat 任务显示 */}
+        {onReschedule && !done && (
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger aria-label="改期" className="shrink-0 p-0.5 text-muted-foreground/50 hover:text-foreground transition-colors">
+              <MoreHorizontal className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={() => onReschedule(todayStr())}>今天</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onReschedule(addDays(todayStr(), 1))}>明天</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onReschedule(addDays(todayStr(), 2))}>后天</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onReschedule(nextMonday(todayStr()))}>下周一</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <div className="flex items-center gap-1.5 px-1.5 py-1">
+                <input type="date" value={customDate} onChange={e => setCustomDate(e.target.value)} aria-label="自选日期"
+                  className="h-7 flex-1 min-w-0 rounded-md border border-border bg-transparent px-1.5 text-xs" />
+                <button type="button" onClick={confirmCustomDate} disabled={!customDate}
+                  className="shrink-0 text-xs rounded-md border border-border px-2 py-1 hover:bg-muted disabled:opacity-40 transition-opacity">确定</button>
+              </div>
+              {onSkip && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onSkip}>跳过一次</DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         <button onClick={onDelete} aria-label="删除" className="shrink-0 text-muted-foreground/50 hover:text-destructive transition-colors md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100">
           <Trash2 className="size-4" strokeWidth={1.7} />
