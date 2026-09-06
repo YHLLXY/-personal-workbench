@@ -1,3 +1,12 @@
+/** 重复规则（v1.24）：简单枚举而非 RRULE——freq+interval+weekdays 覆盖 Todoist every/every! 全部主路径 */
+export interface TaskRepeat {
+  freq: 'daily' | 'weekly' | 'monthly'
+  interval: number              // 每 N 天/周/月，≥1
+  weekdays?: number[]           // freq='weekly' 时 0-6（周日=0）多选；interval>1 时仅单选（UI 约束）
+  anchor: 'due' | 'complete'    // 按计划日推 / 按完成日推（Todoist every / every!）
+}
+export interface ChecklistItem { id: string; text: string; done: boolean }
+
 export interface Task {
   id: string
   title: string
@@ -11,8 +20,10 @@ export interface Task {
   sort: number
   completedAt: string | null
   createdAt: string        // ISO
+  repeat?: TaskRepeat | null   // v1.24 重复规则；null/缺省 = 不重复（旧数据天然缺省，非兼容层）
+  checklist?: ChecklistItem[]  // v1.24 清单；缺省 = 无清单
 }
-export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; dueTime?: string | null; focusDate?: string | null; tags?: string[] }
+export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; dueTime?: string | null; focusDate?: string | null; tags?: string[]; repeat?: TaskRepeat | null; checklist?: ChecklistItem[] }
 
 export interface Habit { id: string; name: string; icon: string; color: string; targetPerDay: number; active: boolean; createdAt: string }
 export interface HabitLog { id: string; habitId: string; logDate: string; count: number }
@@ -231,4 +242,12 @@ export function applyTaskPatch(current: Task, patch: Partial<Task>): Task {
     : patch.completedAt !== undefined ? patch.completedAt
     : current.completedAt ?? null
   return { ...current, ...patch, completedAt }
+}
+
+/** 排序烘焙（v1.24）：优先级档位烘进 sort 高位，公式 1e13*(档位+1)+毫秒时间戳（high=3/medium=2/low=1）。
+ *  三处共用必须一致：迁移 011 SQL 回填、local listTasks 惰性归一化、双端 createTask。
+ *  背景：v1.24 起 UI 排序语义从「焦点→优先级→时间」改为纯 sort 降序，存量优先级需一次性烘焙才能保持旧序；
+ *  1e13 同时是「已烘焙」判定守卫（旧毫秒值 ~1.75e12 < 1e13，烘焙后 ≥ 1.175e13，上限 3.175e13 ≪ 2^53 无损） */
+export function bakeTaskSort(priority: Task['priority'], ts: number = Date.now()): number {
+  return 1e13 * (priority === 'high' ? 3 : priority === 'medium' ? 2 : 1) + ts
 }

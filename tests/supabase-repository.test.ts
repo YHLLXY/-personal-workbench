@@ -190,7 +190,7 @@ describe('SupabaseRepository', () => {
       expect(deleteCalls[0]).toEqual({ table: 'wb_tasks', column: 'id', value: '' })
       // tasks 表 upsert 载荷是 snake_case 列名
       const tasksUpsert = upsertCalls.find(u => u.table === 'wb_tasks')
-      expect(tasksUpsert?.payload).toEqual([{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, due_time: null, focus_date: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
+      expect(tasksUpsert?.payload).toEqual([{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, due_time: null, focus_date: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z', repeat: null, checklist: null }])
       // 只有 tasks 有数据 → 只有 1 次 upsert（其余 10 张空表只清空不写入）
       expect(upsertCalls.length).toBe(1)
     })

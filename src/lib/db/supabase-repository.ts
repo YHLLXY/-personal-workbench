@@ -1,13 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
-import { genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind, type GrowthAction, type GrowthActionInput } from './types'
+import { bakeTaskSort, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type TaskRepeat, type ChecklistItem, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind, type GrowthAction, type GrowthActionInput } from './types'
 import { assertNoCycle } from './folder-tree'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
 type Row = Record<string, unknown>
 
 function taskFromRow(r: Row): Task {
-  const t: Task = { id: String(r.id), title: String(r.title), focus: Boolean(r.focus), priority: r.priority as Task['priority'], status: r.status as Task['status'], dueDate: r.due_date as string | null, dueTime: r.due_time as string | null, focusDate: (r.focus_date as string | null) ?? null, tags: (r.tags as string[]) ?? [], sort: Number(r.sort ?? 0), completedAt: r.completed_at ? new Date(String(r.completed_at)).toISOString() : null, createdAt: String(r.created_at) }
+  const t: Task = { id: String(r.id), title: String(r.title), focus: Boolean(r.focus), priority: r.priority as Task['priority'], status: r.status as Task['status'], dueDate: r.due_date as string | null, dueTime: r.due_time as string | null, focusDate: (r.focus_date as string | null) ?? null, tags: (r.tags as string[]) ?? [], sort: Number(r.sort ?? 0), completedAt: r.completed_at ? new Date(String(r.completed_at)).toISOString() : null, createdAt: String(r.created_at), repeat: (r.repeat as TaskRepeat | null) ?? null, checklist: (r.checklist as ChecklistItem[] | null) ?? undefined }
   // 惰性迁移：老数据 focus=true 但无 focus_date → 绑定到创建日（本地时区），焦点任务不再永久显示（勿用 SQL 回填）
   if (t.focus && !t.focusDate) t.focusDate = localDateOfISO(t.createdAt)
   return t
@@ -73,7 +73,7 @@ function pushSubFromRow(r: Row): PushSubscriptionRow {
   return { id: String(r.id), endpoint: String(r.endpoint), keysP256dh: String(r.keys_p256dh), keysAuth: String(r.keys_auth), userAgent: r.user_agent as string | null, createdAt: String(r.created_at) }
 }
 
-function taskToRow(t: Task) { return { id: t.id, title: t.title, focus: t.focus, priority: t.priority, status: t.status, due_date: t.dueDate, due_time: t.dueTime, focus_date: t.focusDate, tags: t.tags, sort: t.sort, completed_at: t.completedAt, created_at: t.createdAt } }
+function taskToRow(t: Task) { return { id: t.id, title: t.title, focus: t.focus, priority: t.priority, status: t.status, due_date: t.dueDate, due_time: t.dueTime, focus_date: t.focusDate, tags: t.tags, sort: t.sort, completed_at: t.completedAt, created_at: t.createdAt, repeat: t.repeat ?? null, checklist: t.checklist ?? null } }
 function habitToRow(h: Habit) { return { id: h.id, name: h.name, icon: h.icon, color: h.color, target_per_day: h.targetPerDay, active: h.active, created_at: h.createdAt } }
 function logToRow(l: HabitLog) { return { id: l.id, habit_id: l.habitId, log_date: l.logDate, count: l.count } }
 function focusToRow(s: FocusSession) { return { id: s.id, start_at: s.startAt, minutes: s.minutes, note: s.note } }
@@ -113,12 +113,13 @@ export class SupabaseRepository implements WorkbenchRepository {
 
   async listTasks() { const { data, error } = await this.sb.from('wb_tasks').select('*').order('sort', { ascending: false }); if (error) throw error; return (data ?? []).map(taskFromRow) }
   async createTask(input: TaskInput) {
-    const { data, error } = await this.sb.from('wb_tasks').insert({ id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', due_date: input.dueDate ?? null, due_time: input.dueTime ?? null, focus_date: input.focusDate ?? null, tags: input.tags ?? [], sort: Date.now() }).select().single()
+    // sort 烘焙公式见 types.bakeTaskSort（迁移 011 / local 惰性归一化同款）
+    const { data, error } = await this.sb.from('wb_tasks').insert({ id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', due_date: input.dueDate ?? null, due_time: input.dueTime ?? null, focus_date: input.focusDate ?? null, tags: input.tags ?? [], sort: bakeTaskSort(input.priority ?? 'medium'), repeat: input.repeat ?? null, checklist: input.checklist ?? null }).select().single()
     if (error) throw error; return taskFromRow(data)
   }
   async updateTask(id: string, p: Partial<Task>) {
     // 注意：去掉冗余的 p.status !== 'done'（TS2367：第一分支已排除 'done'，后续比较类型无重叠；与 local-repository 逻辑一致）
-    const { data, error } = await this.sb.from('wb_tasks').update({ title: p.title, focus: p.focus, priority: p.priority, status: p.status, due_date: p.dueDate, due_time: p.dueTime, focus_date: p.focusDate, tags: p.tags, sort: p.sort, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt }).eq('id', id).select().single()
+    const { data, error } = await this.sb.from('wb_tasks').update({ title: p.title, focus: p.focus, priority: p.priority, status: p.status, due_date: p.dueDate, due_time: p.dueTime, focus_date: p.focusDate, tags: p.tags, sort: p.sort, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt, repeat: p.repeat, checklist: p.checklist }).eq('id', id).select().single()
     if (error) throw error; return taskFromRow(data)
   }
   async deleteTask(id: string) { const { error } = await this.sb.from('wb_tasks').delete().eq('id', id); if (error) throw error }

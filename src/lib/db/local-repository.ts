@@ -1,4 +1,4 @@
-import { applyTaskPatch, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput } from './types'
+import { applyTaskPatch, bakeTaskSort, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput } from './types'
 import { assertNoCycle } from './folder-tree'
 
 const PREFIX = 'wb:'
@@ -20,14 +20,21 @@ function remove(key: string, id: string) { write(key, read<{ id: string }>(key).
 
 export class LocalRepository implements WorkbenchRepository {
   async listTasks() {
-    // 惰性迁移：老数据 focus=true 但无 focusDate → 绑定到创建日（本地时区），焦点任务不再永久显示（仅内存生效，不落库）
-    return read<Task>('tasks').map(t => {
+    const rows = read<Task>('tasks')
+    // 惰性归一化（迁移 011 同款公式，types.bakeTaskSort）：老数据 sort 为毫秒时间戳（<1e13）→ 烘焙优先级后落库，
+    // 与云端 011 回填等价；触发时连带固化 focusDate 惰性值（派生幂等，无副作用）。004「读路径惰性迁移」先例
+    const bake = rows.some(t => t.sort < 1e13)
+    const tasks = rows.map(t => {
+      // 惰性迁移：老数据 focus=true 但无 focusDate → 绑定到创建日（本地时区），焦点任务不再永久显示
       if (t.focus && !t.focusDate) t.focusDate = localDateOfISO(t.createdAt)
-      return t
+      return bake && t.sort < 1e13 ? { ...t, sort: bakeTaskSort(t.priority, t.sort) } : t
     })
+    if (bake) write('tasks', tasks)
+    return tasks.sort((a, b) => b.sort - a.sort) // 与云端 listTasks .order('sort', {ascending:false}) 对齐
   }
   async createTask(input: TaskInput) {
-    return insert<Task>('tasks', { id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', dueDate: input.dueDate ?? null, dueTime: input.dueTime ?? null, focusDate: input.focusDate ?? null, tags: input.tags ?? [], sort: Date.now(), completedAt: null, createdAt: new Date().toISOString() })
+    // sort 烘焙公式见 types.bakeTaskSort（迁移 011 / 云端 createTask 同款）
+    return insert<Task>('tasks', { id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', dueDate: input.dueDate ?? null, dueTime: input.dueTime ?? null, focusDate: input.focusDate ?? null, tags: input.tags ?? [], sort: bakeTaskSort(input.priority ?? 'medium'), repeat: input.repeat ?? null, checklist: input.checklist, completedAt: null, createdAt: new Date().toISOString() })
   }
   async updateTask(id: string, p: Partial<Task>) {
     const rows = read<Task>('tasks')

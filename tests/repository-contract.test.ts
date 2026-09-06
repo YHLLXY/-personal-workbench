@@ -162,6 +162,48 @@ async function runScript(repo: WorkbenchRepository) {
     tags: t.tags, hasCompletedAt: t.completedAt != null,
   }))
 
+  // —— 任务 v1.24：repeat/checklist 往返（含部分更新只动 checklist）——
+  const rt = await repo.createTask({
+    title: '重复任务', dueDate: TODAY,
+    repeat: { freq: 'weekly', interval: 1, weekdays: [1, 3], anchor: 'due' },
+    checklist: [{ id: 'c1', text: '第一步', done: false }, { id: 'c2', text: '第二步', done: true }],
+  })
+  await repo.updateTask(rt.id, { checklist: [{ id: 'c1', text: '第一步', done: true }] })
+  const rtAfter = (await repo.listTasks()).find(t => t.id === rt.id)
+  const repeatSnap = { repeat: rt.repeat ?? null, checklistLen: rt.checklist?.length ?? 0, checklistAfter: rtAfter?.checklist ?? [] }
+
+  // —— 任务 v1.24：sort 烘焙排序（高→中→低）+ 中点手动排序（低插到高/中之间）——
+  const hi = await repo.createTask({ title: '高优先', priority: 'high', dueDate: TODAY })
+  const md = await repo.createTask({ title: '中优先', priority: 'medium', dueDate: TODAY })
+  const lo = await repo.createTask({ title: '低优先', priority: 'low', dueDate: TODAY })
+  const titlesByIds = async (ids: string[]) => (await repo.listTasks()).filter(t => ids.includes(t.id)).map(t => t.title)
+  const bakedOrder = await titlesByIds([hi.id, md.id, lo.id])
+  const afterBake = await repo.listTasks()
+  const hiSort = afterBake.find(t => t.id === hi.id)!.sort
+  const mdSort = afterBake.find(t => t.id === md.id)!.sort
+  await repo.updateTask(lo.id, { sort: (hiSort + mdSort) / 2 })
+  const movedOrder = await titlesByIds([hi.id, md.id, lo.id])
+  const orderSnap = { bakedOrder, movedOrder }
+
+  // —— 任务 v1.24：半序稳健性——两锚点间连续 50 次中点插入，全程严格降序（double 精度余量）——
+  const anchorTop = await repo.createTask({ title: '锚顶', dueDate: TODAY })
+  const anchorBottom = await repo.createTask({ title: '锚底', dueDate: TODAY })
+  await repo.updateTask(anchorTop.id, { sort: 3e13 })
+  await repo.updateTask(anchorBottom.id, { sort: 1e13 })
+  const insertedIds: string[] = []
+  let lower = 1e13
+  for (let i = 0; i < 50; i++) {
+    const t = await repo.createTask({ title: `插入${i}`, dueDate: TODAY })
+    const mid = (3e13 + lower) / 2
+    await repo.updateTask(t.id, { sort: mid })
+    lower = mid
+    insertedIds.push(t.id)
+  }
+  const halfSorts = (await repo.listTasks())
+    .filter(t => [anchorTop.id, anchorBottom.id, ...insertedIds].includes(t.id))
+    .map(t => t.sort)
+  const halfSnap = { count: halfSorts.length, strictlyDesc: halfSorts.every((v, i) => i === 0 || v < halfSorts[i - 1]) }
+
   // —— 身体记录：体重当日覆盖 / 运动多条 ——
   await repo.createHealthLog({ logDate: TODAY, type: 'weight', value: 62.5 })
   await repo.createHealthLog({ logDate: TODAY, type: 'weight', value: 63.1 })
@@ -268,7 +310,7 @@ async function runScript(repo: WorkbenchRepository) {
   const channelCleared = (await repo.getChannelConfigs()).serverchanKey
   const channelSnap = { saved: channelSaved, cleared: channelCleared }
 
-  return { habitSnap, habitCascade, taskSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap }
+  return { habitSnap, habitCascade, taskSnap, repeatSnap, orderSnap, halfSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap }
 }
 
 describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', () => {
@@ -289,6 +331,22 @@ describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', (
   })
   it('任务：完成时间戳、焦点、删除语义一致', () => {
     expect(supaSnap.taskSnap).toEqual(localSnap.taskSnap)
+  })
+  it('任务 v1.24：repeat/checklist 往返一致（部分更新只动 checklist）', () => {
+    expect(supaSnap.repeatSnap).toEqual(localSnap.repeatSnap)
+    expect(supaSnap.repeatSnap?.repeat).toEqual({ freq: 'weekly', interval: 1, weekdays: [1, 3], anchor: 'due' })
+    expect(supaSnap.repeatSnap?.checklistLen).toBe(2)
+    expect(supaSnap.repeatSnap?.checklistAfter).toEqual([{ id: 'c1', text: '第一步', done: true }])
+  })
+  it('任务 v1.24：sort 烘焙默认序（高→中→低）与中点手动排序一致', () => {
+    expect(supaSnap.orderSnap).toEqual(localSnap.orderSnap)
+    expect(supaSnap.orderSnap?.bakedOrder).toEqual(['高优先', '中优先', '低优先'])
+    expect(supaSnap.orderSnap?.movedOrder).toEqual(['高优先', '低优先', '中优先'])
+  })
+  it('任务 v1.24：半序 50 次中点插入全程严格降序（double 精度余量）', () => {
+    expect(supaSnap.halfSnap).toEqual(localSnap.halfSnap)
+    expect(supaSnap.halfSnap?.strictlyDesc).toBe(true)
+    expect(supaSnap.halfSnap?.count).toBe(52)
   })
   it('身体记录：体重/睡眠当日覆盖、运动多条一致', () => {
     expect(supaSnap.healthSnap).toEqual(localSnap.healthSnap)

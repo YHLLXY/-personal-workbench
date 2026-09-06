@@ -26,11 +26,28 @@ describe('LocalRepository', () => {
     expect(tasks[0].focusDate).toBe(localDateOfISO('2026-08-03T16:00:00.000Z'))
   })
 
-  it('惰性迁移不落库（读取不改变 localStorage 原值）', async () => {
-    const raw = JSON.stringify([{ id: 'old1', title: '旧焦点', focus: true, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-03T16:00:00.000Z' }])
+  it('旧数据 sort 惰性烘焙落库（迁移 011 同款公式），二次读取幂等', async () => {
+    localStorage.setItem('wb:tasks', JSON.stringify([{ id: 'old1', title: '旧焦点', focus: true, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-03T16:00:00.000Z' }]))
+    await repo.listTasks()
+    const first = localStorage.getItem('wb:tasks')
+    expect(JSON.parse(first ?? '[]')).toEqual([expect.objectContaining({
+      id: 'old1', sort: 2e13 + 1, focusDate: localDateOfISO('2026-08-03T16:00:00.000Z'),
+    })])
+    await repo.listTasks()
+    expect(localStorage.getItem('wb:tasks')).toBe(first) // 归一化完成后读取不再写
+  })
+
+  it('focusDate 惰性迁移不落库（sort 已烘焙时读取不改原值）', async () => {
+    const raw = JSON.stringify([{ id: 'old1', title: '旧焦点', focus: true, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 2e13 + 1, completedAt: null, createdAt: '2026-08-03T16:00:00.000Z' }])
     localStorage.setItem('wb:tasks', raw)
     await repo.listTasks()
     expect(localStorage.getItem('wb:tasks')).toBe(raw)
+  })
+
+  it('listTasks 按 sort 降序返回（与云端 order sort desc 对齐）', async () => {
+    await repo.createTask({ title: 'a' })
+    await repo.createTask({ title: 'b', priority: 'high' })
+    expect((await repo.listTasks()).map(t => t.title)).toEqual(['b', 'a']) // high(3e13) > medium(2e13)
   })
 
   it('完成任务自动记录 completedAt', async () => {
