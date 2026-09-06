@@ -1,13 +1,15 @@
-import { CalendarClock, Check, Clock, RotateCcw, Star, Trash2 } from 'lucide-react'
+import { CalendarClock, Check, Clock, Repeat, RotateCcw, Star, Trash2 } from 'lucide-react'
 import type { Task } from '@/lib/db/types'
+import { repeatLabel } from '@/lib/repeat'
 import { cn } from '@/lib/utils'
 
 const PRIORITY_DOT: Record<Task['priority'], string> = { high: 'bg-destructive', medium: 'bg-accent', low: 'bg-muted-foreground/40' }
 
-export function TaskItem({ task, onToggle, onFocus, onEdit, onDelete, onPostpone }: {
-  task: Task; onToggle: () => void; onFocus?: () => void; onEdit: () => void; onDelete: () => void; onPostpone?: () => void
+export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, onDelete, onPostpone }: {
+  task: Task; done?: boolean; onToggle: () => void; onFocus?: () => void; onEdit: () => void; onDelete: () => void; onPostpone?: () => void
 }) {
-  const done = task.status === 'done'
+  // done 覆盖：repeat 任务完成当天 status 仍是 todo（同一行滚动），由调用方传 isDoneForToday 收容进已完成区
+  const done = doneOverride ?? task.status === 'done'
   return (
     // data-flip-id：FLIP 布局动画锚点（src/lib/flip.ts）——同列表重排平滑（补加星标滑顶，不再瞬跳闪没），
     // 今日↔已完成跨区块连续滑移（坠落/飞回）。一条任务同一时刻只挂载在一个区块，task.id 全局唯一
@@ -32,9 +34,10 @@ export function TaskItem({ task, onToggle, onFocus, onEdit, onDelete, onPostpone
           </button>
           {task.focus && !done && <span className="text-[10px] bg-primary/12 text-primary rounded-full px-2 py-0.5 shrink-0">今日焦点</span>}
         </div>
-        {(task.dueTime || task.tags.length > 0 || (done && task.completedAt)) && (
+        {(task.dueTime || task.repeat || task.tags.length > 0 || (done && task.completedAt)) && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 pl-4 text-[10px] text-muted-foreground">
             {task.dueTime && <span className="flex items-center gap-0.5"><Clock className="size-3" />{task.dueTime}</span>}
+            {task.repeat && <span className="flex items-center gap-0.5"><Repeat className="size-3" />{repeatLabel(task.repeat, task.dueDate)}</span>}
             {task.tags.map(tag => <span key={tag} className="rounded-full bg-muted px-1.5 py-px">{tag}</span>)}
             {done && task.completedAt && <span>完成于 {new Date(task.completedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>}
           </div>

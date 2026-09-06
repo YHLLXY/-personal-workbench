@@ -1,11 +1,12 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { useTasks, useTaskMutations, todayTasks, todayDone, recentOverdue, oldOverdue, filterTasks } from './api'
+import { useTasks, useTaskMutations, todayTasks, todayDone, recentOverdue, oldOverdue, filterTasks, isDoneForToday } from './api'
 import { TaskItem } from './task-item'
 import { TaskDialog } from './task-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CalendarClock, ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import { todayStr } from '@/lib/db/types'
+import { nextOccurrence, prevOccurrence } from '@/lib/repeat'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/empty-state'
 import { toast } from 'sonner'
@@ -29,12 +30,30 @@ export default function TodayTasks() {
   useLayoutEffect(() => { flipIn(rootRef.current) })
 
   // 完成/撤销的统一入口。乐观更新在 useTaskMutations 落缓存；完成时展开已完成分区（否则任务坠进折叠区等于隐形）
-  // 并弹 toast 撤销（Todoist 式主撤销路径，2026-08 反馈"找不到撤销"）
+  // 并弹 toast 撤销（Todoist 式主撤销路径，2026-08 反馈"找不到撤销"）。
+  // v1.24 repeat 任务：完成不走 status='done'——同一行滚到下一期（completedAt 记今天 + dueDate 推进），
+  // isDoneForToday 把它收容进已完成区；撤销用闭包原 dueDate（精确）；已完成区点方块撤销用 prevOccurrence（晚完成为近似值）
   const toggleDone = (t: Task) => {
-    const done = t.status === 'done'
-    update.mutate({ id: t.id, patch: { status: done ? 'todo' : 'done' } })
-    if (done) return
+    const done = isDoneForToday(t, today)
+    if (done) {
+      if (t.repeat) update.mutate({ id: t.id, patch: { completedAt: null, dueDate: prevOccurrence(t.dueDate ?? today, t.repeat) } })
+      else update.mutate({ id: t.id, patch: { status: 'todo' } })
+      return
+    }
     setDoneOpen(true)
+    if (t.repeat) {
+      const originalDue = t.dueDate
+      const completedAt = new Date().toISOString()
+      const next = nextOccurrence(t.dueDate ?? today, t.repeat, completedAt, today)
+      update.mutate({ id: t.id, patch: { completedAt, dueDate: next } })
+      toast.success('已完成', {
+        description: `「${t.title}」下次：${next}`,
+        action: { label: '撤销', onClick: () => update.mutate({ id: t.id, patch: { completedAt: null, dueDate: originalDue } }) },
+        duration: 5000,
+      })
+      return
+    }
+    update.mutate({ id: t.id, patch: { status: 'done' } })
     toast.success('已完成', {
       description: `「${t.title}」已划线保留`,
       action: { label: '撤销', onClick: () => update.mutate({ id: t.id, patch: { status: 'todo' } }) },
@@ -161,7 +180,7 @@ export default function TodayTasks() {
                 </summary>
                 <div className="px-3 pb-3 space-y-1.5">
                   {doneToday.map(t => (
-                    <TaskItem key={t.id} task={t}
+                    <TaskItem key={t.id} task={t} done
                       onToggle={() => toggleDone(t)}
                       onEdit={() => { setEditing(t); setDialogOpen(true) }}
                       onDelete={() => remove.mutate(t.id)} />

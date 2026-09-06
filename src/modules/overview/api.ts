@@ -46,16 +46,25 @@ export function isTodayScope(t: Task, today: string): boolean {
   return t.dueDate === today || (t.focus && t.focusDate === today)
 }
 
-/** 今日任务（今日到期 + 今日焦点 + 已过期未完成，不含 done） */
+/** v1.24 重复任务的「已完成」判定：普通完成（status done）或 repeat 任务当天已滚动完成。
+ *  repeat 完成不走 status='done'（同一行滚到下一期，completedAt 记完成时刻），完成判定单独覆盖 */
+export function isDoneForToday(t: Task, today: string): boolean {
+  return t.status === 'done' || (t.repeat != null && t.completedAt !== null && localDateOfISO(t.completedAt) === today)
+}
+
+/** 今日任务（今日到期 + 今日焦点 + 已过期未完成，不含已完成）。
+ *  过滤用 isDoneForToday 而非 status：repeat 任务逾期补完成时 dueDate 会被「跳过不补」推到今天，
+ *  只按 status 过滤会同任务同帧出现在今日区和已完成区（v1.24） */
 export function todayTasks(tasks: Task[], today: string): Task[] {
   return tasks
-    .filter(t => t.status !== 'done' && (isTodayScope(t, today) || (t.dueDate && t.dueDate < today)))
+    .filter(t => !isDoneForToday(t, today) && (isTodayScope(t, today) || (t.dueDate && t.dueDate < today)))
     .sort((a, b) => Number(b.focus) - Number(a.focus) || priorityRank(a) - priorityRank(b))
 }
-/** 今天完成的任务（completedAt 本地日期 = today，完成时间倒序）——今日页「已完成」分区用：划线保留 + 点方块撤销，不消失（2026-08 反馈） */
+/** 今天完成的任务（completedAt 本地日期 = today，完成时间倒序）——今日页「已完成」分区用：划线保留 + 点方块撤销，不消失（2026-08 反馈）。
+ *  v1.24 起含 repeat 任务当天滚动完成的（status 仍是 todo），统一走 isDoneForToday */
 export function todayDone(tasks: Task[], today: string): Task[] {
   return tasks
-    .filter(t => t.status === 'done' && t.completedAt !== null && localDateOfISO(t.completedAt) === today)
+    .filter(t => isDoneForToday(t, today) && t.completedAt !== null && localDateOfISO(t.completedAt) === today)
     .sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)))
 }
 /** 已过期未完成任务（顺延/逾期区用） */
