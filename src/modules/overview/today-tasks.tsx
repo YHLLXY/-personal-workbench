@@ -4,7 +4,8 @@ import { TaskItem } from './task-item'
 import { TaskDialog } from './task-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { CalendarClock, ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
+import { CalendarClock, ChevronDown, MoreHorizontal, Plus } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { todayStr } from '@/lib/db/types'
 import { nextOccurrence, prevOccurrence } from '@/lib/repeat'
 import { midpointSort, useDragSort } from '@/lib/drag-sort'
@@ -23,6 +24,8 @@ export default function TodayTasks() {
   const [tag, setTag] = useState<string | null>(null) // 当前标签筛选，null=全部
   const [query, setQuery] = useState('') // 标题关键词
   const [doneOpen, setDoneOpen] = useState(true) // 已完成分区默认展开：刚勾完就能看到划线，误触可立刻撤销
+  const [somedayMenuId, setSomedayMenuId] = useState<string | null>(null) // 将来区 ⋯ 菜单（受控，同一时刻至多一个展开）
+  const [somedayDate, setSomedayDate] = useState('')
   const today = todayStr()
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -78,6 +81,10 @@ export default function TodayTasks() {
       action: { label: '撤销', onClick: () => originals.forEach((d, id) => { if (d) update.mutate({ id, patch: { dueDate: d } }) }) },
       duration: 5000,
     })
+  }
+  // v1.24 G：将来任务转正式待办并指定到期日
+  const moveSomedayTo = (t: Task, date: string) => {
+    update.mutate({ id: t.id, patch: { status: 'todo', dueDate: date } }, { onSuccess: () => { toast.success(`已排到 ${date}`); setSomedayMenuId(null) } })
   }
 
   // 先按标签/关键词过滤，再走既有口径函数；someday 单独分流（todayTasks 口径不排除 someday，手动拆开避免同任务重复出现）
@@ -260,8 +267,23 @@ export default function TodayTasks() {
                   title="移到今天" className="shrink-0 flex items-center gap-0.5 text-[10px] text-primary border border-primary/30 rounded-full px-2 py-0.5 hover:bg-primary/10 transition-colors">
                   <CalendarClock className="size-3" />移到今天
                 </button>
-                <button onClick={() => { setEditing(t); setDialogOpen(true) }} aria-label="编辑" className="shrink-0 text-muted-foreground/50 hover:text-foreground transition-colors"><Pencil className="size-4" strokeWidth={1.7} /></button>
-                <button onClick={() => remove.mutate(t.id)} aria-label="删除" className="shrink-0 text-muted-foreground/50 hover:text-destructive transition-colors"><Trash2 className="size-4" strokeWidth={1.7} /></button>
+                {/* v1.24 G：⋯ 菜单——选日期（转正式待办 + 自选到期日）/ 编辑 / 删除（原 inline 编辑/删除收编） */}
+                <DropdownMenu open={somedayMenuId === t.id} onOpenChange={o => { setSomedayMenuId(o ? t.id : null); if (o) setSomedayDate('') }}>
+                  <DropdownMenuTrigger aria-label="更多操作" className="shrink-0 p-0.5 text-muted-foreground/50 hover:text-foreground transition-colors">
+                    <MoreHorizontal className="size-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    <div className="flex items-center gap-1.5 px-1.5 py-1">
+                      <input type="date" value={somedayDate} onChange={e => setSomedayDate(e.target.value)} aria-label="选择日期"
+                        className="h-7 flex-1 min-w-0 rounded-md border border-border bg-transparent px-1.5 text-xs" />
+                      <button type="button" onClick={() => moveSomedayTo(t, somedayDate)} disabled={!somedayDate}
+                        className="shrink-0 text-xs rounded-md border border-border px-2 py-1 hover:bg-muted disabled:opacity-40 transition-opacity">确定</button>
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => { setSomedayMenuId(null); setEditing(t); setDialogOpen(true) }}>编辑</DropdownMenuItem>
+                    <DropdownMenuItem variant="destructive" onClick={() => { setSomedayMenuId(null); remove.mutate(t.id) }}>删除</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             ))}
           </div>

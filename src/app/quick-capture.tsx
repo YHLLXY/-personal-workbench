@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import { useUiStore } from './store'
 import { repository } from '@/lib/db'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -27,6 +28,7 @@ export function QuickCapture() {
   const setTab = useUiStore(s => s.setCaptureTab)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
+  const [toSomeday, setToSomeday] = useState(false) // v1.24 G：存入将来收件箱
   const qc = useQueryClient()
 
   useEffect(() => {
@@ -37,7 +39,11 @@ export function QuickCapture() {
     return () => window.removeEventListener('keydown', onKey)
   }, [setOpen])
 
-  const addTask = useMutation({ mutationFn: () => repository.createTask({ title, dueDate: todayStr() }), onSuccess: () => { qc.invalidateQueries({ queryKey: taskKeys.all }); toast.success('任务已添加'); reset() }, onError: () => toast.error('添加失败') })
+  const addTask = useMutation({
+    mutationFn: () => repository.createTask(toSomeday ? { title, status: 'someday', dueDate: null } : { title, dueDate: todayStr() }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: taskKeys.all }); toast.success(toSomeday ? '已存入将来收件箱' : '任务已添加'); reset() },
+    onError: () => toast.error('添加失败'),
+  })
   const addNote = useMutation({ mutationFn: () => repository.createNote(content), onSuccess: () => { qc.invalidateQueries({ queryKey: noteKeys.all }); toast.success('已记下'); reset() }, onError: () => toast.error('保存失败') })
   const addLog = useMutation({
     mutationFn: async () => {
@@ -58,7 +64,7 @@ export function QuickCapture() {
     onError: () => toast.error('打卡失败'),
   })
 
-  function reset() { setTitle(''); setContent(''); setOpen(false) }
+  function reset() { setTitle(''); setContent(''); setToSomeday(false); setOpen(false) }
   if (!open) return null
 
   return (
@@ -75,7 +81,11 @@ export function QuickCapture() {
         </div>
         {tab === 'task' && (
           <form onSubmit={e => { e.preventDefault(); if (title.trim()) addTask.mutate() }} className="space-y-3">
-            <Input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="要做什么？今天到期" />
+            <Input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder={toSomeday ? '要做什么？先存进将来' : '要做什么？今天到期'} />
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+              <Checkbox checked={toSomeday} onCheckedChange={v => setToSomeday(v === true)} />
+              存入将来收件箱（不占今日，今日页「将来」区可见）
+            </label>
             <Button type="submit" className="w-full" disabled={!title.trim() || addTask.isPending}>添加任务</Button>
           </form>
         )}
