@@ -113,7 +113,8 @@ export default function TodayTasks() {
                         onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus } })}
                         onEdit={() => { setEditing(t); setDialogOpen(true) }}
                         onDelete={() => remove.mutate(t.id)}
-                        onPostpone={() => update.mutate({ id: t.id, patch: { dueDate: today } })} />
+                        onPostpone={() => update.mutate({ id: t.id, patch: { dueDate: today } })}
+                        onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })} />
                     </div>
                   ))}
                 </div>
@@ -134,7 +135,8 @@ export default function TodayTasks() {
                         onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus } })}
                         onEdit={() => { setEditing(t); setDialogOpen(true) }}
                         onDelete={() => remove.mutate(t.id)}
-                        onPostpone={() => update.mutate({ id: t.id, patch: { dueDate: today } })} />
+                        onPostpone={() => update.mutate({ id: t.id, patch: { dueDate: today } })}
+                        onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })} />
                     ))}
                     <Button
                       variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/30"
