@@ -2,6 +2,9 @@ import { test, expect, type Page } from '@playwright/test'
 
 /** 关键链路 E2E 冒烟（本地 IndexedDB 模式，每个用例独立 localStorage 上下文） */
 
+// 与 playwright.config 的 E2E_PORT 逃生口同步（手动 newContext 不经 config.use 合并，需显式传 baseURL）
+const BASE_URL = process.env.E2E_BASE_URL ?? (process.env.E2E_PORT ? `http://localhost:${process.env.E2E_PORT}` : 'http://localhost:5173')
+
 // 每个用例独立上下文 → 新手引导弹层每次都会出现并拦截点击，加载前直接标记已完成；
 // 启动动画同理打跳过钩子（wb-boot-skip），否则每个用例都要多等 3 秒；
 // /api/* 一律拦断（502）——动画/天气卡自带降级链，E2E 不依赖外网、不受上游抖动影响
@@ -55,8 +58,9 @@ test('重复任务：新建每天 → 完成滚动进已完成区（含徽章）
   await page.getByRole('option', { name: '每天', exact: true }).click()
   await page.getByRole('button', { name: '添加', exact: true }).click()
   await expect(page.getByText('今日 1 项')).toBeVisible()
-  // 行内 repeat 徽章
-  await expect(page.getByText('每天', { exact: true })).toBeVisible()
+  // 行内 repeat 徽章（限定任务行作用域：Dialog 关闭后 select 节点仍留 DOM，裸 getByText 会 strict 冲突）
+  const repeatBadge = page.locator('[data-flip-id]').getByText('每天', { exact: true })
+  await expect(repeatBadge).toBeVisible()
   // 完成 → 同一行滚动（status 保持 todo，completedAt 记今天 + dueDate 推进）：进已完成区，toast 带下次日期
   await page.getByLabel('完成', { exact: true }).first().click()
   await expect(page.getByText('今日 0 项')).toBeVisible()
@@ -65,12 +69,12 @@ test('重复任务：新建每天 → 完成滚动进已完成区（含徽章）
   // toast 撤销（闭包原 dueDate 精确恢复）：回今日待办，徽章仍在
   await page.getByRole('button', { name: '撤销', exact: true }).click()
   await expect(page.getByText('今日 1 项')).toBeVisible()
-  await expect(page.getByText('每天', { exact: true })).toBeVisible()
+  await expect(repeatBadge).toBeVisible()
 })
 
 test('启动动画：冷启动播放 → 点击任意处跳过', async ({ browser }) => {
   // 独立上下文：不打 wb-boot-skip 钩子，让动画正常播放
-  const ctx = await browser.newContext({ baseURL: 'http://localhost:5173', viewport: { width: 1280, height: 800 } })
+  const ctx = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1280, height: 800 } })
   await ctx.route('**/api/**', route => route.fulfill({ status: 502, body: '{}' }))
   const p = await ctx.newPage()
   await p.addInitScript(() => localStorage.setItem('wb-onboarded', '1'))
@@ -82,7 +86,7 @@ test('启动动画：冷启动播放 → 点击任意处跳过', async ({ browse
 })
 
 test('启动动画：不操作则播放结束自动淡出卸载', async ({ browser }) => {
-  const ctx = await browser.newContext({ baseURL: 'http://localhost:5173', viewport: { width: 1280, height: 800 } })
+  const ctx = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1280, height: 800 } })
   await ctx.route('**/api/**', route => route.fulfill({ status: 502, body: '{}' }))
   const p = await ctx.newPage()
   await p.addInitScript(() => localStorage.setItem('wb-onboarded', '1'))
