@@ -28,7 +28,7 @@ const clampInterval = (n: number) => Math.min(30, Math.max(1, Math.floor(n) || 1
 export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (v: boolean) => void; editing?: Task | null }) {
   const { create, update } = useTaskMutations()
   const [title, setTitle] = useState('')
-  const [status, setStatus] = useState<'todo' | 'someday'>('todo') // 状态 pills：待办 / 将来
+  const [status, setStatus] = useState<'todo' | 'doing' | 'someday'>('todo') // 状态 pills：待办 / 进行中 / 将来
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium')
   const [focus, setFocus] = useState(false)
   const [dueDate, setDueDate] = useState(todayStr())
@@ -43,7 +43,7 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
   useEffect(() => {
     if (open) {
       setTitle(editing?.title ?? '')
-      setStatus(editing?.status === 'someday' ? 'someday' : 'todo') // 仅暴露 todo/someday 两态，done/doing 回落为 todo
+      setStatus(editing?.status === 'someday' ? 'someday' : editing?.status === 'doing' ? 'doing' : 'todo') // 暴露 todo/doing/someday 三态，done 回落为 todo
       setPriority(editing?.priority ?? 'medium')
       setFocus(editing?.focus ?? false)
       setDueDate(editing?.dueDate ?? todayStr())
@@ -128,9 +128,9 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
               <Star className={cn('size-3.5 mr-1.5', focus && 'fill-current')} strokeWidth={1.7} />{focus ? '今日焦点' : '设为焦点'}
             </Button>
           </div>
-          {/* 状态 pills（样式参考 health RecordsPanel 类型 pills）：someday 即收件箱，可无日期 */}
+          {/* 状态 pills（样式参考 health RecordsPanel 类型 pills）：someday 即收件箱可无日期，doing 即进行中（v1.24 激活） */}
           <div className="flex gap-2">
-            {([['todo', '待办'], ['someday', '将来']] as const).map(([v, label]) => (
+            {([['todo', '待办'], ['doing', '进行中'], ['someday', '将来']] as const).map(([v, label]) => (
               <button key={v} type="button" onClick={() => setStatus(v)}
                 className={cn('flex-1 text-xs px-3 py-1.5 rounded-full border transition-colors', status === v ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground')}>{label}</button>
             ))}
