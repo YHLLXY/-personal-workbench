@@ -46,6 +46,28 @@ test('待办闭环：新建 → 显示 → 勾选完成 → toast 撤销 → 再
   await expect(page.getByText('今日 1 项')).toBeVisible()
 })
 
+test('重复任务：新建每天 → 完成滚动进已完成区（含徽章）→ toast 撤销回今日', async ({ page }) => {
+  await goto(page, '/tasks')
+  await page.getByRole('button', { name: '新建' }).click()
+  await page.getByPlaceholder('任务内容').fill('E2E 每日任务')
+  // 重复 Select（base-ui combobox）：不重复 → 每天
+  await page.getByRole('combobox').filter({ hasText: '不重复' }).click()
+  await page.getByRole('option', { name: '每天', exact: true }).click()
+  await page.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(page.getByText('今日 1 项')).toBeVisible()
+  // 行内 repeat 徽章
+  await expect(page.getByText('每天', { exact: true })).toBeVisible()
+  // 完成 → 同一行滚动（status 保持 todo，completedAt 记今天 + dueDate 推进）：进已完成区，toast 带下次日期
+  await page.getByLabel('完成', { exact: true }).first().click()
+  await expect(page.getByText('今日 0 项')).toBeVisible()
+  await expect(page.getByText('已完成 1 项 · 点方块可撤销')).toBeVisible()
+  await expect(page.getByText(/「E2E 每日任务」下次：\d{4}-\d{2}-\d{2}/)).toBeVisible()
+  // toast 撤销（闭包原 dueDate 精确恢复）：回今日待办，徽章仍在
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(page.getByText('今日 1 项')).toBeVisible()
+  await expect(page.getByText('每天', { exact: true })).toBeVisible()
+})
+
 test('启动动画：冷启动播放 → 点击任意处跳过', async ({ browser }) => {
   // 独立上下文：不打 wb-boot-skip 钩子，让动画正常播放
   const ctx = await browser.newContext({ baseURL: 'http://localhost:5173', viewport: { width: 1280, height: 800 } })

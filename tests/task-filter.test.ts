@@ -19,9 +19,10 @@ describe('todayTasks', () => {
     const tasks = [t({ id: 'a', dueDate: '2026-08-04' }), t({ id: 'b', focus: true, focusDate: '2026-08-04', dueDate: '2026-08-04' })]
     expect(todayTasks(tasks, '2026-08-04')[0].id).toBe('b')
   })
-  it('高优先级排前', () => {
-    const tasks = [t({ id: 'a', priority: 'low', dueDate: '2026-08-04' }), t({ id: 'b', priority: 'high', dueDate: '2026-08-04' })]
-    expect(todayTasks(tasks, '2026-08-04')[0].id).toBe('b')
+  it('排序按 sort 降序（v1.24：优先级已烘焙进 sort，圆点仅视觉信息）', () => {
+    // 存量优先级由迁移 011 / 本地惰性归一化烘焙进 sort（types.bakeTaskSort）：低优先级但 sort 大者排前
+    const tasks = [t({ id: 'a', priority: 'low', sort: 3e13 + 1, dueDate: '2026-08-04' }), t({ id: 'b', priority: 'high', sort: 1e13 + 2, dueDate: '2026-08-04' })]
+    expect(todayTasks(tasks, '2026-08-04')[0].id).toBe('a')
   })
 })
 
