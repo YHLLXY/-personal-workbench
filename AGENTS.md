@@ -88,6 +88,8 @@ tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 
 - 测试里 mock 网络时注意 QueryClientProvider 包裹；hot 页等接了 mutation 的组件必须有 Provider。
 - git 后台报 `multi-pack-index: Permission denied` / `geometric repack failed` 不影响 commit/push，用 `git log` + `git status` 确认即可，勿慌。
 - **Web 平台 API 写前必查沙箱约束**（2026-09-04 v1.23.2 全站崩溃教训，详录经验总结第十四节）：前台系统通知一律走 `registration.showNotification()`——`new Notification` 在 SW 控制的页面（本项目 autoUpdate + skipWaiting/clientsClaim，所有页面必被控制）与 iOS 上抛 `TypeError: Illegal constructor`；通知类增强能力调用全程 catch 静默，绝不冒泡到 ErrorBoundary。layout 内层 ErrorBoundary 的 `key={pathname}` 路由重置勿删（删了单页错误会粘死全站）。
+- **E2E 全挂先查 5173 被谁占**（2026-09-06 v1.24 教训，详录经验总结第十五节）：本机其他项目的 vite 占着 5173 + `reuseExistingServer` 静默复用，会让全部用例打在别人的应用上——连最稳的用例都秒挂且 error-context 快照不是本项目时就是它；用 `E2E_PORT=xxx npx playwright test` 换端口重跑，别急着重构代码。
+- **e2e 文本断言收敛到业务锚点作用域**：base-ui Dialog 关闭后 select 触发器/隐藏 listbox 节点仍留在 DOM，裸 `getByText` 会 strict 冲突——断言限定在 `[data-flip-id]` 行等业务作用域内。
 
 ## 工作流程 SOP
 

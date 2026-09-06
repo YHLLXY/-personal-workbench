@@ -1,6 +1,6 @@
 # v1.24 任务系统升级（重复任务 · 清单 · 手动排序 · doing 激活 · 改期菜单）
 
-> 2026-09-06 整理，**待审阅**。调研依据：`RESEARCH_UPGRADE_ROADMAP.md`（成熟产品模式与来源）。
+> 2026-09-06 整理，**已实施**（同日 A–G 七项全部落地，实测注记见文末）。调研依据：`RESEARCH_UPGRADE_ROADMAP.md`（成熟产品模式与来源）。
 > 判级预估：feat 多项 → **v1.24.0**。迁移：**011（幂等）——需用户在场执行**。
 > 零新依赖（dnd-kit/rrule.js/fuse.js 均被体积红线否决，见调研文档第四节）。
 
@@ -199,3 +199,13 @@ export function addDays(dateStr: string, n: number): string   // F 项改期菜�
 - [x] 准则 #2/#5/#6：零新依赖，dnd-kit/rrule/fuse 否决依据在调研文档 ✓
 - [x] 体积：预估 +10KB 内，门禁复验为验收条件 ✓
 - [x] 迁移幂等可重复执行 + 用户在场 ✓
+
+## 实测注记（2026-09-06 实施完成）
+
+实施顺序 A→B→C→D→F→E→G 按计划执行，每项独立 commit + 分项测试，风险最高的 E 项一次通过。实施中对计划做三处修正（教训沉淀见经验总结第十五节）：
+
+- **B3 修正**：todayTasks 过滤改用 `isDoneForToday`——计划「无需改动」漏了「逾期 repeat 补完成 → 跳过不补把 dueDate 推到今天 → 同帧双显」的组合边界；todayDone 同步收容 repeat 当天完成态（tests/task-order.test.ts 钉死）。
+- **A4 修正**：中点手动排序断言按实际中点语义（low 落到高/中之间，非「最前」）；50 次中点插入用远距锚点 3e13/1e13——相邻毫秒锚点的 gap/2^50 < ULP，中点必塌缩，「严格降序」在数学上不成立。
+- **新增约束（E2）**：midpointSort 空列表兜底必须 ≥1e13（裸 Date.now() 会触发本地惰性归一化二次烘焙，破坏拖拽序）——值域守卫约束所有写入路径。
+- **E2E 发现**：5173 被本机其他项目 vite 占用 + reuseExistingServer 静默复用 → 全用例打错应用；playwright.config 增加 E2E_PORT 逃生口，冒烟用例手动 newContext 的 baseURL 同步派生。
+- **验证实测**：vitest 493/493 全绿；JS 总量 1095/1120（+17KB，dropdown-menu 复用既有 chunk），max chunk 329→302（chunk 重排反降）；lint 11 ≤ 12；E2E 10 用例全绿（5 flaky 为已知冷编译 teardown 超时，重试兜底）。
