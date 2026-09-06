@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { isDoneForToday, todayTasks, todayDone } from '../src/modules/overview/api'
+import { midpointSort } from '../src/lib/drag-sort'
 import type { Task } from '../src/lib/db/types'
 
 const TODAY = '2026-09-06'
@@ -38,5 +39,31 @@ describe('isDoneForToday / todayDone / todayTasks（v1.24 repeat 口径）', () 
   it('todayTasks：repeat 昨日完成、今日到期 → 正常出现在今日区', () => {
     const t = task({ id: 'a', repeat: repeatDaily, completedAt: '2026-09-05T02:00:00.000Z' })
     expect(todayTasks([t], TODAY).map(x => x.id)).toEqual(['a'])
+  })
+})
+
+describe('todayTasks 排序（v1.24 E：焦点 → doing → sort 降序）', () => {
+  it('优先级不再参与比较（已烘焙进 sort），doing 优先于普通待办', () => {
+    const low = task({ id: 'low', sort: 1e13 + 1 })
+    const high = task({ id: 'high', priority: 'high', sort: 3e13 + 5 })
+    const doing = task({ id: 'doing', status: 'doing', sort: 2e13 + 3 })
+    const focusLow = task({ id: 'focus', focus: true, focusDate: TODAY, sort: 1e13 + 2 })
+    expect(todayTasks([low, high, doing, focusLow], TODAY).map(t => t.id)).toEqual(['focus', 'doing', 'high', 'low'])
+  })
+  it('sort 相同分组内按 sort 降序（手动拖拽序生效）', () => {
+    const a = task({ id: 'a', sort: 2e13 + 100 })
+    const b = task({ id: 'b', sort: 2e13 + 200 })
+    expect(todayTasks([a, b], TODAY).map(t => t.id)).toEqual(['b', 'a'])
+  })
+})
+
+describe('midpointSort（v1.24 E：半序中点）', () => {
+  it('两侧邻取中点；拖到头/尾用 ±65536 步长', () => {
+    expect(midpointSort(3e13, 2e13)).toBe(2.5e13)
+    expect(midpointSort(undefined, 2e13)).toBe(2e13 + 65536)
+    expect(midpointSort(3e13, undefined)).toBe(3e13 - 65536)
+  })
+  it('空列表兜底保持烘焙值域 ≥1e13（防本地惰性归一化二次烘焙）', () => {
+    expect(midpointSort(undefined, undefined)).toBeGreaterThanOrEqual(1e13)
   })
 })

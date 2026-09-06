@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { CalendarClock, ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import { todayStr } from '@/lib/db/types'
 import { nextOccurrence, prevOccurrence } from '@/lib/repeat'
+import { midpointSort, useDragSort } from '@/lib/drag-sort'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/empty-state'
 import { toast } from 'sonner'
@@ -91,6 +92,14 @@ export default function TodayTasks() {
   const todayList = list.filter(t => !overdue.some(o => o.id === t.id))
   const allTags = [...new Set((tasks ?? []).flatMap(t => t.tags))] // 全部任务的去重标签
   const filtering = Boolean(tag || query.trim())
+  // v1.24 E：今日区手动拖拽排序——半序只写被拖项一项（上/下邻 sort 中点），焦点/doing 分组由比较器保持
+  const todayById = new Map(todayList.map(t => [t.id, t]))
+  const drag = useDragSort(todayList.map(t => t.id), (newOrder, movedId) => {
+    const i = newOrder.indexOf(movedId)
+    const prevSort = i > 0 ? todayById.get(newOrder[i - 1])?.sort : undefined
+    const nextSort = i < newOrder.length - 1 ? todayById.get(newOrder[i + 1])?.sort : undefined
+    update.mutate({ id: movedId, patch: { sort: midpointSort(prevSort, nextSort) } })
+  })
 
   return (
     <div ref={rootRef} className="mx-auto max-w-3xl">
@@ -189,17 +198,23 @@ export default function TodayTasks() {
           {todayList.length > 0 && (
             <section>
               {overdue.length > 0 && <h2 className="text-xs font-medium text-muted-foreground mb-1.5">今日</h2>}
-              <div className="space-y-1.5">
-                {todayList.map(t => (
-                  <TaskItem key={t.id} task={t}
-                    onToggle={() => toggleDone(t)}
-                    onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus, focusDate: t.focus ? null : today } })}
-                    onEdit={() => { setEditing(t); setDialogOpen(true) }}
-                    onDelete={() => remove.mutate(t.id)}
-                    onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
-                    onReschedule={date => reschedule(t, date)}
-                    onSkip={t.repeat ? () => skipOnce(t) : undefined} />
-                ))}
+              {/* 拖拽容器：拖拽期间 overscroll-contain 防触摸滚动链（触摸三坑之二，见 lib/drag-sort.ts） */}
+              <div ref={drag.containerRef} className={cn('space-y-1.5', drag.draggingId && 'overscroll-contain')}>
+                {drag.order.map(id => {
+                  const t = todayById.get(id)
+                  if (!t) return null
+                  return (
+                    <TaskItem key={id} task={t}
+                      drag={{ id, handle: drag.handleProps(id) }}
+                      onToggle={() => toggleDone(t)}
+                      onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus, focusDate: t.focus ? null : today } })}
+                      onEdit={() => { setEditing(t); setDialogOpen(true) }}
+                      onDelete={() => remove.mutate(t.id)}
+                      onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
+                      onReschedule={date => reschedule(t, date)}
+                      onSkip={t.repeat ? () => skipOnce(t) : undefined} />
+                  )
+                })}
               </div>
             </section>
           )}

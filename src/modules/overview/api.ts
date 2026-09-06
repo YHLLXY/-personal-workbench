@@ -54,11 +54,16 @@ export function isDoneForToday(t: Task, today: string): boolean {
 
 /** 今日任务（今日到期 + 今日焦点 + 已过期未完成，不含已完成）。
  *  过滤用 isDoneForToday 而非 status：repeat 任务逾期补完成时 dueDate 会被「跳过不补」推到今天，
- *  只按 status 过滤会同任务同帧出现在今日区和已完成区（v1.24） */
+ *  只按 status 过滤会同任务同帧出现在今日区和已完成区（v1.24）。
+ *  v1.24 排序语义：焦点 → doing → sort 降序（手动拖拽序）。优先级圆点降为纯视觉信息，
+ *  存量优先级已由迁移 011 / 本地惰性归一化烘进 sort（types.bakeTaskSort），默认序与旧 UI 一致 */
 export function todayTasks(tasks: Task[], today: string): Task[] {
   return tasks
     .filter(t => !isDoneForToday(t, today) && (isTodayScope(t, today) || (t.dueDate && t.dueDate < today)))
-    .sort((a, b) => Number(b.focus) - Number(a.focus) || priorityRank(a) - priorityRank(b))
+    .sort((a, b) =>
+      Number(b.focus) - Number(a.focus) ||
+      Number(b.status === 'doing') - Number(a.status === 'doing') ||
+      b.sort - a.sort)
 }
 /** 今天完成的任务（completedAt 本地日期 = today，完成时间倒序）——今日页「已完成」分区用：划线保留 + 点方块撤销，不消失（2026-08 反馈）。
  *  v1.24 起含 repeat 任务当天滚动完成的（status 仍是 todo），统一走 isDoneForToday */
@@ -93,4 +98,3 @@ function daysBefore(dateStr: string, n: number): string {
   d.setDate(d.getDate() - n)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-function priorityRank(t: Task) { return t.priority === 'high' ? 0 : t.priority === 'medium' ? 1 : 2 }

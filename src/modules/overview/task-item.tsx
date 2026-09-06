@@ -1,17 +1,19 @@
 import { useState } from 'react'
-import { CalendarClock, Check, ChevronDown, Clock, MoreHorizontal, Plus, Repeat, RotateCcw, Star, Trash2, X } from 'lucide-react'
+import { CalendarClock, Check, ChevronDown, Clock, GripVertical, MoreHorizontal, Plus, Repeat, RotateCcw, Star, Trash2, X } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { genId, todayStr, type ChecklistItem, type Task } from '@/lib/db/types'
 import { addDays, nextMonday, repeatLabel } from '@/lib/repeat'
+import type { DragHandleProps } from '@/lib/drag-sort'
 import { cn } from '@/lib/utils'
 
 const PRIORITY_DOT: Record<Task['priority'], string> = { high: 'bg-destructive', medium: 'bg-accent', low: 'bg-muted-foreground/40' }
 
-export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, onDelete, onPostpone, onChecklist, onReschedule, onSkip }: {
+export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, onDelete, onPostpone, onChecklist, onReschedule, onSkip, drag }: {
   task: Task; done?: boolean; onToggle: () => void; onFocus?: () => void; onEdit: () => void; onDelete: () => void; onPostpone?: () => void
   onChecklist?: (items: ChecklistItem[]) => void
   onReschedule?: (date: string) => void
   onSkip?: () => void
+  drag?: { id: string; handle: DragHandleProps }
 }) {
   // done 覆盖：repeat 任务完成当天 status 仍是 todo（同一行滚动），由调用方传 isDoneForToday 收容进已完成区
   const done = doneOverride ?? task.status === 'done'
@@ -36,9 +38,17 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
   return (
     // data-flip-id：FLIP 布局动画锚点（src/lib/flip.ts）——同列表重排平滑（补加星标滑顶，不再瞬跳闪没），
     // 今日↔已完成跨区块连续滑移（坠落/飞回）。一条任务同一时刻只挂载在一个区块，task.id 全局唯一
-    <div data-flip-id={task.id}
+    <div data-flip-id={task.id} data-drag-id={drag?.id}
       className={cn('group bg-card border border-border rounded-xl px-3.5 py-2.5 transition-colors', done && 'opacity-60 bg-muted/40')}>
       <div className="flex items-center gap-3">
+        {/* 拖拽把手（v1.24 E）：touch-action:none 预置（W3C pointerevents#178）+ contextmenu 拦截（iOS 放大镜）都在 handleProps 里；
+            桌面悬停显现、移动端常显低强调；仅今日区行传 drag */}
+        {drag && (
+          <button type="button" aria-label="拖动排序" {...drag.handle}
+            className="shrink-0 cursor-grab touch-none text-muted-foreground/40 hover:text-muted-foreground active:cursor-grabbing transition-colors md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100">
+            <GripVertical className="size-3.5" />
+          </button>
+        )}
         <button onClick={onToggle} aria-label={done ? '撤销完成' : '完成'} title={done ? '撤销完成' : '标记完成'}
           className={cn('group/check size-[18px] rounded-md border-[1.5px] shrink-0 flex items-center justify-center transition-all active:scale-90',
             done ? 'bg-primary border-primary text-primary-foreground hover:brightness-110' : 'border-muted-foreground/40 hover:border-primary')}>
