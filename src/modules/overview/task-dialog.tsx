@@ -3,13 +3,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Star } from 'lucide-react'
 import { useTaskMutations } from './api'
 import { toast } from 'sonner'
 import { todayStr } from '@/lib/db/types'
 import { cn } from '@/lib/utils'
-import type { Task, TaskRepeat } from '@/lib/db/types'
+import type { Task, TaskInput, TaskRepeat } from '@/lib/db/types'
 
 const WEEK_CN = ['日', '一', '二', '三', '四', '五', '六']
 /** 重复预设：none/daily/weekday/weekly/monthly 为快捷项，custom 才暴露 interval/单位/锚点；
@@ -28,6 +29,7 @@ const clampInterval = (n: number) => Math.min(30, Math.max(1, Math.floor(n) || 1
 export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onOpenChange: (v: boolean) => void; editing?: Task | null }) {
   const { create, update } = useTaskMutations()
   const [title, setTitle] = useState('')
+  const [note, setNote] = useState('')
   const [status, setStatus] = useState<'todo' | 'doing' | 'someday'>('todo') // 状态 pills：待办 / 进行中 / 将来
   const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium')
   const [focus, setFocus] = useState(false)
@@ -43,6 +45,7 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
   useEffect(() => {
     if (open) {
       setTitle(editing?.title ?? '')
+      setNote(editing?.note ?? '')
       setStatus(editing?.status === 'someday' ? 'someday' : editing?.status === 'doing' ? 'doing' : 'todo') // 暴露 todo/doing/someday 三态，done 回落为 todo
       setPriority(editing?.priority ?? 'medium')
       setFocus(editing?.focus ?? false)
@@ -94,7 +97,7 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
   function submit() {
     if (!title.trim()) return
     const tags = tagsText.split(/[,，]/).map(s => s.trim()).filter(Boolean)
-    const payload = {
+    const payload: TaskInput = {
       title: title.trim(),
       status, // someday 时截止日期可留空（dueDate 已是空串 → null，不强制）
       priority,
@@ -105,6 +108,10 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
       tags,
       repeat: status === 'someday' ? null : buildRepeat(), // 将来任务不重复；显式 null = 清除
     }
+    // v1.25 备注条件挂键：杜绝 patch 里出现 note: undefined（本地 applyTaskPatch spread 会把已存备注抹成 undefined，
+    // 而云端 supabase-js 丢 undefined 键=保留，两边漂移）。有内容才挂；编辑时清空才显式 null（云端收到 null 才清列）
+    if (note.trim()) payload.note = note.trim()
+    else if (editing?.note) payload.note = null
     const onDone = () => { onOpenChange(false); toast.success(editing ? '已保存' : '已添加') }
     if (editing) update.mutate({ id: editing.id, patch: payload }, { onSuccess: onDone })
     else create.mutate(payload, { onSuccess: onDone })
@@ -115,6 +122,11 @@ export function TaskDialog({ open, onOpenChange, editing }: { open: boolean; onO
         <DialogHeader><DialogTitle>{editing ? '编辑任务' : '新建任务'}</DialogTitle></DialogHeader>
         <div className="space-y-3 pt-2">
           <Input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="任务内容" onKeyDown={e => e.key === 'Enter' && submit()} />
+          {/* v1.25 备注：显示在卡片标题下方（灰字，最多 2 行，全文进编辑弹窗看） */}
+          <div className="space-y-1.5">
+            <Label htmlFor="task-note">备注（可选，显示在卡片上）</Label>
+            <Textarea id="task-note" rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="补充细节、链接、背景…" />
+          </div>
           <div className="flex gap-3">
             <Select value={priority} onValueChange={v => setPriority(v as typeof priority)} items={{ high: '高优先级', medium: '中优先级', low: '低优先级' }}>
               <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>

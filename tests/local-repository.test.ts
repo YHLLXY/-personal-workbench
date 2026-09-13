@@ -20,6 +20,15 @@ describe('LocalRepository', () => {
     expect(without.focusDate).toBeNull()
   })
 
+  it('任务备注（v1.25）：创建带 note 读回；不带 note 键的 patch 不抹已存备注', async () => {
+    const t = await repo.createTask({ title: '带备注任务', note: '先查资料再动手' })
+    expect(t.note).toBe('先查资料再动手')
+    await repo.updateTask(t.id, { focus: true })
+    expect((await repo.listTasks()).find(x => x.id === t.id)?.note).toBe('先查资料再动手')
+    await repo.updateTask(t.id, { note: null })
+    expect((await repo.listTasks()).find(x => x.id === t.id)?.note).toBeNull()
+  })
+
   it('旧数据 focus=true 无 focusDate 读取时按创建日补齐（惰性迁移）', async () => {
     localStorage.setItem('wb:tasks', JSON.stringify([{ id: 'old1', title: '旧焦点', focus: true, priority: 'medium', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-03T16:00:00.000Z' }]))
     const tasks = await repo.listTasks()

@@ -22,8 +22,9 @@ export interface Task {
   createdAt: string        // ISO
   repeat?: TaskRepeat | null   // v1.24 重复规则；null/缺省 = 不重复（旧数据天然缺省，非兼容层）
   checklist?: ChecklistItem[]  // v1.24 清单；缺省 = 无清单
+  note?: string | null         // v1.25 备注；缺省 = 无备注（卡片标题下方灰字展示，line-clamp-2）
 }
-export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; dueTime?: string | null; focusDate?: string | null; tags?: string[]; repeat?: TaskRepeat | null; checklist?: ChecklistItem[] }
+export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; dueTime?: string | null; focusDate?: string | null; tags?: string[]; repeat?: TaskRepeat | null; checklist?: ChecklistItem[]; note?: string | null }
 
 export interface Habit { id: string; name: string; icon: string; color: string; targetPerDay: number; active: boolean; createdAt: string }
 export interface HabitLog { id: string; habitId: string; logDate: string; count: number }

@@ -172,6 +172,14 @@ async function runScript(repo: WorkbenchRepository) {
   const rtAfter = (await repo.listTasks()).find(t => t.id === rt.id)
   const repeatSnap = { repeat: rt.repeat ?? null, checklistLen: rt.checklist?.length ?? 0, checklistAfter: rtAfter?.checklist ?? [] }
 
+  // —— 任务 v1.25：备注往返（创建带 note → 不带 note 键的 patch 须保留 → 显式 null 须清空）——
+  const nt = await repo.createTask({ title: '带备注任务', dueDate: TODAY, note: '先查资料再动手' })
+  await repo.updateTask(nt.id, { focus: true }) // 不带 note 键：备注必须原样保留（本地 spread / 云端丢 undefined 键两条路径都对齐）
+  const noteKept = (await repo.listTasks()).find(t => t.id === nt.id)?.note ?? null
+  await repo.updateTask(nt.id, { note: null }) // 显式 null：清空
+  const noteCleared = (await repo.listTasks()).find(t => t.id === nt.id)?.note ?? null
+  const taskNoteSnap = { created: nt.note ?? null, kept: noteKept, cleared: noteCleared }
+
   // —— 任务 v1.24：sort 烘焙排序（高→中→低）+ 中点手动排序（低插到高/中之间）——
   const hi = await repo.createTask({ title: '高优先', priority: 'high', dueDate: TODAY })
   const md = await repo.createTask({ title: '中优先', priority: 'medium', dueDate: TODAY })
@@ -310,7 +318,7 @@ async function runScript(repo: WorkbenchRepository) {
   const channelCleared = (await repo.getChannelConfigs()).serverchanKey
   const channelSnap = { saved: channelSaved, cleared: channelCleared }
 
-  return { habitSnap, habitCascade, taskSnap, repeatSnap, orderSnap, halfSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap }
+  return { habitSnap, habitCascade, taskSnap, repeatSnap, taskNoteSnap, orderSnap, halfSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap }
 }
 
 describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', () => {
@@ -337,6 +345,10 @@ describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', (
     expect(supaSnap.repeatSnap?.repeat).toEqual({ freq: 'weekly', interval: 1, weekdays: [1, 3], anchor: 'due' })
     expect(supaSnap.repeatSnap?.checklistLen).toBe(2)
     expect(supaSnap.repeatSnap?.checklistAfter).toEqual([{ id: 'c1', text: '第一步', done: true }])
+  })
+  it('任务 v1.25：备注往返一致（不带 note 键的 patch 保留、显式 null 清空）', () => {
+    expect(supaSnap.taskNoteSnap).toEqual(localSnap.taskNoteSnap)
+    expect(supaSnap.taskNoteSnap).toEqual({ created: '先查资料再动手', kept: '先查资料再动手', cleared: null })
   })
   it('任务 v1.24：sort 烘焙默认序（高→中→低）与中点手动排序一致', () => {
     expect(supaSnap.orderSnap).toEqual(localSnap.orderSnap)

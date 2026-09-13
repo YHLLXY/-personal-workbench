@@ -34,7 +34,7 @@ export class LocalRepository implements WorkbenchRepository {
   }
   async createTask(input: TaskInput) {
     // sort 烘焙公式见 types.bakeTaskSort（迁移 011 / 云端 createTask 同款）
-    return insert<Task>('tasks', { id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', dueDate: input.dueDate ?? null, dueTime: input.dueTime ?? null, focusDate: input.focusDate ?? null, tags: input.tags ?? [], sort: bakeTaskSort(input.priority ?? 'medium'), repeat: input.repeat ?? null, checklist: input.checklist, completedAt: null, createdAt: new Date().toISOString() })
+    return insert<Task>('tasks', { id: genId(), title: input.title, focus: input.focus ?? false, priority: input.priority ?? 'medium', status: input.status ?? 'todo', dueDate: input.dueDate ?? null, dueTime: input.dueTime ?? null, focusDate: input.focusDate ?? null, tags: input.tags ?? [], sort: bakeTaskSort(input.priority ?? 'medium'), repeat: input.repeat ?? null, checklist: input.checklist, note: input.note ?? null, completedAt: null, createdAt: new Date().toISOString() })
   }
   async updateTask(id: string, p: Partial<Task>) {
     const rows = read<Task>('tasks')
