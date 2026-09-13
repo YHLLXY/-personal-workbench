@@ -72,6 +72,17 @@ test('重复任务：新建每天 → 完成滚动进已完成区（含徽章）
   await expect(repeatBadge).toBeVisible()
 })
 
+test('任务备注（v1.25）：新建填备注 → 卡片标题下方显示备注', async ({ page }) => {
+  await goto(page, '/tasks')
+  await page.getByRole('button', { name: '新建' }).click()
+  await page.getByPlaceholder('任务内容').fill('E2E 备注任务')
+  await page.getByPlaceholder('补充细节、链接、背景…').fill('备注内容出现在卡片上')
+  await page.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(page.getByText('今日 1 项')).toBeVisible()
+  // 断言限定任务行作用域（Dialog 关闭后残留节点不再参与匹配）
+  await expect(page.locator('[data-flip-id]').getByText('备注内容出现在卡片上')).toBeVisible()
+})
+
 test('启动动画：冷启动播放 → 点击任意处跳过', async ({ browser }) => {
   // 独立上下文：不打 wb-boot-skip 钩子，让动画正常播放
   const ctx = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1280, height: 800 } })
