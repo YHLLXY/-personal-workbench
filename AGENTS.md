@@ -90,6 +90,9 @@ tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 
 - **Web 平台 API 写前必查沙箱约束**（2026-09-04 v1.23.2 全站崩溃教训，详录经验总结第十四节）：前台系统通知一律走 `registration.showNotification()`——`new Notification` 在 SW 控制的页面（本项目 autoUpdate + skipWaiting/clientsClaim，所有页面必被控制）与 iOS 上抛 `TypeError: Illegal constructor`；通知类增强能力调用全程 catch 静默，绝不冒泡到 ErrorBoundary。layout 内层 ErrorBoundary 的 `key={pathname}` 路由重置勿删（删了单页错误会粘死全站）。
 - **E2E 全挂先查 5173 被谁占**（2026-09-06 v1.24 教训，详录经验总结第十五节）：本机其他项目的 vite 占着 5173 + `reuseExistingServer` 静默复用，会让全部用例打在别人的应用上——连最稳的用例都秒挂且 error-context 快照不是本项目时就是它；用 `E2E_PORT=xxx npx playwright test` 换端口重跑，别急着重构代码。
 - **e2e 文本断言收敛到业务锚点作用域**：base-ui Dialog 关闭后 select 触发器/隐藏 listbox 节点仍留在 DOM，裸 `getByText` 会 strict 冲突——断言限定在 `[data-flip-id]` 行等业务作用域内。
+- **「刷新后看不到新版本」先分清是部署没到还是设备没换**（2026-09-11 v1.24.0 教训，详录经验总结第十六节）：应用里没有硬编码版本号（版本 = 打包进去的 `CHANGELOG[0]`），显示旧版本 ⇒ 跑的是旧包。判定顺序：① 用 GitHub deployment status 证部署（`api.github.com/repos/<owner>/<repo>/commits/<sha>/status`，仓库 public 无需 token）；② 本地复现更新握手（造两个构建覆盖同一服务目录，**一次真刷新就该换包**；复现要用自带 SPA 回退 + `max-age=0, must-revalidate` 的静态服务，别用 `vite preview` 默认头——SW 能否发现新版取决于 sw.js 的缓存策略）。**已知真实缺口**：更新检查只在页面加载时发生（`src/pwa.ts` 的 `registerSW({ immediate: true })`），而已安装 PWA 隐藏 ≥5 分钟恢复前台会重播启动动画——观感像刷新却没有导航，因此根本不检查更新；修法见 `docs/plans/FIX_PLAN_SW_UPDATE_ON_RESUME.md`。
+- **构建产物 copy 前先断言「这次构建独有的标记」**：`npm run build` = `tsc -b && vite build`，tsc 失败（如 TS6133 声明未使用）时 `dist` 保持上一次产物，而 `cp -r dist xxx` 照样成功——「copy 成功」会被误读成「构建成功」。2026-09-11 排查 SW 更新时差点把构建 A 当成 B。
+- **探针/脚本类排查的环境坑**：① 本机 vite dev server 只监听 `localhost`（::1），连 `127.0.0.1:<port>` 报 ERR_CONNECTION_REFUSED 不是服务没起来；② 脚本用 `import.meta.url` 取项目路径必须 `decodeURIComponent`（中文目录被百分号编码 → 静态服务 500）；③ 沙箱网络是白名单（`api.github.com` 通，`vercel.com` / `*.vercel.app` 全挡，先 `curl` 探可达性再定验证方案）；④ 收工必须删净临时目录/脚本/日志（`git status` 不留 untracked 探针文件）并 kill 后台进程。
 
 ## 工作流程 SOP
 
