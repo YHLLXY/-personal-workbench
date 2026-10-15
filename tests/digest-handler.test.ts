@@ -171,6 +171,8 @@ beforeEach(() => {
   globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url)
     if (u.includes('/api/hot')) return new Response(JSON.stringify(state.hotPayload), { status: 200 })
+    // Telegram getMe（自检只校验 Token，不发消息）
+    if (u.includes('api.telegram.org')) return new Response(JSON.stringify({ ok: true, result: { username: 'moyanwushangbot' } }), { status: 200 })
     if (u.includes('/chat/completions')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as { messages?: Array<{ role: string; content: string }> }
       const system = body.messages?.find(m => m.role === 'system')?.content ?? ''
@@ -411,7 +413,8 @@ describe('api/digest 入口', () => {
     expect(res.statusCode).toBe(200)
     const body = res.body as { ok: boolean; checks: Array<{ name: string; ok: boolean; detail: string }> }
     expect(body.ok).toBe(true)
-    expect(body.checks.map(c => c.name)).toEqual(['环境变量', '数据库表', '归属用户', '热榜抓取', '模型连通'])
+    expect(body.checks.map(c => c.name)).toEqual(['环境变量', '数据库表', '归属用户', 'Telegram', '热榜抓取', '模型连通'])
+    // 没配 Telegram 时是「可选、未配置」而不是失败——可选功能不该把整个自检拖红
     expect(body.checks.every(c => c.ok)).toBe(true)
     // 只报「已配置 + 长度」，绝不回显 key 本身
     const env = body.checks[0].detail
@@ -591,6 +594,36 @@ describe('api/digest 入口', () => {
     const sections = state.rowsOf('wb_daily_reports')[0].sections as Array<{ category: string; items: unknown[] }>
     expect(sections.find(s => s.category === '科技')!.items).toHaveLength(6)   // 6 < 12，全进
     expect(sections.find(s => s.category === '财经')!.items).toHaveLength(4)   // 撞上默认 4 条上限
+  })
+
+  it('自检报出 Telegram 配置状态：没配是「可选」而非失败（v1.29.1）', async () => {
+    // 可选功能配错了要在自检里看得见，否则只有等到某条提醒该发而没发时才发现。
+    state.hotPayload = { items: [{ title: 'x', source: 'hn', url: 'https://a.com/1', category: 'tech' }], sources: [{ id: 'hn', name: 'HN', category: 'tech' }] }
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'selftest' }, headers: CRON }), res as never)
+    const tg = (res.body as { checks: Array<{ name: string; ok: boolean; detail: string }> }).checks.find(c => c.name === 'Telegram')!
+    expect(tg.ok).toBe(true)
+    expect(tg.detail).toContain('未配置')
+  })
+
+  it('自检：Token 与 Chat ID 只填了一半 → 判失败并说清两个都要（v1.29.1）', async () => {
+    state.rows.push({ table: 'wb_channel_configs', row: { user_id: 'u1', telegram_bot_token: '123:abc', telegram_chat_id: '' } })
+    state.hotPayload = { items: [{ title: 'x', source: 'hn', url: 'https://a.com/1', category: 'tech' }], sources: [] }
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'selftest' }, headers: CRON }), res as never)
+    const tg = (res.body as { checks: Array<{ name: string; ok: boolean; detail: string }> }).checks.find(c => c.name === 'Telegram')!
+    expect(tg.ok).toBe(false)
+    expect(tg.detail).toContain('只填了一个')
+  })
+
+  it('自检：配置齐了就用 getMe 校验 Token，并报出 Bot 用户名（v1.29.1）', async () => {
+    state.rows.push({ table: 'wb_channel_configs', row: { user_id: 'u1', telegram_bot_token: '123:abc', telegram_chat_id: '999' } })
+    state.hotPayload = { items: [{ title: 'x', source: 'hn', url: 'https://a.com/1', category: 'tech' }], sources: [] }
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'selftest' }, headers: CRON }), res as never)
+    const tg = (res.body as { checks: Array<{ name: string; ok: boolean; detail: string }> }).checks.find(c => c.name === 'Telegram')!
+    expect(tg.ok).toBe(true)
+    expect(tg.detail).toContain('@moyanwushangbot')
   })
 
 })

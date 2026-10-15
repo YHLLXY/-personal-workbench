@@ -260,6 +260,15 @@ function thinkingOff(): boolean {
 interface ChatResult { text: string }
 
 /** 唯一的模型调用出口。json=true 时要求 JSON 输出（DeepSeek 支持 response_format） */
+/** 校验 Bot Token（单文件约束：api/*.ts 之间禁止相对导入，这里留一份最小实现）。
+ *  只做 getMe，不发消息——自检不该给人发通知。 */
+async function telegramGetMe(botToken: string): Promise<string> {
+  const r = await fetch('https://api.telegram.org/bot' + botToken + '/getMe', { signal: AbortSignal.timeout(8000) })
+  const j = (await r.json().catch(() => null)) as { ok?: boolean; description?: string; result?: { username?: string } } | null
+  if (!r.ok || !j?.ok) throw new Error(j?.description ?? 'HTTP ' + r.status)
+  return j.result?.username ?? 'bot'
+}
+
 async function chat(system: string, user: string, opts: { json?: boolean; maxTokens?: number; timeoutMs?: number } = {}): Promise<ChatResult> {
   const key = LLM_KEY()
   if (!key) throw new Error('未配置 LLM_API_KEY / DEEPSEEK_API_KEY')
@@ -608,6 +617,38 @@ export async function runSelfTest(host: string | undefined): Promise<SelfCheck[]
   }
 
   try {
+  // Telegram 通道：可选功能，但**配错了要在自检里看得见**——
+  // 否则只有等到某条提醒该发而没发时才发现，那时已经晚了。
+  // 顺带把「迁移 014 到底执行没有」也验了（没执行的话这两列查不出来）。
+  if (missing.length === 0) {
+    try {
+      const sb2 = adminClient()
+      const uid = await resolveUserId(sb2)
+      const { data, error } = await sb2.from('wb_channel_configs').select('telegram_bot_token,telegram_chat_id').eq('user_id', uid).maybeSingle()
+      if (error) {
+        const code = String((error as { code?: string }).code ?? '')
+        out.push({ name: 'Telegram', ok: false, detail: '读不到通道配置（' + code + '）——迁移 014 执行了吗？' })
+      } else {
+        const tok = String(data?.telegram_bot_token ?? '').trim()
+        const chat = String(data?.telegram_chat_id ?? '').trim()
+        if (!tok && !chat) {
+          out.push({ name: 'Telegram', ok: true, detail: '未配置（可选）——配了就能把提醒和日报推到手机' })
+        } else if (!tok || !chat) {
+          out.push({ name: 'Telegram', ok: false, detail: 'Token 与 Chat ID 只填了一个，两个都要填（我的 → 通知设置 → Telegram）' })
+        } else {
+          try {
+            const bot = await telegramGetMe(tok)
+            out.push({ name: 'Telegram', ok: true, detail: 'Bot @' + bot + ' 的 Token 有效、Chat ID 已填。能不能真送到要等一条真实提醒或「保存并测试」' })
+          } catch (err) {
+            out.push({ name: 'Telegram', ok: false, detail: 'Token 校验失败：' + (err instanceof Error ? err.message : '未知') + '——回 @BotFather 重新复制整串（要含中间的冒号）' })
+          }
+        }
+      }
+    } catch (err) {
+      out.push({ name: 'Telegram', ok: false, detail: err instanceof Error ? err.message : '检查失败' })
+    }
+  }
+
     const { items, sources } = await fetchHot('https://' + (host ?? ''))
     out.push({ name: '热榜抓取', ok: items.length > 0, detail: items.length + ' 条 / ' + sources.length + ' 个源' })
   } catch (err) {
