@@ -140,6 +140,18 @@ export function intEnv(name: string, fallback: number, min: number, max: number)
 // 下限允许 0：那等于「只落库、不处理」——函数超时限制极紧时，可以把抓取与处理拆到两次调用里跑
 const BUDGET_MS = () => intEnv('DIGEST_BUDGET_MS', 20_000, 0, 280_000)
 
+/** 把总预算拆成「逐条摘要」与「事件聚簇」两段，返回各自的截止时刻。
+ *
+ *  ⚠️ 为什么不让摘要吃满整个预算：摘要一吃满，聚簇就**颗粒无收**——
+ *  条目全都 `done` 了，但一个事件都没建，随后 `build` 拿不到任何事件、
+ *  只能产出一份空日报。第一次跑最容易撞上（抓取本身就要花掉几秒）。
+ *  聚簇很便宜（每条约一次 RPC + 一两次写，不走模型），40% 的份额远远够用。
+ *
+ *  totalMs 为 0 时两段都立即到期，等价于「只抓取落库」。 */
+export function splitBudget(now: number, totalMs: number): { enrichUntil: number; clusterUntil: number } {
+  return { enrichUntil: now + Math.floor(totalMs * 0.6), clusterUntil: now + totalMs }
+}
+
 function adminClient(): SupabaseClient {
   return createClient(env('VITE_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), { auth: { persistSession: false } })
 }
@@ -521,12 +533,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sb = adminClient()
       const userId = await resolveUserId(sb)
       const origin = `https://${req.headers.host ?? ''}`
-      // 整条 enrich 共用一个时间预算：抓取已经花掉的时间也算在内
-      const deadline = t0 + BUDGET_MS()
+      // 整条 enrich 共用一个时间预算（抓取已经花掉的时间也算在内），但要给聚簇留出份额
+      const budget = splitBudget(t0, BUDGET_MS())
       const { items, sources } = await fetchHot(origin)
       const added = await persistItems(sb, userId, items, sources)
-      const enriched = await enrichPending(sb, userId, intEnv('DIGEST_ENRICH_LIMIT', 35, 1, 200), intEnv('DIGEST_CONCURRENCY', 5, 1, 20), deadline)
-      const clustered = await clusterItems(sb, userId, deadline)
+      const enriched = await enrichPending(sb, userId, intEnv('DIGEST_ENRICH_LIMIT', 35, 1, 200), intEnv('DIGEST_CONCURRENCY', 5, 1, 20), budget.enrichUntil)
+      const clustered = await clusterItems(sb, userId, budget.clusterUntil)
       await logRun(sb, userId, date, 'enrich', {
         status: 'ok', items_in: items.length, items_out: enriched.processed,
         detail: `新增 ${added} / 处理 ${enriched.processed}（顺延 ${enriched.deferred}）/ 聚簇 ${clustered.clustered}（顺延 ${clustered.deferred}）`,

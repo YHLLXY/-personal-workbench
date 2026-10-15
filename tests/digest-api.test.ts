@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeUrl, titleHash, parseLlmJson, normalizeEnrichment, groupByCategory, mapLimit, intEnv } from '../api/digest'
+import { normalizeUrl, titleHash, parseLlmJson, normalizeEnrichment, groupByCategory, mapLimit, intEnv, splitBudget } from '../api/digest'
 
 /** AI 日报的纯函数（v1.27）。API 本体要打真网络，这里只钉住可判定的部分。 */
 
@@ -148,5 +148,20 @@ describe('mapLimit 兜底', () => {
   it('并发数为 0 或负数时同样不会丢活', async () => {
     expect(await mapLimit([1, 2], 0, async n => n)).toEqual([1, 2])
     expect(await mapLimit([1, 2], -3, async n => n)).toEqual([1, 2])
+  })
+})
+
+describe('splitBudget（摘要阶段不能吃满预算，否则聚簇颗粒无收）', () => {
+  it('摘要拿 60%，剩下的留给聚簇', () => {
+    expect(splitBudget(1000, 20_000)).toEqual({ enrichUntil: 13_000, clusterUntil: 21_000 })
+  })
+  it('任何正预算下，摘要的截止都严格早于聚簇', () => {
+    for (const total of [1, 100, 3_000, 20_000, 280_000]) {
+      const b = splitBudget(0, total)
+      expect(b.enrichUntil).toBeLessThan(b.clusterUntil)
+    }
+  })
+  it('预算为 0（只抓取落库模式）时两段都立即到期', () => {
+    expect(splitBudget(1000, 0)).toEqual({ enrichUntil: 1000, clusterUntil: 1000 })
   })
 })

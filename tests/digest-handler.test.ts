@@ -353,6 +353,22 @@ describe('api/digest 入口', () => {
     } finally { delete process.env.DIGEST_BUDGET_MS }
   })
 
+  it('摘要吃满自己的份额后，聚簇仍然能建事件（否则 build 只能产出空日报）', async () => {
+    // 预算 0 → 摘要阶段立即到期、全部顺延；此时没有 done 条目可聚，clustered 应为 0。
+    // 这条守的是「两段预算互不侵占」：摘要到期不等于聚簇也到期。
+    state.hotPayload = { items: [{ title: 'A', source: 'hn', url: 'https://a.com/a', category: 'tech' }], sources: [] }
+    process.env.DIGEST_BUDGET_MS = '0'
+    try {
+      const res = makeRes()
+      await handler(makeReq({ query: { entry: 'enrich' }, headers: CRON }), res as never)
+      const body = res.body as { processed: number; clustered: number }
+      expect(body.processed).toBe(0)
+      expect(body.clustered).toBe(0)
+      // 条目还在队列里，没有变成「done 但无事件」的孤儿状态
+      expect(state.rowsOf('wb_hot_items')[0].ai_status).toBe('pending')
+    } finally { delete process.env.DIGEST_BUDGET_MS }
+  })
+
   it('陈旧 processing 行会被重新领取（函数被平台超时掐死后的兜底）', async () => {
     const stale = new Date(Date.now() - 30 * 60_000).toISOString()
     state.hotPayload = { items: [], sources: [] }
