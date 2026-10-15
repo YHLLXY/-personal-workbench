@@ -22,7 +22,10 @@ const state = vi.hoisted(() => ({
   // 注入一个 PostgREST 风格的【普通对象】错误：它故意不是 Error 实例，
   // 因为老代码正是用 `instanceof Error` 判断、把真正的原因吞成了 internal error（v1.28.5）
   rpcError: null as null | { code: string; message: string },
-  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = []; state.rpcCalls = []; state.brokenTables = []; state.rpcError = null },
+  llmBodies: [] as Array<Record<string, unknown>>,
+  // 注入 finish_reason：用来复现「额度被思考吃光 → 输出截断」（v1.28.6）
+  llmFinishReason: null as string | null,
+  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = []; state.rpcCalls = []; state.brokenTables = []; state.rpcError = null; state.llmBodies = []; state.llmFinishReason = null },
   rowsOf(table: string) { return state.rows.filter(r => r.table === table).map(r => r.row) },
 }))
 
@@ -161,9 +164,12 @@ beforeEach(() => {
       const body = JSON.parse(String(init?.body ?? '{}')) as { messages?: Array<{ role: string; content: string }> }
       const system = body.messages?.find(m => m.role === 'system')?.content ?? ''
       const userMsg = body.messages?.find(m => m.role === 'user')?.content ?? ''
+      state.llmBodies.push(body as Record<string, unknown>)
       state.llmCalls.push({ system, user: userMsg })
       const next = state.llmQueue.shift() ?? '{"skip":false,"score":7,"summary":"摘要","category":"科技","tags":["ai"]}'
-      return new Response(JSON.stringify({ choices: [{ message: { content: next } }] }), { status: 200 })
+      const fields: Record<string, unknown> = { message: { content: next } }
+      if (state.llmFinishReason) fields.finish_reason = state.llmFinishReason
+      return new Response(JSON.stringify({ choices: [fields] }), { status: 200 })
     }
     return new Response('{}', { status: 404 })
   }) as unknown as typeof fetch
@@ -488,6 +494,37 @@ describe('api/digest 入口', () => {
     const body = res.body as { stage: string; error: string }
     expect(body.stage).toBe('persist-items')
     expect(body.error).toContain('wb_hot_items')
+  })
+
+  it('模型输出被截断时报「截断」，而不是含糊的「无法解析」（v1.28.6）', async () => {
+    // 线上实测：18 条真实标题在 max_tokens=2000 下 reasoning 吃掉 1925，正文只剩 100 出头，
+    // finish_reason=length。老代码把半截 JSON 交给 parseLlmJson，只说「无法解析」——
+    // 真正的原因（额度不够）被这层措辞盖住了整整一轮排查。
+    state.llmFinishReason = 'length'
+    const d = today()
+    state.rows.push({ table: 'wb_hot_events', row: { id: 'e1', user_id: 'u1', event_date: d, title: 't', category: '科技', heat: 1, item_ids: [], source_count: 0 } })
+    state.llmQueue = ['{"title":"半截']
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'build' }, headers: CRON }), res as never)
+    expect(res.statusCode).toBe(500)
+    const body = res.body as { error: string }
+    expect(body.error).toContain('截断')
+    expect(body.error).toContain('max_tokens')
+    expect(body.error).not.toContain('无法解析')
+    expect(state.rowsOf('wb_daily_reports')).toHaveLength(0)
+  })
+
+  it('默认给 DeepSeek 发 thinking=disabled，把额度全留给正文（v1.28.6）', async () => {
+    const d = today()
+    state.rows.push({ table: 'wb_hot_events', row: { id: 'e1', user_id: 'u1', event_date: d, title: 'AI 芯片', category: '科技', heat: 9, item_ids: [], source_count: 0 } })
+    state.llmQueue = ['{"title":"t","overview":"o","points":[]}']
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'build' }, headers: CRON }), res as never)
+    expect(res.statusCode).toBe(200)
+    expect(state.llmBodies.length).toBeGreaterThan(0)
+    expect(state.llmBodies[0].thinking).toEqual({ type: 'disabled' })
+    expect(state.llmBodies[0].response_format).toEqual({ type: 'json_object' })
+    expect(Number(state.llmBodies[0].max_tokens)).toBeGreaterThanOrEqual(4000)
   })
 
 })

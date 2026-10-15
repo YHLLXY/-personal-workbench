@@ -223,12 +223,27 @@ const LLM_BASE = () => process.env.LLM_BASE_URL ?? 'https://api.deepseek.com'
 const LLM_MODEL = () => process.env.LLM_MODEL ?? 'deepseek-flash'
 const LLM_KEY = () => process.env.LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? ''
 
+/** 是否给模型关掉思考模式（默认关，即「不发思考」）。LLM_THINKING=on 可以打开。
+ *
+ *  ⚠️ 为什么默认关：DeepSeek 的**思考 token 计入 max_tokens**。2026-10-15 线上实测，
+ *  一份 18 条真实标题的日报请求在 max_tokens=2000 下 reasoning 吃掉 1925，正文只剩 100 出头，
+ *  finish_reason=length → JSON 截断。逐条摘要的 500 额度同样可能被思考吃光，而那条路径**不报错**：
+ *  parseLlmJson 返回 null、normalizeEnrichment 静默套用兜底值，条目照样标成 done——
+ *  故障表现只有「摘要质量悄悄变差」。关掉之后不再产生 reasoning token，实测快 2~4 倍、额度全给正文。
+ *
+ *  只对 DeepSeek 端点发这个字段：换成别的 OpenAI 兼容端点时，未知字段可能被 400 拒掉。 */
+function thinkingOff(): boolean {
+  if ((process.env.LLM_THINKING ?? '').trim().toLowerCase() === 'on') return false
+  return LLM_BASE().includes('deepseek')
+}
+
 interface ChatResult { text: string }
 
 /** 唯一的模型调用出口。json=true 时要求 JSON 输出（DeepSeek 支持 response_format） */
 async function chat(system: string, user: string, opts: { json?: boolean; maxTokens?: number; timeoutMs?: number } = {}): Promise<ChatResult> {
   const key = LLM_KEY()
   if (!key) throw new Error('未配置 LLM_API_KEY / DEEPSEEK_API_KEY')
+  const mt = opts.maxTokens ?? 1200
   const r = await fetch(`${LLM_BASE()}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
@@ -236,15 +251,23 @@ async function chat(system: string, user: string, opts: { json?: boolean; maxTok
       model: LLM_MODEL(),
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       temperature: 0.3,
-      max_tokens: opts.maxTokens ?? 1200,
+      max_tokens: mt,
+      // 思考 token 也吃这个额度，默认关掉（见 thinkingOff 的说明）
+      ...(thinkingOff() ? { thinking: { type: 'disabled' } } : {}),
       ...(opts.json === false ? {} : { response_format: { type: 'json_object' } }),
     }),
     // 单次调用也要受时间预算约束：固定 60s 的话，一个卡住的请求会把预算和平台超时一起撑爆
     signal: AbortSignal.timeout(Math.min(Math.max(opts.timeoutMs ?? 60_000, 3_000), 60_000)),
   })
   if (!r.ok) throw new Error(`LLM ${r.status} ${(await r.text()).slice(0, 200)}`)
-  const j = (await r.json()) as { choices?: Array<{ message?: { content?: string } }> }
-  return { text: j.choices?.[0]?.message?.content ?? '' }
+  const j = (await r.json()) as { choices?: Array<{ message?: { content?: string }; finish_reason?: string }> }
+  const choice = j.choices?.[0]
+  // ⚠️ 截断必须当场抛错，不能把半截 JSON 交给调用方：
+  // 调用方拿到它只会说「无法解析」，而真正的原因是额度不够——2026-10-15 线上就这么绕了一圈。
+  if (choice?.finish_reason === 'length') {
+    throw new Error(`模型输出被截断（max_tokens=${mt} 用尽）。思考 token 也计入这个额度，可调大 maxTokens，或设 LLM_THINKING=off 关掉思考模式`)
+  }
+  return { text: choice?.message?.content ?? '' }
 }
 
 /** 单条资讯 → 结构化结果。提示词参考 Horizon 的 analysis rubric 与 AIHOT 的答案前置模式 */
@@ -449,7 +472,7 @@ async function buildReport(sb: SupabaseClient, userId: string, date: string, per
 
   const flat = sections.flatMap(s => s.items)
   const payload = flat.map(i => ({ eventId: i.eventId, title: i.title, category: sections.find(s => s.items.includes(i))?.category ?? '其他' }))
-  const { text } = await chat(DIGEST_SYSTEM, JSON.stringify(payload), { maxTokens: 2000 })
+  const { text } = await chat(DIGEST_SYSTEM, JSON.stringify(payload), { maxTokens: 4000 })
   const parsed = parseLlmJson<{ title?: string; overview?: string; points?: Array<{ eventId?: string; point?: string }> }>(text)
   if (!parsed) throw new Error('模型未返回可解析的 JSON')
 

@@ -226,6 +226,37 @@ enrich 分支再逐段打 `stage` 标签，500 时一并回传「哪一段炸的
 顺带把 `logRun` 的失败降级成非致命——运行日志写不进去，不该让一次**已经成功**的
 抓取处理变成 500。
 
+### 7.3 思考 token 吃掉了输出额度，日报被截断
+
+**症状**：迁移 016 修好后 enrich 全绿（`processed: 35, deferred: 0, clustered: 18`），
+但 `build` 仍然 500 —— 这次正文是 `模型未返回可解析的 JSON`（新加的 `errText` 让它第一次说了人话）。
+
+**定位**：`chat()` 只取 `choices[0].message.content`，把 `finish_reason` 和 `usage` 全扔了，
+所以看不到真相。本地拿真实 Key 复现，把这两个字段打出来：
+
+```
+payload 18 条真实长度标题（2098 字符）
+max_tokens=2000 → finish_reason=length | completion 2000 (reasoning 1925) | 正文 136 字 | 解析失败
+max_tokens=4000 → finish_reason=stop   | completion  546 起 | 正文 1527 字 | 解析成功
+```
+
+**根因**：`deepseek-flash` 默认走思考模式，**而思考 token 计入 `max_tokens`**。
+18 条真实标题让思考需要约 1900 token，2000 的额度里只剩 100 出头写正文——写到一半就断了。
+（同一份 prompt 换成短标题时 reasoning 只要 871，能过——所以这是个**随输入长度漂移**的坑。）
+
+**修法**（三道）：
+
+1. `chat()` 默认给 DeepSeek 端点发 `thinking: { type: 'disabled' }`。实测 reasoning 归零、
+   快 2~4 倍、额度全给正文——**而且质量没有下降**（总述的跨领域归纳、要点的信息密度都在）。
+   `LLM_THINKING=on` 可打开。只对 DeepSeek 端点发，避免别的兼容端点被未知字段 400。
+2. `chat()` 读取 `finish_reason`，**截断当场抛错**并说清「额度用尽」，不再把半截 JSON 交给调用方。
+3. `buildReport` 的 `maxTokens` 2000 → 4000（额度只是上限，不产生额外费用）。
+
+> 教训：**调用模型时把 `finish_reason` 和 `usage` 一起取回来**。只取 `content` 的话，
+> 「被截断」和「模型乱答」在日志里长得一模一样。
+> 另一条：**关掉思考不是省钱的妥协，它同时修好了正确性**——逐条摘要的 500 额度同样可能被思考吃光，
+> 而那条路径 `parseLlmJson` 失败会静默走兜底值，条目照样标 `done`，故障表现只有「质量悄悄变差」。
+
 ## 八、下一步（可选）
 
 - 给 `wb_hot_items` 加 embedding 写入 + 打开向量召回
