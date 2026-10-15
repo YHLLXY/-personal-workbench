@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { breakForFocusIndex, formatSeconds, planFor, getPomodoroSettings, savePomodoroSettings } from '../src/lib/pomodoro'
+import { breakForFocusIndex, formatSeconds, planFor, getPomodoroSettings, savePomodoroSettings, loadPomodoroState, savePomodoroState, freshPomodoroState, POMODORO_STATE_KEY } from '../src/lib/pomodoro'
 
 const SETTINGS_KEY = 'wb:pomodoro-settings'
 
@@ -44,5 +44,50 @@ describe('planFor 可选参数', () => {
   it('传入自定义专注时长后按新值计算', () => {
     expect(planFor(2, 40)).toEqual({ focusMinutes: 40, breakMinutes: 5, focusIndex: 2, totalFocus: 2 })
     expect(planFor(4, 30)).toEqual({ focusMinutes: 30, breakMinutes: 15, focusIndex: 4, totalFocus: 4 })
+  })
+})
+
+describe('pomodoro 计时状态持久化（v1.26：主题 note 必须与计时同生共死）', () => {
+  it('无存储时返回 null', () => {
+    localStorage.removeItem(POMODORO_STATE_KEY)
+    expect(loadPomodoroState()).toBeNull()
+  })
+
+  it('读写往返：note 与计时一起保存', () => {
+    const s = { phase: 'focus' as const, focusIndex: 2, totalSeconds: 1500, elapsed: 300, startedAt: 1700000000000, running: true, note: '写毕业论文第三章' }
+    savePomodoroState(s)
+    expect(loadPomodoroState()).toEqual(s)
+    localStorage.removeItem(POMODORO_STATE_KEY)
+  })
+
+  it('旧数据缺 note 时补空串，不因升级丢掉正在跑的计时', () => {
+    // v1.26 之前的 payload 没有 note 字段
+    localStorage.setItem(POMODORO_STATE_KEY, JSON.stringify({ phase: 'focus', focusIndex: 1, totalSeconds: 1500, elapsed: 120, startedAt: 1700000000000, running: true }))
+    const s = loadPomodoroState()
+    expect(s).not.toBeNull()
+    expect(s?.note).toBe('')
+    expect(s?.running).toBe(true)
+    expect(s?.startedAt).toBe(1700000000000)
+    localStorage.removeItem(POMODORO_STATE_KEY)
+  })
+
+  it('note 类型不对时按空串处理，不整体作废', () => {
+    localStorage.setItem(POMODORO_STATE_KEY, JSON.stringify({ phase: 'focus', focusIndex: 1, totalSeconds: 1500, elapsed: 0, startedAt: null, running: false, note: 42 }))
+    expect(loadPomodoroState()?.note).toBe('')
+    localStorage.removeItem(POMODORO_STATE_KEY)
+  })
+
+  it('损坏 / 字段类型不符 / running 缺 startedAt 一律返回 null', () => {
+    localStorage.setItem(POMODORO_STATE_KEY, 'not-json')
+    expect(loadPomodoroState()).toBeNull()
+    localStorage.setItem(POMODORO_STATE_KEY, JSON.stringify({ phase: 'nope', focusIndex: 1, totalSeconds: 1, elapsed: 0, running: false }))
+    expect(loadPomodoroState()).toBeNull()
+    localStorage.setItem(POMODORO_STATE_KEY, JSON.stringify({ phase: 'focus', focusIndex: 1, totalSeconds: 1500, elapsed: 0, running: true, startedAt: null }))
+    expect(loadPomodoroState()).toBeNull()
+    localStorage.removeItem(POMODORO_STATE_KEY)
+  })
+
+  it('freshPomodoroState 带空 note 且不 running', () => {
+    expect(freshPomodoroState(25)).toEqual({ phase: 'focus', focusIndex: 1, totalSeconds: 1500, elapsed: 0, startedAt: null, running: false, note: '' })
   })
 })
