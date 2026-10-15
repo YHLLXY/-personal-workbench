@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { CalendarDays, ExternalLink, Newspaper, RefreshCw, Sparkles } from 'lucide-react'
+import { CalendarDays, Check, Copy, ExternalLink, Newspaper, RefreshCw, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { useDailyReports, useRebuildDigest } from './api'
 import { isCloudMode } from '@/lib/db'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/empty-state'
-import { formatReportDate, isDigestNotEnabled } from './digest-view'
+import { formatReportDate, isDigestNotEnabled, reportToMarkdown } from './digest-view'
 import { cn } from '@/lib/utils'
 import type { DailyReport } from '@/lib/db/types'
 
@@ -18,6 +18,7 @@ export function DailyDigest({ onGoList }: { onGoList?: () => void } = {}) {
   const { data: reports, isLoading, error } = useDailyReports()
   const rebuild = useRebuildDigest()
   const [picked, setPicked] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const list = reports ?? []
   const current: DailyReport | undefined = list.find(r => r.reportDate === picked) ?? list[0]
 
@@ -61,6 +62,31 @@ export function DailyDigest({ onGoList }: { onGoList?: () => void } = {}) {
     )
   }
 
+  /** 复制成 Markdown：贴进 Obsidian / 飞书 / 微信都能保持结构 */
+  async function copyReport(r: DailyReport) {
+    const md = reportToMarkdown(r)
+    try {
+      await navigator.clipboard.writeText(md)
+    } catch {
+      // 剪贴板 API 要求安全上下文；某些 App 内置浏览器会拒绝，退回最老土的办法
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = md
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      } catch {
+        toast.error('复制失败，请长按选中文本手动复制')
+        return
+      }
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1600)
+  }
+
   return (
     <div className="space-y-3">
       {/* 日期切换：历史日报多了以后靠它回看 */}
@@ -82,6 +108,15 @@ export function DailyDigest({ onGoList }: { onGoList?: () => void } = {}) {
             {formatReportDate(current.reportDate)}
             <span className="text-muted-foreground/50">·</span>
             {current.itemCount} 条事件 · {current.sourceCount} 个来源
+            <button
+              type="button"
+              onClick={() => copyReport(current)}
+              aria-label="复制日报为 Markdown"
+              className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+              {copied ? '已复制' : '复制'}
+            </button>
           </div>
           <h2 className="mt-1 text-lg font-bold leading-snug">{current.title}</h2>
           {current.overview && <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{current.overview}</p>}

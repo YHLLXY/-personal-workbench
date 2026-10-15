@@ -551,4 +551,46 @@ describe('api/digest 入口', () => {
     expect(detail).toContain('库里的第一个用户')
   })
 
+  it('编排时把 enrich 已经生成的摘要一起喂给模型（v1.29）', async () => {
+    // 线上首版日报「信息太少」的主因：payload 里只有 title + category，模型看不到任何内容，
+    // 只能拿标题硬编要点。而这两三句摘要 enrich 阶段早就生成好、也早就付过钱了。
+    const d = today()
+    state.rows.push({ table: 'wb_hot_items', row: { id: 'i1', user_id: 'u1', event_id: 'e1', source_name: 'HN', url: 'https://a.com/1', title: '芯片', ai_summary: '这家公司把产能翻了一番，明年一季度量产。', ai_score: 9 } })
+    state.rows.push({ table: 'wb_hot_events', row: { id: 'e1', user_id: 'u1', event_date: d, title: 'AI 芯片产能翻番', category: '科技', heat: 9, item_ids: ['i1'], source_count: 1 } })
+    state.llmQueue = ['{"title":"t","overview":"o","points":[]}']
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'build' }, headers: CRON }), res as never)
+    expect(res.statusCode).toBe(200)
+    const sent = JSON.parse(state.llmCalls.at(-1)!.user) as Array<{ eventId: string; title: string; summary: string }>
+    expect(sent[0].summary).toContain('产能翻了一番')
+  })
+
+  it('同一事件有多条摘要时，取 ai_score 最高的那条送给模型（v1.29）', async () => {
+    const d = today()
+    state.rows.push({ table: 'wb_hot_items', row: { id: 'i1', user_id: 'u1', event_id: 'e1', source_name: 'A', url: 'https://a.com/1', title: 'a', ai_summary: '次要来源的说法。', ai_score: 2 } })
+    state.rows.push({ table: 'wb_hot_items', row: { id: 'i2', user_id: 'u1', event_id: 'e1', source_name: 'B', url: 'https://a.com/2', title: 'b', ai_summary: '主要来源的说法。', ai_score: 9 } })
+    state.rows.push({ table: 'wb_hot_events', row: { id: 'e1', user_id: 'u1', event_date: d, title: '事件', category: '科技', heat: 5, item_ids: ['i1', 'i2'], source_count: 2 } })
+    state.llmQueue = ['{"title":"t","overview":"o","points":[]}']
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'build' }, headers: CRON }), res as never)
+    const sent = JSON.parse(state.llmCalls.at(-1)!.user) as Array<{ summary: string }>
+    expect(sent[0].summary).toContain('主要来源的说法')
+  })
+
+  it('重点关注分类（科技）用更宽的配额，其他分类维持 4 条上限（v1.29）', async () => {
+    // 热榜约 85% 是科技/AI，统一按 4 条切的话砍掉的正好是最想看的那块。
+    const d = today()
+    for (let i = 0; i < 6; i++) {
+      state.rows.push({ table: 'wb_hot_events', row: { id: 't' + i, user_id: 'u1', event_date: d, title: '科技' + i, category: '科技', heat: 20 - i, item_ids: [], source_count: 0 } })
+      state.rows.push({ table: 'wb_hot_events', row: { id: 'f' + i, user_id: 'u1', event_date: d, title: '财经' + i, category: '财经', heat: 10 - i, item_ids: [], source_count: 0 } })
+    }
+    state.llmQueue = ['{"title":"t","overview":"o","points":[]}']
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'build' }, headers: CRON }), res as never)
+    expect(res.statusCode).toBe(200)
+    const sections = state.rowsOf('wb_daily_reports')[0].sections as Array<{ category: string; items: unknown[] }>
+    expect(sections.find(s => s.category === '科技')!.items).toHaveLength(6)   // 6 < 12，全进
+    expect(sections.find(s => s.category === '财经')!.items).toHaveLength(4)   // 撞上默认 4 条上限
+  })
+
 })

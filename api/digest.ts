@@ -167,6 +167,18 @@ export function errText(err: unknown): string {
  *  平台上限：Vercel Fluid compute 最长 300 秒；而线上自检能跑满 12.4 秒正常返回，
  *  说明本项目的函数超时至少 > 13 秒（老的 10 秒限额下自检早就被掐断了）。 */
 // 下限允许 0：那等于「只落库、不处理」——函数超时限制极紧时，可以把抓取与处理拆到两次调用里跑
+/** 日报里每个分类最多几条事件。 */
+const PER_CATEGORY = () => intEnv('DIGEST_PER_CATEGORY', 4, 1, 40)
+
+/** 「重点关注分类」用它自己更宽的配额。
+ *
+ *  ⚠️ 为什么需要它：本项目的热榜约 85% 是科技/AI（11 个科技源 + 8 个学术源），
+ *  模型归出来的事件也大多落在「科技」。统一按 4 条切的话，砍掉的正好是最想看的那一块——
+ *  线上实测第一份日报只剩 10 条事件，科技只有 4 条。
+ *  DIGEST_FOCUS_CATEGORY 设为空字符串可以关掉这个特权，退回统一配额。 */
+const FOCUS_CATEGORY = () => (process.env.DIGEST_FOCUS_CATEGORY ?? '科技').trim()
+const FOCUS_PER_CATEGORY = () => intEnv('DIGEST_FOCUS_PER_CATEGORY', 12, 1, 40)
+
 const BUDGET_MS = () => intEnv('DIGEST_BUDGET_MS', 50_000, 0, 280_000)
 
 /** 把【剩余】预算按 60/40 拆给「逐条摘要」与「事件聚簇」，返回各自的截止时刻。
@@ -435,17 +447,23 @@ interface ReportSection { category: string; items: ReportSectionItem[] }
 /** 编排提示词：**分类排序由代码做完，模型只写文字**（这是 AIHOT / Horizon 的核心共识） */
 const DIGEST_SYSTEM = [
   '你是一个中文日报主编。给你今天已经分好类、排好序的新闻事件，请写一份当日简报。',
+  '每个事件带有 title（代表标题）与 summary（已经核实过的两三句摘要；可能为空）。',
   '输出严格的 JSON 对象：',
   '{"title": string, "overview": string, "points": [{"eventId": string, "point": string}]}',
   '规则：',
-  '1. title 是一句话概括今天最值得注意的事，不超过 24 字。',
-  '2. overview 是三到五句的今日总述，点出跨领域的共同线索；不要逐条罗列，不要用「今天」「本日」开头。',
-  '3. points 与输入事件一一对应，每个 point 一到两句，说清「这件事的关键信息是什么」，不复述标题。',
-  '4. 不要编造输入里没有的事实、数字、公司名。',
-  '5. 只输出 JSON，不要 Markdown 围栏。',
+  '1. title 是一句话概括当天最值得注意的事，不超过 24 字。',
+  '2. overview 是四到六句的当日总述，点出跨领域的共同线索；不要逐条罗列，不要用「今天」「本日」开头。',
+  '3. points 与输入事件一一对应，每个 point 用两到四句写清楚三件事：发生了什么、关键细节是什么、为什么值得关注。',
+  '4. **优先依据 summary 来写**，它才是内容来源；title 只用来定位这是哪件事。summary 为空时才只依据标题，并写得保守些。',
+  '5. 不要复述标题，不要把 summary 原样抄一遍——要提炼，不要复制。',
+  '6. 不要编造输入里没有的事实、数字、公司名、时间。',
+  '7. 只输出 JSON，不要 Markdown 围栏。',
 ].join('\n')
 
-async function buildReport(sb: SupabaseClient, userId: string, date: string, perCategory: number): Promise<{ items: number; sources: number } | null> {
+async function buildReport(sb: SupabaseClient, userId: string, date: string): Promise<{ items: number; sources: number } | null> {
+  const perCategory = PER_CATEGORY()
+  const focus = FOCUS_CATEGORY()
+  const focusCap = FOCUS_PER_CATEGORY()
   const { data: evRows, error } = await sb.from('wb_hot_events')
     .select('id,title,category,heat,item_ids,source_count')
     .eq('user_id', userId).eq('event_date', date)
@@ -462,15 +480,23 @@ async function buildReport(sb: SupabaseClient, userId: string, date: string, per
     seen.add(e.id)
     let sec = sections.find(s => s.category === e.category)
     if (!sec) { sec = { category: e.category, items: [] }; sections.push(sec) }
-    if (sec.items.length >= perCategory) continue
+    if (sec.items.length >= (e.category === focus ? focusCap : perCategory)) continue
     sec.items.push({ eventId: e.id, title: e.title, point: '', sources: [] })
   }
 
   // 取来源（每个事件最多 3 条，用于「这件事有 N 家媒体在说」）
   const allItemIds = [...new Set(events.flatMap(e => e.item_ids ?? []))]
-  const { data: itemRows } = await sb.from('wb_hot_items').select('id,event_id,source_name,url').in('id', allItemIds.slice(0, 300))
+  const { data: itemRows } = await sb.from('wb_hot_items').select('id,event_id,source_name,url,ai_summary,ai_score').in('id', allItemIds.slice(0, 300))
   const byEvent = new Map<string, Array<{ name: string; url: string }>>()
-  for (const r of (itemRows ?? []) as Array<{ event_id: string | null; source_name: string; url: string }>) {
+  // 每个事件「最有分量的那条摘要」（按 ai_score 取），后面要连同标题一起喂给模型
+  const summaryOf = new Map<string, { score: number; text: string }>()
+  for (const r of (itemRows ?? []) as Array<{ event_id: string | null; source_name: string; url: string; ai_summary: string | null; ai_score: number | null }>) {
+    const sum = (r.ai_summary ?? '').trim()
+    if (r.event_id && sum) {
+      const score = Number(r.ai_score ?? 0)
+      const prev = summaryOf.get(r.event_id)
+      if (!prev || score > prev.score) summaryOf.set(r.event_id, { score, text: sum })
+    }
     if (!r.event_id) continue
     const list = byEvent.get(r.event_id) ?? []
     if (list.length < 3) list.push({ name: r.source_name, url: r.url })
@@ -479,8 +505,14 @@ async function buildReport(sb: SupabaseClient, userId: string, date: string, per
   for (const sec of sections) for (const it of sec.items) it.sources = byEvent.get(it.eventId) ?? []
 
   const flat = sections.flatMap(s => s.items)
-  const payload = flat.map(i => ({ eventId: i.eventId, title: i.title, category: sections.find(s => s.items.includes(i))?.category ?? '其他' }))
-  const { text } = await chat(DIGEST_SYSTEM, JSON.stringify(payload), { maxTokens: 4000 })
+  // ⚠️ summary 必须带上：enrich 阶段已经为每条生成过两三句摘要，不给模型的话它只看得到
+  // 标题，写出来的要点必然空泛——而这份摘要早就付过钱了。线上首版日报「信息太少」的主因就是它。
+  const payload = flat.map(i => ({
+    eventId: i.eventId, title: i.title,
+    category: sections.find(s => s.items.includes(i))?.category ?? '其他',
+    summary: summaryOf.get(i.eventId)?.text ?? '',
+  }))
+  const { text } = await chat(DIGEST_SYSTEM, JSON.stringify(payload), { maxTokens: 6000 })
   const parsed = parseLlmJson<{ title?: string; overview?: string; points?: Array<{ eventId?: string; point?: string }> }>(text)
   if (!parsed) throw new Error('模型未返回可解析的 JSON')
 
@@ -662,7 +694,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!isCron(req)) return res.status(401).json({ ok: false })
       const sb = adminClient()
       const userId = await resolveUserId(sb)
-      const r = await buildReport(sb, userId, date, intEnv('DIGEST_PER_CATEGORY', 4, 1, 20))
+      const r = await buildReport(sb, userId, date)
       // 同上：日报已经写库了，日志写不进去不该把它变成 500
       try {
         await logRun(sb, userId, date, 'digest', { status: 'ok', items_out: r?.items ?? 0, detail: r ? `${r.items} 条事件 / ${r.sources} 个来源` : '今天还没有可编排的事件' })
@@ -679,7 +711,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (entry === 'force') {
       const auth = await authUser(req)
       if (!auth) return res.status(401).json({ ok: false })
-      const r = await buildReport(auth.sb, auth.userId, date, intEnv('DIGEST_PER_CATEGORY', 4, 1, 20))
+      const r = await buildReport(auth.sb, auth.userId, date)
       if (!r) return res.json({ ok: true, built: false, error: '今天还没有可编排的事件——先跑一次 enrich' })
       return res.json({ ok: true, built: true, ...r, user: auth.userId.slice(0, 8), ms: Date.now() - t0 })
     }

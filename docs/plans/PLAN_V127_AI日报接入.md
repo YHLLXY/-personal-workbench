@@ -296,6 +296,44 @@ const r = await buildReport(sb, (await sb.auth.getUser()).data.user?.id ?? '', .
 
 > 教训：**凡是服务端替用户猜身份的地方，都要让这个猜测可见。**
 
+### 7.6 日报「信息太少」——两处，都不是信息源的锅
+
+**用户的反馈**：日报信息太少，而且想更关注科技；怀疑是信息源的问题。
+
+**先查信息源：不是。** `api/hot.ts` 里 25 个源，tech 11 个（GitHub 热门 / Hacker News / V2EX /
+Lobsters / 36氪 / 少数派 / 爱范儿 / Solidot / cnBeta / IT之家 / 开源中国）+ academic 8 个
+（arXiv ×7 / 机器之心）——**本来就 85% 是科技/AI**。
+
+**真正的原因有两个，都在编排环节**：
+
+1. **付过钱的摘要没被用上**。`buildReport` 发给模型的是
+   ```ts
+   { eventId, title, category }      // 就这三个字段
+   ```
+   ——模型**只看得到标题**。而 enrich 阶段早就为每条生成过两三句 `ai_summary` 并写进了库，
+   编排时却一个字都没传。模型拿不到任何内容，写出来的要点必然空泛。
+   **修法**：payload 带上 `summary`（同一事件有多条时取 `ai_score` 最高的那条），
+   并把提示词从「每个 point 一到两句」改成「两到四句，优先依据 summary，要提炼不要复制」。
+2. **配额砍在了最想看的地方**。`DIGEST_PER_CATEGORY` 默认 4，而模型归出来的事件大多落在「科技」，
+   于是科技只剩 4 条（线上首版日报总共 10 条事件）。
+   **修法**：新增重点分类特权——`DIGEST_FOCUS_CATEGORY`（默认 `科技`）用
+   `DIGEST_FOCUS_PER_CATEGORY`（默认 12），其余分类维持 4。
+
+### 7.7 定时任务改放 GitHub Actions
+
+**背景**：原本建议用第三方定时服务（cron-job.org），用户注册/登录不进去，用不了。
+
+**改为 `.github/workflows/digest.yml`**，理由：
+
+- 仓库本来就用 GitHub，不用再注册账号；密钥存仓库 Secret，不散落到第三方后台
+- **三步放在同一个 job 里顺序执行**（`curl enrich` → `sleep 30` → `curl enrich` → `sleep 10` → `curl build`），
+  顺序是确定的。拆成三个独立定时任务的话，各自的调度延迟会把 build 排到 enrich 前面，产出空日报
+- 支持 `workflow_dispatch`，Actions 页面点一下就能手动跑一次（调参时很有用）
+- 失败会在 Actions 页面标红，比第三方服务的邮件更容易看见
+
+**踩到的坑**：GitHub 的 `cron` **一律按 UTC**。北京时间 07:30 = 前一天 `23:30 UTC`，写成 `30 23 * * *`。
+另外计划任务在仓库连续 60 天无提交后会被自动停用（本项目 CI 常在跑，风险很低）。
+
 ## 八、下一步（可选）
 
 - 给 `wb_hot_items` 加 embedding 写入 + 打开向量召回

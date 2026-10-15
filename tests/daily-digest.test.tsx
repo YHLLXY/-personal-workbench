@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { formatReportDate, isDigestNotEnabled } from '../src/modules/news/digest-view'
 import type { DailyReport } from '../src/lib/db/types'
@@ -122,4 +122,20 @@ describe('DailyDigest（v1.27）', () => {
     expect(screen.queryByText('纽约时报')).not.toBeNull()
     expect(screen.getAllByRole('link').filter(a => a.getAttribute('href') === '')).toHaveLength(0)
   })
+
+  it('「复制」把日报导出成 Markdown 写进剪贴板（v1.29）', async () => {
+    // 导出格式由纯函数 reportToMarkdown 决定，这里只验「按钮 → 剪贴板」这一段接线。
+    const writeText = vi.fn(async (_text: string) => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    vi.mocked(repository.listDailyReports).mockResolvedValueOnce([report])
+    renderDigest()
+    await waitFor(() => expect(screen.getByText(report.title)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '复制日报为 Markdown' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    const md = writeText.mock.calls[0][0]
+    expect(md).toContain('# ' + report.title)
+    expect(md).toContain('- **AI 芯片每 9 个月翻番**')
+    expect(md).toContain('[纽约时报](https://a.com/1)')
+  })
+
 })

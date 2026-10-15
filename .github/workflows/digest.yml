@@ -1,0 +1,60 @@
+name: AI 日报
+
+# 每天北京时间 07:30 生成日报。
+#
+# 为什么放在 GitHub Actions 而不是第三方定时服务：
+#   · 仓库本来就用 GitHub，不用再注册一个账号
+#   · 密钥存在仓库 Secret 里，不会散落到第三方后台
+#   · 三步放在【同一个 job】里顺序执行 —— 顺序是确定的。
+#     拆成三个独立定时任务的话，各自的调度延迟会把 build 排到 enrich 前面，产出空日报。
+#
+# ⚠️ GitHub 的 cron 一律按 UTC：北京时间 07:30 = 前一天 23:30 UTC。
+# ⚠️ 计划任务在仓库连续 60 天没有提交后会被 GitHub 自动停用（本项目 CI 常在跑，风险很低；
+#    真被停用了 Actions 页面会有提示，点一下 Enable 即可）。
+
+on:
+  schedule:
+    - cron: '30 23 * * *'
+  workflow_dispatch:   # 手动触发：Actions 页面选这个 workflow → Run workflow
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://workbench.yuhailinlxy.com
+    steps:
+      - name: 检查 CRON_SECRET 是否配置
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::仓库没有配置 CRON_SECRET —— 到 Settings → Secrets and variables → Actions → New repository secret 添加，名字必须是 CRON_SECRET"
+            exit 1
+          fi
+
+      - name: ① 抓取 + 逐条摘要（第一轮）
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -sS --fail-with-body -m 150 -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/digest-enrich"
+          echo
+
+      - name: 等 30 秒（让第二轮拿到新条目）
+        run: sleep 30
+
+      - name: ② 抓取 + 逐条摘要（第二轮，补上一轮没轮到的）
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -sS --fail-with-body -m 150 -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/digest-enrich"
+          echo
+
+      - name: 等 10 秒
+        run: sleep 10
+
+      - name: ③ 编排当日日报
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -sS --fail-with-body -m 150 -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/digest-build"
+          echo

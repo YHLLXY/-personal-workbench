@@ -123,7 +123,7 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 2. **Web Push 密钥**：`npx web-push generate-vapid-keys` 生成密钥对。
 3. **Vercel**：导入仓库（框架预设 Vite，构建命令 `npm run build`），按下表配置环境变量。
 4. **定时提醒**：任意外部定时器每日调用 `POST /api/cron-notify`（Bearer `CRON_SECRET` 鉴权）——扫描到期任务/考试并发送 Web Push；另有 `/api/check-reminders`、`/api/test-notify` 两个辅助入口（均经 `vercel.json` rewrites 暴露）。
-5. **AI 日报**（v1.27，需先执行迁移 015 + 016）：外部定时器每天两次——`GET /api/digest-enrich`（抓取 → 落库 → 逐条 AI 摘要 → 事件聚簇）与 `GET /api/digest-build`（编排当日日报），均 Bearer `CRON_SECRET`。**两个时间都排在 DeepSeek 空闲时段**（高峰 = 北京周一至周五 9:00–12:00 / 14:00–18:00，其余半价）。详见 [docs/plans/PLAN_V127_AI日报接入.md](./docs/plans/PLAN_V127_AI日报接入.md)。
+5. **AI 日报**（v1.27，需先执行迁移 015 + 016）：外部定时器每天两次——**仓库里已经配好了 `.github/workflows/digest.yml`**：每天北京时间 07:30 由一个 GitHub Actions job 依次跑「抓取 → 等 30 秒 → 再抓一次 → 编排日报」。（三步放在**同一个 job**里，顺序是确定的；拆成三个独立定时任务的话，各自的调度延迟会把 build 排到 enrich 前面。）手动触发：Actions 页面选「AI 日报」→ Run workflow。两条命令分别是 `GET /api/digest-enrich`（抓取 → 落库 → 逐条 AI 摘要 → 事件聚簇）与 `GET /api/digest-build`（编排当日日报），均 Bearer `CRON_SECRET`。**时间排在 DeepSeek 空闲时段**（高峰 = 北京周一至周五 9:00–12:00 / 14:00–18:00，其余半价）。详见 [docs/plans/PLAN_V127_AI日报接入.md](./docs/plans/PLAN_V127_AI日报接入.md)。
 
    **上线前先跑一次自检**：`GET /api/digest-selftest`（同样 Bearer `CRON_SECRET`）会逐项探测环境变量 / 4 张表 / 归属用户 / 热榜抓取 / 模型连通，任何一项失败都不影响其余项，一次调用就能定位「到底哪儿没配好」。**只报有没有与长度，不回显任何密钥。**
 
@@ -145,7 +145,9 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 | `DIGEST_USER_ID` | 仅 API | AI 日报归属用户。**没配就取「库里的第一个用户」——多用户时它未必是你在应用里登录的那个**：日报会写到你看不到的账号下，前端被 RLS 过滤后只显示「还没有日报」，而库里明明有那一行。自检会报出用户总数与来源，多用户且未配置时直接告警 |
 | `DIGEST_ENRICH_LIMIT` | 仅 API | 单次最多处理多少条（默认 35）。**这是成本闸门** |
 | `DIGEST_CONCURRENCY` | 仅 API | 逐条摘要的并发数（默认 5） |
-| `DIGEST_PER_CATEGORY` | 仅 API | 日报每类最多几条（默认 4） |
+| `DIGEST_PER_CATEGORY` | 仅 API | 日报里**非重点分类**每类最多几条（默认 4） |
+| `DIGEST_FOCUS_CATEGORY` | 仅 API | 重点分类（默认 `科技`），它用下面那个更宽的配额。设成别的分类名可改焦点 |
+| `DIGEST_FOCUS_PER_CATEGORY` | 仅 API | **重点分类**每类最多几条（默认 12）。热榜约 85% 是科技/AI，统一按 4 条切的话砍掉的正好是最想看的那块 |
 | `DIGEST_BUDGET_MS` | 仅 API | 单次 enrich 的时间预算（默认 50000 ≈ 50 秒）。**抓取结束后按「剩余」时间 60/40 拆：摘要 60%、事件聚簇 40%**——否则摘要吃满预算后聚簇颗粒无收，日报会是空的。**超预算的条目会放回 pending，下次调用接着跑**；Vercel 函数超时限制紧时调小它；设为 0 等于「只抓取落库、不做 AI 处理」。默认值依据：线上自检实测 12.4 秒返回，其中 `/api/hot` 抓 25 个源约占 11 秒（固定开销），20 秒预算下留给模型的时间不到 1 秒 |
 
 未配置 Supabase 变量时应用自动降级为纯本地模式——CI 的全部测试就是在无云端环境下跑的。
