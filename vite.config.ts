@@ -38,6 +38,8 @@ export default defineConfig({
   // SW 预缓存 globPatterns 已含 svg，离线启动动画不受影响
   build: {
     assetsInlineLimit: (filePath, content) => !filePath.endsWith('.svg') && content.length < 4096,
+    // 供 scripts/check-bundle.mjs 算「首屏 JS」= 入口 chunk + 其静态 import 闭包（v1.26 门禁拆分）
+    manifest: true,
   },
   resolve: {
     alias: {

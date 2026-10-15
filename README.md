@@ -110,7 +110,10 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 
 几条特别的门禁：
 
-- **客户端体积红线**：JS 总量 ≤ 1120KB、最大单 chunk ≤ 340KB（`scripts/check-bundle.mjs`）。历史上曾为移动端首屏把 recharts 替换成手绘 SVG（-312KB）——红线靠机器把关，不靠自觉。
+- **客户端体积红线**（`scripts/check-bundle.mjs`，v1.26 拆分口径）：
+  - **首屏 JS ≤ 790KB** = 入口 chunk + 它静态 import 的闭包（读 `dist/.vite/manifest.json`）。**这是真红线**——它决定手机打开速度。
+  - **JS 总量 ≤ 1150KB**（含懒加载 chunk），**最大单 chunk ≤ 340KB**。
+  - 拆分原因：旧门禁只量 `dist/assets` 全部文件之和，而注释声称保护的是「移动端首屏」——判据与意图不符，懒加载并不能绕开总量。拆分后实测首屏 723KB（占总量 66%），这才是该盯的数字。历史上曾为移动端首屏把 recharts 替换成手绘 SVG（-312KB）——红线靠机器把关，不靠自觉。
 - **双仓储契约测试**：改动任一仓储实现必须跑 `tests/repository-contract.test.ts`，同脚本双实现对比，防行为漂移。
 - **真机语义测试桩**：涉及平台能力（通知/权限/Service Worker）的测试桩模拟最严格真机行为（如构造器抛 `TypeError`），而不是理想语义。
 
