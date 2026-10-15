@@ -51,8 +51,8 @@ src/
   lib/            纯函数工具（heatmap/celebrate/pomodoro/hot/backup/stats…）
   components/ui/  shadcn 组件（base-ui 底座，非 radix）
   sw.ts           Service Worker（Workbox injectManifest）
-api/              Vercel Serverless Functions（auth/hot/projects/reminders/weather/air-quality）—— 单文件约束！
-supabase/migrations/  001-010 共 11 个文件（002 编号重复：002_add_folders / 002_subscriptions，历史既成不改名）；全部幂等可重复执行（003_reminders 自述策略块除外）
+api/              Vercel Serverless Functions（auth/hot/projects/reminders/weather/air-quality/digest）—— 单文件约束！
+supabase/migrations/  001-015 共 16 个文件（002 编号重复：002_add_folders / 002_subscriptions，历史既成不改名）；全部幂等可重复执行（003_reminders 自述策略块除外）
 tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 时走本地仓储真库）
 ```
 
@@ -92,6 +92,7 @@ tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 
 - **e2e 文本断言收敛到业务锚点作用域**：base-ui Dialog 关闭后 select 触发器/隐藏 listbox 节点仍留在 DOM，裸 `getByText` 会 strict 冲突——断言限定在 `[data-flip-id]` 行等业务作用域内。
 - **「刷新后看不到新版本」先分清是部署没到还是设备没换**（2026-09-11 v1.24.0 教训，详录经验总结第十六节）：应用里没有硬编码版本号（版本 = 打包进去的 `CHANGELOG[0]`），显示旧版本 ⇒ 跑的是旧包。判定顺序：① 用 GitHub deployment status 证部署（`api.github.com/repos/<owner>/<repo>/commits/<sha>/status`，仓库 public 无需 token）；② 本地复现更新握手（造两个构建覆盖同一服务目录，**一次真刷新就该换包**；复现要用自带 SPA 回退 + `max-age=0, must-revalidate` 的静态服务，别用 `vite preview` 默认头——SW 能否发现新版取决于 sw.js 的缓存策略）。**已知真实缺口**：更新检查只在页面加载时发生（`src/pwa.ts` 的 `registerSW({ immediate: true })`），而已安装 PWA 隐藏 ≥5 分钟恢复前台会重播启动动画——观感像刷新却没有导航，因此根本不检查更新；修法见 `docs/plans/FIX_PLAN_SW_UPDATE_ON_RESUME.md`。
 - **构建产物 copy 前先断言「这次构建独有的标记」**：`npm run build` = `tsc -b && vite build`，tsc 失败（如 TS6133 声明未使用）时 `dist` 保持上一次产物，而 `cp -r dist xxx` 照样成功——「copy 成功」会被误读成「构建成功」。2026-09-11 排查 SW 更新时差点把构建 A 当成 B。
+- **改源码前先停掉 dev server**（2026-10-15 教训）：vite 的文件监视会占住 `src/` 下的文件，此时 edit/write 的原子替换（Windows ReplaceFileW）报 `EIO (Win32 32)`——不是权限问题、也不是文件损坏，纯粹是同名替换失败，重试多少次都一样。**先 kill 掉 dev server 再改**，改完重新起。
 - **探针/脚本类排查的环境坑**：① 本机 vite dev server 只监听 `localhost`（::1），连 `127.0.0.1:<port>` 报 ERR_CONNECTION_REFUSED 不是服务没起来；② 脚本用 `import.meta.url` 取项目路径必须 `decodeURIComponent`（中文目录被百分号编码 → 静态服务 500）；③ 沙箱网络是白名单（`api.github.com` 通，`vercel.com` / `*.vercel.app` 全挡，先 `curl` 探可达性再定验证方案）；④ 收工必须删净临时目录/脚本/日志（`git status` 不留 untracked 探针文件）并 kill 后台进程。
 
 ## 工作流程 SOP
