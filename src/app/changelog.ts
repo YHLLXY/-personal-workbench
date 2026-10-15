@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.30.2',
+    date: '2026-10-15',
+    title: '提醒接到 GitHub Actions，每小时扫一次',
+    items: [
+      '修复：定时提醒终于有了可靠的落点。提醒本来有两条触发路径——**打开 App** 时会自动扫一次并发送（这条一直在），以及**外部定时器**兜底（你一整天没开 App 的那天靠它）。第二条一直没有可靠的落点：之前建议的第三方定时服务你登不进去，方案就卡住了。现在它和日报一样接到了 GitHub Actions 上——**每小时扫一次**，所以哪怕一整天不开 App，提醒也会按时到你手机。顺带把这次排查踩到的坑整理成了「第十七节」，归进经验总结',
+    ],
+  },
+  {
     version: 'v1.30.1',
     date: '2026-10-15',
     title: '日报生成时间提前到早上六点',
