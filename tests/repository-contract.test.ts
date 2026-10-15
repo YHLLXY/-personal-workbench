@@ -67,7 +67,9 @@ function fakeSupabase(): SupabaseClient {
           order: (col: string, o?: { ascending?: boolean }) => { sorts.push({ col, asc: o?.ascending !== false }); return node },
           eq: (c: string, v: unknown) => { ctx.filters.push(r => r[c] === v); return node },
           limit: () => node,
-          maybeSingle: () => Promise.resolve({ data: matched()[0] ?? null, error: null }),
+          // 必须与 then 一样先 apply(sorts)：真实 PostgREST 的 order 对 maybeSingle 同样生效，
+          // mock 不排序会让「更新到任意一行」这类缺陷测不出来（v1.26 补）
+          maybeSingle: () => Promise.resolve({ data: apply(matched())[0] ?? null, error: null }),
           then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
             Promise.resolve({ data: apply(matched()), error: null }).then(res, rej),
         }
@@ -131,7 +133,9 @@ function fakeSupabase(): SupabaseClient {
     }
     return b
   }
-  return { from: (name: string) => from(name), auth: { getUser: async () => ({ data: { user: { id: 'u1' } }, error: null }) } } as unknown as SupabaseClient
+  const client = { from: (name: string) => from(name), auth: { getUser: async () => ({ data: { user: { id: 'u1' } }, error: null }) } }
+  // 测试专用后门：直接铺行，用来构造「库里已存在历史重复行」这种经公开接口造不出来的场景（v1.26）
+  return Object.assign(client, { __seed: (n: string, rows: Row[]) => { db[n] = rows } }) as unknown as SupabaseClient
 }
 
 const TODAY = '2026-08-29'
@@ -215,6 +219,7 @@ async function runScript(repo: WorkbenchRepository) {
   // —— 身体记录：体重当日覆盖 / 运动多条 ——
   await repo.createHealthLog({ logDate: TODAY, type: 'weight', value: 62.5 })
   await repo.createHealthLog({ logDate: TODAY, type: 'weight', value: 63.1 })
+  await repo.createHealthLog({ logDate: TODAY, type: 'weight', value: 63.4 })   // 第 3 次：必须仍只有 1 行（v1.26）
   await repo.createHealthLog({ logDate: TODAY, type: 'exercise', value: 30 })
   await repo.createHealthLog({ logDate: TODAY, type: 'exercise', value: 45 })
   const health = await repo.listHealthLogs().then(ls => ls.filter(l => l.logDate === TODAY))
@@ -311,12 +316,15 @@ async function runScript(repo: WorkbenchRepository) {
   await repo.removePushSubscription('https://push.example/1')
   pushSnap.countAfterRemove = (await repo.listPushSubscriptions()).length
 
-  // —— 通道配置：写入读回 + 清空（v1.24 契约补盲）——
-  await repo.saveChannelConfigs({ serverchanKey: 'SCU-1' })
-  const channelSaved = (await repo.getChannelConfigs()).serverchanKey
-  await repo.saveChannelConfigs({ serverchanKey: null })
-  const channelCleared = (await repo.getChannelConfigs()).serverchanKey
-  const channelSnap = { saved: channelSaved, cleared: channelCleared }
+  // —— 通道配置：写入读回 + 清空（v1.24 契约补盲；v1.26 扩到 Telegram 三字段）——
+  await repo.saveChannelConfigs({ serverchanKey: 'SCU-1', telegramBotToken: '123:ABC', telegramChatId: '456' })
+  const chSaved = await repo.getChannelConfigs()
+  await repo.saveChannelConfigs({ serverchanKey: null, telegramBotToken: null, telegramChatId: null })
+  const chCleared = await repo.getChannelConfigs()
+  const channelSnap = {
+    saved: chSaved.serverchanKey, savedTg: chSaved.telegramBotToken, savedChat: chSaved.telegramChatId,
+    cleared: chCleared.serverchanKey, clearedTg: chCleared.telegramBotToken,
+  }
 
   return { habitSnap, habitCascade, taskSnap, repeatSnap, taskNoteSnap, orderSnap, halfSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap }
 }
@@ -324,11 +332,14 @@ async function runScript(repo: WorkbenchRepository) {
 describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', () => {
   let localSnap: Awaited<ReturnType<typeof runScript>>
   let supaSnap: Awaited<ReturnType<typeof runScript>>
+  let seed: (name: string, rows: Row[]) => void
 
   beforeEach(async () => {
     localStorage.clear()
     localSnap = await runScript(new LocalRepository())
-    holder.fake = fakeSupabase()
+    const fake = fakeSupabase()
+    holder.fake = fake
+    seed = (fake as unknown as { __seed: (n: string, r: Row[]) => void }).__seed
     const supa = new SupabaseRepository()
     supaSnap = await runScript(supa)
   })
@@ -362,6 +373,23 @@ describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', (
   })
   it('身体记录：体重/睡眠当日覆盖、运动多条一致', () => {
     expect(supaSnap.healthSnap).toEqual(localSnap.healthSnap)
+    // 连写 3 次体重只应留 1 行、且为最后一次的值——「旧数据残留」缺陷的回归断言（v1.26）
+    expect(localSnap.healthSnap.weightRows).toEqual([63.4])
+    expect(supaSnap.healthSnap.weightRows).toEqual([63.4])
+    expect(localSnap.healthSnap.exerciseRows).toEqual([30, 45])
+  })
+  it('身体记录：库里已有历史重复行时，覆盖的是最新一条（v1.26 回归）', async () => {
+    // 构造 v1.11 之前遗留的重复行：同日同类型两行。id 由 genId() 生成（时间戳 base36 前缀单调递增），字典序越大越新。
+    seed('wb_health_logs', [
+      { id: 'm0-aaaaaa', user_id: 'u1', log_date: TODAY, type: 'weight', value: 60 },
+      { id: 'm1-bbbbbb', user_id: 'u1', log_date: TODAY, type: 'weight', value: 61 },
+    ])
+    const repo = new SupabaseRepository()
+    await repo.createHealthLog({ logDate: TODAY, type: 'weight', value: 70 })
+    const rows = await repo.listHealthLogs()
+    // 判据：没有 .order('id', {ascending:false}) 时查询命中的是「任意一行」，这条会失败
+    expect(rows.find(r => r.id === 'm1-bbbbbb')?.value).toBe(70)
+    expect(rows.find(r => r.id === 'm0-aaaaaa')?.value).toBe(60)
   })
   it('学习目标：进度推进、归档/恢复/显式 completedAt 一致', () => {
     expect(supaSnap.goalSnap).toEqual(localSnap.goalSnap)
@@ -389,7 +417,7 @@ describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', (
   })
   it('通道配置：写入读回与清空一致', () => {
     expect(supaSnap.channelSnap).toEqual(localSnap.channelSnap)
-    expect(supaSnap.channelSnap).toEqual({ saved: 'SCU-1', cleared: null })
+    expect(supaSnap.channelSnap).toEqual({ saved: 'SCU-1', savedTg: '123:ABC', savedChat: '456', cleared: null, clearedTg: null })
   })
   it('速记：标签、归档一致', () => {
     expect(supaSnap.noteSnap).toEqual(localSnap.noteSnap)

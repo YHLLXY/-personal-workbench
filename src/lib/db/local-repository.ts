@@ -158,8 +158,21 @@ export class LocalRepository implements WorkbenchRepository {
     // 体重/睡眠"一天一个数"：再记一次=更新当日值（与云端 SupabaseRepository 语义一致）
     if (input.type !== 'exercise') {
       const rows = read<HealthLog>('healthLogs')
-      const i = rows.findIndex(r => r.logDate === input.logDate && r.type === input.type)
-      if (i >= 0) { rows[i] = { ...rows[i], value: input.value }; write('healthLogs', rows); return rows[i] }
+      // 取【最后一条】覆盖，并顺手清掉同日同类型的历史重复行——与云端迁移 013 的部分唯一索引语义对齐。
+      // 旧实现用 findIndex 取第一条：一旦库里已有重复行，更新的并不是用户刚看到的那条（v1.26 修复）
+      const dup = (r: HealthLog) => r.logDate === input.logDate && r.type === input.type
+      let last = -1
+      for (let k = 0; k < rows.length; k++) if (dup(rows[k])) last = k
+      if (last >= 0) {
+        const next: HealthLog = { ...rows[last], value: input.value }
+        const out: HealthLog[] = []
+        for (let k = 0; k < rows.length; k++) {
+          if (k === last) out.push(next)
+          else if (!dup(rows[k])) out.push(rows[k])
+        }
+        write('healthLogs', out)
+        return next
+      }
     }
     return insert<HealthLog>('healthLogs', { id: genId(), ...input })
   }
@@ -268,7 +281,17 @@ export class LocalRepository implements WorkbenchRepository {
   }
   async removePushSubscription(endpoint: string) { write('pushSubscriptions', read<PushSubscriptionRow>('pushSubscriptions').filter(r => r.endpoint !== endpoint)) }
   async getChannelConfigs(): Promise<ChannelConfigs> {
-    try { const raw = localStorage.getItem('wb:channelConfigs'); if (!raw) return { serverchanKey: null }; const p = JSON.parse(raw) as Partial<ChannelConfigs>; return { serverchanKey: typeof p.serverchanKey === 'string' ? p.serverchanKey : null } } catch { return { serverchanKey: null } }
+    const empty: ChannelConfigs = { serverchanKey: null, telegramBotToken: null, telegramChatId: null }
+    try {
+      const raw = localStorage.getItem('wb:channelConfigs'); if (!raw) return empty
+      const p = JSON.parse(raw) as Partial<ChannelConfigs>
+      // 逐字段取、缺省补 null：v1.26 之前的本地数据只有 serverchanKey，升级后不该丢配置
+      return {
+        serverchanKey: typeof p.serverchanKey === 'string' ? p.serverchanKey : null,
+        telegramBotToken: typeof p.telegramBotToken === 'string' ? p.telegramBotToken : null,
+        telegramChatId: typeof p.telegramChatId === 'string' ? p.telegramChatId : null,
+      }
+    } catch { return empty }
   }
   async saveChannelConfigs(c: ChannelConfigs) { localStorage.setItem('wb:channelConfigs', JSON.stringify(c)) }
 }

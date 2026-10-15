@@ -243,7 +243,9 @@ export class SupabaseRepository implements WorkbenchRepository {
   async createHealthLog(input: HealthLogInput) {
     // 体重/睡眠是"一天一个数"：再记一次=更新当日值而非新增条目（运动一天多次合理，保留多条）
     if (input.type !== 'exercise') {
-      const { data: existing } = await this.sb.from('wb_health_logs').select('id').eq('log_date', input.logDate).eq('type', input.type).limit(1).maybeSingle()
+      // order(id desc)：没有 order 时 PostgREST 返回哪一行是不确定的，会更新到旧行 → 用户看到「更新了，原来的还在」
+      // 且永远不会自愈（每次都可能打在另一行上）。配套迁移 013 已加部分唯一索引，这条 order 是对齐语义（v1.26）
+      const { data: existing } = await this.sb.from('wb_health_logs').select('id').eq('log_date', input.logDate).eq('type', input.type).order('id', { ascending: false }).limit(1).maybeSingle()
       if (existing?.id) {
         const { data, error } = await this.sb.from('wb_health_logs').update({ value: input.value }).eq('id', existing.id).select().single()
         if (error) throw error
@@ -344,13 +346,23 @@ export class SupabaseRepository implements WorkbenchRepository {
   async getChannelConfigs(): Promise<ChannelConfigs> {
     const { data, error } = await this.sb.from('wb_channel_configs').select('*').maybeSingle()
     if (error) throw error
-    if (!data) return { serverchanKey: null }
-    return { serverchanKey: (data.serverchan_key as string | null) ?? null }
+    if (!data) return { serverchanKey: null, telegramBotToken: null, telegramChatId: null }
+    return {
+      serverchanKey: (data.serverchan_key as string | null) ?? null,
+      telegramBotToken: (data.telegram_bot_token as string | null) ?? null,
+      telegramChatId: (data.telegram_chat_id as string | null) ?? null,
+    }
   }
   async saveChannelConfigs(c: ChannelConfigs) {
     const { data: user } = await this.sb.auth.getUser()
     const { error } = await this.sb.from('wb_channel_configs')
-      .upsert({ user_id: user.user?.id ?? '', serverchan_key: c.serverchanKey ?? null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      .upsert({
+        user_id: user.user?.id ?? '',
+        serverchan_key: c.serverchanKey ?? null,
+        telegram_bot_token: c.telegramBotToken ?? null,
+        telegram_chat_id: c.telegramChatId ?? null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
     if (error) throw error
   }
 }
