@@ -151,9 +151,19 @@ describe('mapLimit 兜底', () => {
   })
 })
 
-describe('splitBudget（摘要阶段不能吃满预算，否则聚簇颗粒无收）', () => {
-  it('摘要拿 60%，剩下的留给聚簇', () => {
-    expect(splitBudget(1000, 20_000)).toEqual({ enrichUntil: 13_000, clusterUntil: 21_000 })
+describe('splitBudget（按【剩余】时间拆，抓取开销不挤占模型份额）', () => {
+  it('把剩余时间的 60% 给摘要，其余留给聚簇', () => {
+    // 抓取结束后还剩 20 秒 → 摘要 12 秒、聚簇 8 秒
+    expect(splitBudget(1_000, 21_000)).toEqual({ enrichUntil: 13_000, clusterUntil: 21_000 })
+  })
+  it('抓取已经花掉的时间不挤占摘要的份额（线上实测抓 25 个源约 11 秒）', () => {
+    const deadline = 50_000
+    const b = splitBudget(11_000, deadline)
+    // 按【总量】拆的话摘要只剩 50*0.6 - 11 = 19 秒；按【剩余】拆实得 39*0.6 = 23.4 秒
+    expect(b.enrichUntil - 11_000).toBe(23_400)
+    // 聚簇拿走剩下的 15.6 秒；总截止点不变，仍然受平台超时约束
+    expect(b.clusterUntil).toBe(deadline)
+    expect(b.clusterUntil - b.enrichUntil).toBe(15_600)
   })
   it('任何正预算下，摘要的截止都严格早于聚簇', () => {
     for (const total of [1, 100, 3_000, 20_000, 280_000]) {
@@ -161,7 +171,9 @@ describe('splitBudget（摘要阶段不能吃满预算，否则聚簇颗粒无�
       expect(b.enrichUntil).toBeLessThan(b.clusterUntil)
     }
   })
-  it('预算为 0（只抓取落库模式）时两段都立即到期', () => {
-    expect(splitBudget(1000, 0)).toEqual({ enrichUntil: 1000, clusterUntil: 1000 })
+  it('预算耗尽（只抓取落库模式）时两段都立即到期', () => {
+    expect(splitBudget(1_000, 1_000)).toEqual({ enrichUntil: 1_000, clusterUntil: 1_000 })
+    // 抓取比整个预算还慢的极端情况也不会出现负份额
+    expect(splitBudget(9_000, 1_000)).toEqual({ enrichUntil: 9_000, clusterUntil: 9_000 })
   })
 })

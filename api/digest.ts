@@ -136,20 +136,32 @@ export function intEnv(name: string, fallback: number, min: number, max: number)
 }
 
 /** 单次调用的时间预算（毫秒）。Vercel 函数有平台级超时，跑不完的条目必须放回 pending，
- *  否则会卡在 processing。设小一点没坏处——状态是持久的，下次 cron 接着跑。 */
+ *  否则会卡在 processing。设小一点没坏处——状态是持久的，下次 cron 接着跑。
+ *
+ *  ⚠️ 默认 50 秒是量出来的，不是拍的：线上自检接口实测 12.4 秒返回，其中 /api/hot
+ *  抓 25 个源就要约 11 秒。那 11 秒是**固定开销**——预算只有 20 秒时留给模型的时间
+ *  不到 1 秒，一次只处理得了 5 条、顺延 30 条，要跑 7 轮才消化得完。
+ *  50 秒下摘要实得约 23 秒（并发 5 → 25~35 条）。
+ *
+ *  平台上限：Vercel Fluid compute 最长 300 秒；而线上自检能跑满 12.4 秒正常返回，
+ *  说明本项目的函数超时至少 > 13 秒（老的 10 秒限额下自检早就被掐断了）。 */
 // 下限允许 0：那等于「只落库、不处理」——函数超时限制极紧时，可以把抓取与处理拆到两次调用里跑
-const BUDGET_MS = () => intEnv('DIGEST_BUDGET_MS', 20_000, 0, 280_000)
+const BUDGET_MS = () => intEnv('DIGEST_BUDGET_MS', 50_000, 0, 280_000)
 
-/** 把总预算拆成「逐条摘要」与「事件聚簇」两段，返回各自的截止时刻。
+/** 把【剩余】预算按 60/40 拆给「逐条摘要」与「事件聚簇」，返回各自的截止时刻。
  *
  *  ⚠️ 为什么不让摘要吃满整个预算：摘要一吃满，聚簇就**颗粒无收**——
  *  条目全都 `done` 了，但一个事件都没建，随后 `build` 拿不到任何事件、
- *  只能产出一份空日报。第一次跑最容易撞上（抓取本身就要花掉几秒）。
- *  聚簇很便宜（每条约一次 RPC + 一两次写，不走模型），40% 的份额远远够用。
+ *  只能产出一份空日报。第一次跑最容易撞上。
  *
- *  totalMs 为 0 时两段都立即到期，等价于「只抓取落库」。 */
-export function splitBudget(now: number, totalMs: number): { enrichUntil: number; clusterUntil: number } {
-  return { enrichUntil: now + Math.floor(totalMs * 0.6), clusterUntil: now + totalMs }
+ *  ⚠️ 为什么按「剩余」而不是按「总量」拆：调用方是在**抓取热榜之后**才调这个函数的，
+ *  而抓取（实测约 11 秒）不吃模型、也不该占模型的时间份额。按总量拆的话，那 11 秒
+ *  会直接从摘要的份额里扣掉，等于白白少跑十几条。
+ *
+ *  deadline <= now（预算已耗尽）时两段都立即到期，等价于「只抓取落库」。 */
+export function splitBudget(now: number, deadline: number): { enrichUntil: number; clusterUntil: number } {
+  const remain = Math.max(deadline - now, 0)
+  return { enrichUntil: now + Math.floor(remain * 0.6), clusterUntil: Math.max(deadline, now) }
 }
 
 function adminClient(): SupabaseClient {
@@ -542,17 +554,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sb = adminClient()
       const userId = await resolveUserId(sb)
       const origin = `https://${req.headers.host ?? ''}`
-      // 整条 enrich 共用一个时间预算（抓取已经花掉的时间也算在内），但要给聚簇留出份额
-      const budget = splitBudget(t0, BUDGET_MS())
+      // 整条 enrich 共用一个总截止时刻（抓取也算在内，否则会撞上平台超时）
+      const deadline = t0 + BUDGET_MS()
       const { items, sources } = await fetchHot(origin)
       const added = await persistItems(sb, userId, items, sources)
+      // 抓取是固定开销，等它结束后再按【剩余】时间 60/40 分给摘要与聚簇
+      const fetchDone = Date.now()
+      const budget = splitBudget(fetchDone, deadline)
       const enriched = await enrichPending(sb, userId, intEnv('DIGEST_ENRICH_LIMIT', 35, 1, 200), intEnv('DIGEST_CONCURRENCY', 5, 1, 20), budget.enrichUntil)
       const clustered = await clusterItems(sb, userId, budget.clusterUntil)
       await logRun(sb, userId, date, 'enrich', {
         status: 'ok', items_in: items.length, items_out: enriched.processed,
         detail: `新增 ${added} / 处理 ${enriched.processed}（顺延 ${enriched.deferred}）/ 聚簇 ${clustered.clustered}（顺延 ${clustered.deferred}）`,
       })
-      return res.json({ ok: true, fetched: items.length, added, processed: enriched.processed, deferred: enriched.deferred, clustered: clustered.clustered, ms: Date.now() - t0 })
+      return res.json({
+        ok: true, fetched: items.length, added,
+        processed: enriched.processed, deferred: enriched.deferred, clustered: clustered.clustered,
+        // 摘要/聚簇各自实得多少毫秒——顺延很多时看这个就知道该不该调 DIGEST_BUDGET_MS
+        enrichMs: budget.enrichUntil - fetchDone, clusterMs: budget.clusterUntil - fetchDone,
+        ms: Date.now() - t0,
+      })
     }
 
     if (entry === 'build') {
