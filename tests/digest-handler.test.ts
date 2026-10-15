@@ -17,7 +17,8 @@ const state = vi.hoisted(() => ({
   hotPayload: { items: [] as unknown[], sources: [] as unknown[] },
   llmQueue: [] as string[],
   llmCalls: [] as Array<{ system: string; user: string }>,
-  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = [] },
+  rpcCalls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
+  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = []; state.rpcCalls = [] },
   rowsOf(table: string) { return state.rows.filter(r => r.table === table).map(r => r.row) },
 }))
 
@@ -111,6 +112,7 @@ vi.mock('@supabase/supabase-js', () => {
 
     // rpc：wb_claim_items（原子领取）与 wb_match_events（事件召回）
     function rpc(fn: string, args: Record<string, unknown>): Promise<{ data: unknown; error: null }> {
+      state.rpcCalls.push({ fn, args })
       if (fn === 'wb_claim_items') {
         // 镜像迁移 015 的 SQL：pending，以及【陈旧的 processing 行】——函数被平台超时掐死后的兜底
         const limit = Number(args.p_limit ?? 20)
@@ -218,6 +220,12 @@ describe('api/digest 入口', () => {
     const runs = state.rowsOf('wb_digest_runs')
     expect(runs).toHaveLength(1)
     expect(runs[0]).toMatchObject({ stage: 'enrich', status: 'ok', items_in: 2, items_out: 2 })
+
+    // 事件召回【不传 p_embedding】：显式传 null 要 PostgREST 把 JSON null 转成 vector，
+    // 多一层失败面，而这层失败会让整条 enrich 在条目已处理完之后才 500
+    const matchCalls = state.rpcCalls.filter(c => c.fn === 'wb_match_events')
+    expect(matchCalls.length).toBe(2)
+    for (const c of matchCalls) expect(Object.keys(c.args)).toEqual(['p_user', 'p_title', 'p_days', 'p_limit'])
   })
 
   it('enrich 第二次：同一批条目 added=0，不再重复调模型（去重 = 不重复花钱）', async () => {

@@ -315,7 +315,12 @@ async function clusterItems(sb: SupabaseClient, userId: string, deadline: number
   let clustered = 0
   for (const it of items) {
     if (Date.now() > deadline) break
-    const { data: cands } = await sb.rpc('wb_match_events', { p_user: userId, p_title: it.title, p_embedding: null, p_days: 14, p_limit: 3 })
+    // ⚠️ 刻意【不传】p_embedding：让它走 SQL 里的默认值 NULL。
+    // 显式传 null 需要 PostgREST 把 JSON null 转成 vector 类型——多一层没必要的失败面，
+    // 而这层失败会让整条 enrich 在「条目已经处理完」之后才 500（事件全没建、日报为空）。
+    // 当前没有 embedding 服务，这个参数永远是 null；将来接了向量服务再按需带上。
+    const matchArgs: Record<string, unknown> = { p_user: userId, p_title: it.title, p_days: 14, p_limit: 3 }
+    const { data: cands } = await sb.rpc('wb_match_events', matchArgs)
     const best = (cands ?? [])[0] as { event_id: string; title: string; similarity: number } | undefined
     let eventId: string | null = null
     if (best && best.similarity >= 0.75) eventId = best.event_id
