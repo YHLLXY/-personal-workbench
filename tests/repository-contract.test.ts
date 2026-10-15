@@ -326,7 +326,10 @@ async function runScript(repo: WorkbenchRepository) {
     cleared: chCleared.serverchanKey, clearedTg: chCleared.telegramBotToken,
   }
 
-  return { habitSnap, habitCascade, taskSnap, repeatSnap, taskNoteSnap, orderSnap, halfSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap }
+  // —— AI 日报：写入方是服务端（service role），前端只读；本地模式没有这条链路 ——
+  const digestSnap = { list: (await repo.listDailyReports()).length, one: await repo.getDailyReport(TODAY) }
+
+  return { habitSnap, habitCascade, taskSnap, repeatSnap, taskNoteSnap, orderSnap, halfSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap, digestSnap }
 }
 
 describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', () => {
@@ -418,6 +421,10 @@ describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', (
   it('通道配置：写入读回与清空一致', () => {
     expect(supaSnap.channelSnap).toEqual(localSnap.channelSnap)
     expect(supaSnap.channelSnap).toEqual({ saved: 'SCU-1', savedTg: '123:ABC', savedChat: '456', cleared: null, clearedTg: null })
+  })
+  it('AI 日报：双实现都只读且空库时一致（v1.27）', () => {
+    expect(supaSnap.digestSnap).toEqual(localSnap.digestSnap)
+    expect(supaSnap.digestSnap).toEqual({ list: 0, one: null })
   })
   it('速记：标签、归档一致', () => {
     expect(supaSnap.noteSnap).toEqual(localSnap.noteSnap)

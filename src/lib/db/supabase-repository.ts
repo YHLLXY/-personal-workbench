@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
-import { bakeTaskSort, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type TaskRepeat, type ChecklistItem, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind, type GrowthAction, type GrowthActionInput } from './types'
+import { bakeTaskSort, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type TaskRepeat, type ChecklistItem, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind, type GrowthAction, type GrowthActionInput, type DailyReport, type DailyReportSection } from './types'
 import { assertNoCycle } from './folder-tree'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
@@ -45,6 +45,28 @@ function folderFromRow(r: Row): Folder {
   return { id: String(r.id), name: String(r.name), parentId: r.parent_id as string | null, sort: Number(r.sort ?? 0) }
 }
 function healthFromRow(r: Row): HealthLog { return { id: String(r.id), logDate: String(r.log_date), type: r.type as HealthLog['type'], value: Number(r.value) } }
+/** sections 是服务端（LLM 输出）写进去的 jsonb：逐层兜底，任何一层形状不对都退化成空数组而不是读崩 */
+function dailyReportFromRow(r: Row): DailyReport {
+  const sections: DailyReportSection[] = Array.isArray(r.sections)
+    ? (r.sections as Array<Partial<DailyReportSection>>).map(s => ({
+        category: String(s?.category ?? '其他'),
+        items: Array.isArray(s?.items)
+          ? s.items.map(i => ({
+              eventId: String(i?.eventId ?? ''), title: String(i?.title ?? ''), point: String(i?.point ?? ''),
+              sources: Array.isArray(i?.sources)
+                ? i.sources.map(x => ({ name: String(x?.name ?? ''), url: String(x?.url ?? '') })).filter(x => x.url)
+                : [],
+            }))
+          : [],
+      }))
+    : []
+  return {
+    id: String(r.id), reportDate: String(r.report_date), title: String(r.title),
+    overview: String(r.overview ?? ''), sections,
+    itemCount: Number(r.item_count ?? 0), sourceCount: Number(r.source_count ?? 0),
+    model: (r.model as string | null) ?? null, generatedAt: String(r.generated_at),
+  }
+}
 function reviewFromRow(r: Row): Review {
   // 新字段 ?? '' 兜底：迁移 005 之前的老行没有这些列值，读取不崩溃
   return {
@@ -364,5 +386,17 @@ export class SupabaseRepository implements WorkbenchRepository {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id' })
     if (error) throw error
+  }
+
+  // AI 日报只读（写入方是服务端 /api/digest，用 service role）
+  async listDailyReports(limit = 30) {
+    const { data, error } = await this.sb.from('wb_daily_reports').select('*').order('report_date', { ascending: false }).limit(limit)
+    if (error) throw error
+    return (data ?? []).map(dailyReportFromRow)
+  }
+  async getDailyReport(reportDate: string) {
+    const { data, error } = await this.sb.from('wb_daily_reports').select('*').eq('report_date', reportDate).maybeSingle()
+    if (error) throw error
+    return data ? dailyReportFromRow(data) : null
   }
 }

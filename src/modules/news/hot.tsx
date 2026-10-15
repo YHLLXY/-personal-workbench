@@ -3,6 +3,7 @@ import { RefreshCw, Link2, Settings2, BookmarkPlus } from 'lucide-react'
 import { loadHot, filterByTopics, formatFetchedAt, type HotResult, type HotCategory, type HotItem } from '../../lib/hot'
 import { repository } from '@/lib/db'
 import { HotSettingsDialog } from './hot-settings-dialog'
+import { DailyDigest } from './daily-digest'
 import { useNoteMutations } from './api'
 import { loadReadIds, saveReadId, hotNoteText } from './news-view'
 import { Input } from '@/components/ui/input'
@@ -15,6 +16,8 @@ import type { Subscriptions } from '@/lib/db/types'
 const CATEGORY_LABELS: Record<HotCategory, string> = { tech: '技术', academic: '学术', zh: '社区' }
 
 export default function Hot() {
+  // v1.27：热榜是素材层、日报是成品层，同一批数据的两个视图 → 同一页面两个 Tab，不新增侧边栏入口
+  const [tab, setTab] = useState<'digest' | 'list'>('digest')
   const [res, setRes] = useState<HotResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [subs, setSubs] = useState<Subscriptions>({ sourceIds: [], topics: [] })
@@ -58,16 +61,31 @@ export default function Hot() {
         <div>
           <h1 className="text-xl font-bold">今日热点</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {res?.fromCache ? '缓存数据 · ' : ''}{fetchedAt ? `更新于 ${fetchedAt} · 每 30 分钟自动刷新` : '加载中…'}
+            {tab === 'digest'
+              ? 'AI 整理的每日报告 · 每天早上自动生成'
+              : <>{res?.fromCache ? '缓存数据 · ' : ''}{fetchedAt ? `更新于 ${fetchedAt} · 每 30 分钟自动刷新` : '加载中…'}</>}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}><Settings2 className="size-3.5 mr-1" />管理源</Button>
-          <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}><RefreshCw className="size-3.5 mr-1" />刷新</Button>
-        </div>
+        {tab === 'list' && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}><Settings2 className="size-3.5 mr-1" />管理源</Button>
+            <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}><RefreshCw className="size-3.5 mr-1" />刷新</Button>
+          </div>
+        )}
       </div>
 
-      {subs.topics.length > 0 && (
+      <div className="mb-3 flex w-fit gap-1 rounded-full bg-muted p-1" role="tablist">
+        {([['digest', '日报'], ['list', '热榜']] as const).map(([v, label]) => (
+          <button key={v} role="tab" aria-selected={tab === v} onClick={() => setTab(v)}
+            className={`px-4 py-1.5 text-xs rounded-full transition-colors ${tab === v ? 'bg-card font-medium shadow-sm' : 'text-muted-foreground'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'digest' && <DailyDigest />}
+
+      {tab === 'list' && subs.topics.length > 0 && (
         <div className="flex gap-1.5 overflow-x-auto pb-3 mb-1">
           <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索标题…" className="h-8 w-36 text-xs mr-2" />
           <button onClick={() => setActiveTopic('')} className={`shrink-0 text-xs rounded-full px-3 py-1 border ${activeTopic === '' ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/50'}`}>全部</button>
@@ -77,7 +95,7 @@ export default function Hot() {
         </div>
       )}
 
-      {loading && res === null ? <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+      {tab === 'list' && (loading && res === null ? <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
         : visible.length === 0 ? <p className="text-sm text-muted-foreground py-8 text-center">{subs.sourceIds.length === 0 ? '暂无热点数据' : '当前订阅源无匹配内容，去「管理源」调整'}</p>
         : <div className="bg-card border border-border rounded-2xl divide-y divide-border/70">
             {visible.map((it, i) => {
@@ -92,7 +110,7 @@ export default function Hot() {
                 </a>
               )
             })}
-          </div>}
+          </div>)}
 
       <HotSettingsDialog
         sources={res?.sources ?? []}

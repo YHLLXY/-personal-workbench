@@ -27,6 +27,12 @@ const { insertCalls, upsertCalls, deleteCalls, updateCalls, mockTable, setRows }
         }
         const node = {
           order: vi.fn((col: string, o?: { ascending?: boolean }) => { sorts.push({ col, asc: o?.ascending !== false }); return node }),
+          limit: vi.fn(() => node),
+          // 按列取单行（getDailyReport 等）。此前 mock 没有 eq，这类查询根本没有覆盖到
+          eq: vi.fn((col: string, val: unknown) => ({
+            single: vi.fn().mockResolvedValue({ data: rows.find(r => String(r[col]) === String(val)) ?? null, error: null }),
+            maybeSingle: vi.fn().mockResolvedValue({ data: rows.find(r => String(r[col]) === String(val)) ?? null, error: null }),
+          })),
           then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve({ data: sorted(), error: null }).then(res, rej),
           single: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
           maybeSingle: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
@@ -348,5 +354,43 @@ describe('定时提醒（2026-08-08）', () => {
     expect(payload).toHaveProperty('user_id')
     expect(payload).not.toHaveProperty('serverchanKey')
     expect(payload).not.toHaveProperty('telegramBotToken')
+  })
+
+})
+
+describe('AI 日报只读（2026-10-15，迁移 015）', () => {
+  let repo: SupabaseRepository
+  beforeEach(() => { repo = new SupabaseRepository() })
+
+  it('listDailyReports：jsonb sections 映射为领域对象', async () => {
+    setRows('wb_daily_reports', [{
+      id: 'd1', report_date: '2026-10-15', title: '今日简报', overview: '总述',
+      sections: [{ category: '科技', items: [{ eventId: 'e1', title: '事件一', point: '要点', sources: [{ name: 'IT之家', url: 'https://a.com/1' }] }] }],
+      item_count: 3, source_count: 5, model: 'deepseek-flash', generated_at: '2026-10-15T00:00:00.000Z',
+    }])
+    const list = await repo.listDailyReports()
+    expect(list).toHaveLength(1)
+    expect(list[0]).toEqual({
+      id: 'd1', reportDate: '2026-10-15', title: '今日简报', overview: '总述',
+      sections: [{ category: '科技', items: [{ eventId: 'e1', title: '事件一', point: '要点', sources: [{ name: 'IT之家', url: 'https://a.com/1' }] }] }],
+      itemCount: 3, sourceCount: 5, model: 'deepseek-flash', generatedAt: '2026-10-15T00:00:00.000Z',
+    })
+  })
+
+  it('listDailyReports：sections 被改坏 / 字段缺失时逐层兜底，不读崩', async () => {
+    setRows('wb_daily_reports', [
+      { id: 'd2', report_date: '2026-10-15', title: 't', sections: 'not-an-array', generated_at: 'x' },
+      { id: 'd3', report_date: '2026-10-14', title: 't2', sections: [{ category: '科技' }, { items: 'nope' }], generated_at: 'x' },
+    ])
+    const list = await repo.listDailyReports()
+    expect(list[0].sections).toEqual([])
+    expect(list[0].itemCount).toBe(0)
+    expect(list[1].sections).toEqual([{ category: '科技', items: [] }, { category: '其他', items: [] }])
+  })
+
+  it('getDailyReport：命中返回对象，无行返回 null', async () => {
+    setRows('wb_daily_reports', [{ id: 'd1', report_date: '2026-10-15', title: '今日简报', overview: '', sections: [], item_count: 0, source_count: 0, model: null, generated_at: 'x' }])
+    expect((await repo.getDailyReport('2026-10-15'))?.id).toBe('d1')
+    expect(await repo.getDailyReport('1999-01-01')).toBeNull()
   })
 })

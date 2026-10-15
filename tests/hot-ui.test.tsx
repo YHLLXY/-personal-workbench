@@ -26,6 +26,8 @@ vi.mock('../src/lib/db', () => ({
   repository: {
     getSubscriptions: vi.fn(async (): Promise<Subscriptions> => ({ sourceIds: [], topics: ['考研'] })),
     saveSubscriptions: vi.fn(async () => {}),
+    // v1.27：日报 Tab 默认打开，会读这张表
+    listDailyReports: vi.fn(async () => []),
   },
   isCloudMode: false,
 }))
@@ -43,20 +45,36 @@ describe('Hot 页面', () => {
     return render(<QueryClientProvider client={qc}><Hot /></QueryClientProvider>)
   }
 
-  it('渲染列表、来源名与分类标签', async () => {
+  /** v1.27：页面默认落在「日报」Tab；断言热榜内容前先切过去 */
+  function goList() { fireEvent.click(screen.getByRole('tab', { name: '热榜' })) }
+
+  it('默认落在「日报」Tab；本地模式给出「需要云端模式」的空态', async () => {
     renderHot()
+    expect(screen.getByRole('tab', { name: '日报' }).getAttribute('aria-selected')).toBe('true')
+    await waitFor(() => expect(screen.getByText('还没有日报')).toBeTruthy())
+  })
+
+  it('切到「热榜」Tab 才加载热榜数据', async () => {
+    renderHot()
+    expect(mockedLoadHot).not.toHaveBeenCalled()
+    goList()
+    await waitFor(() => expect(mockedLoadHot).toHaveBeenCalled())
+  })
+
+  it('渲染列表、来源名与分类标签', async () => {
+    renderHot(); goList()
     await waitFor(() => expect(screen.getByText('LLM 新论文')).toBeTruthy())
     expect(screen.getByText('arXiv cs.AI')).toBeTruthy()
     expect(screen.getByText('学术')).toBeTruthy()
   })
 
   it('显示「更新于」时间', async () => {
-    renderHot()
+    renderHot(); goList()
     await waitFor(() => expect(screen.getByText(/更新于 09:30/)).toBeTruthy())
   })
 
   it('主题 tab：点「考研」只显示匹配条目', async () => {
-    renderHot()
+    renderHot(); goList()
     await waitFor(() => expect(screen.getByText('考研经验分享')).toBeTruthy())
     fireEvent.click(screen.getByText('考研'))
     expect(screen.queryByText('LLM 新论文')).toBeNull()
@@ -64,7 +82,7 @@ describe('Hot 页面', () => {
   })
 
   it('管理源对话框：打开回填订阅、添加主题 chip、保存调用 saveSubscriptions', async () => {
-    renderHot()
+    renderHot(); goList()
     await waitFor(() => expect(screen.getByText('管理源')).toBeTruthy())
     fireEvent.click(screen.getByText('管理源'))
     await waitFor(() => expect(screen.getAllByText('arXiv cs.AI').length).toBeGreaterThan(1)) // 主列表 + 对话框内的源名

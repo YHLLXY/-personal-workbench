@@ -365,4 +365,9 @@ describe('exportAll / importAll', () => {
     spy.mockRestore()
     expect(await repo.exportAll()).toEqual(before)
   })
+  it('AI 日报：本地模式恒为空（生成链路只在服务端）', async () => {
+    expect(await repo.listDailyReports()).toEqual([])
+    expect(await repo.getDailyReport('2026-10-15')).toBeNull()
+  })
+
 })

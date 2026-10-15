@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { repository } from '../../lib/db'
+import { isCloudMode, repository } from '../../lib/db'
+import { getSupabaseClient } from '../../lib/db/supabase-client'
 import type { Paper, Note, Folder } from '../../lib/db/types'
 
 export const paperKeys = { all: ['papers'] as const }
@@ -27,6 +28,29 @@ export function useFolderMutations() {
     remove: useMutation({ mutationFn: (id: string) => repository.deleteFolder(id), onSuccess: inv }),
     move: useMutation({ mutationFn: ({ id, newParentId }: { id: string; newParentId: string | null }) => repository.moveFolder(id, newParentId), onSuccess: inv }),
   }
+}
+
+// —— AI 日报（服务端生成，前端只读；见 api/digest.ts 与迁移 015）——
+export const digestKeys = { all: ['dailyReports'] as const }
+
+export function useDailyReports(limit = 30) {
+  return useQuery({ queryKey: digestKeys.all, queryFn: () => repository.listDailyReports(limit), staleTime: 5 * 60_000 })
+}
+
+/** 手动重生成当日日报。只有云端模式有这条链路（本地模式拿不到 service role） */
+export function useRebuildDigest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      if (!isCloudMode) throw new Error('本地模式没有 AI 日报链路')
+      const sb = getSupabaseClient()
+      const { data: { session } } = await sb.auth.getSession()
+      if (!session) throw new Error('未登录')
+      const r = await fetch('/api/build-digest', { method: 'POST', headers: { authorization: `Bearer ${session.access_token}` } })
+      return await r.json() as { ok?: boolean; built?: boolean; items?: number; error?: string }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: digestKeys.all }),
+  })
 }
 
 export function useNotes() { return useQuery({ queryKey: noteKeys.all, queryFn: () => repository.listNotes(), select: ns => ns.filter(n => !n.archived) }) }

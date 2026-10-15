@@ -28,7 +28,7 @@
 | 自我提升 | `/growth` | 行动打卡（连击激励/完成庆祝）、行动详情与周趋势 |
 | 运动健康 | `/health` | 习惯打卡（与「自我提升」打卡归属单一入口分离）、体重/睡眠/运动记录、14 天热力图 |
 | 复盘 | `/review` | 每日复盘、明日计划一键转待办、心情/评分趋势、连续天数 |
-| 今日热点 | `/hot` | 多平台热榜聚合、已读标记、一键存为速记 |
+| 今日热点 | `/hot` | **AI 日报**（默认 Tab：每天自动生成的资讯简报）+ 多平台热榜聚合、已读标记、一键存为速记 |
 | 灵感速记 | `/notes` | 快速记录、搜索、多标签、归档 |
 | 资料库 | `/papers` | 论文库：文件夹树、想读/在读/读完状态、评分、BibTeX 引用导出 |
 | 提醒中心 | `/reminders` | 任务/考试到期提醒，应用内横幅 + Web Push 双通道，侧边栏未读角标 |
@@ -119,10 +119,11 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 
 ## 部署（Vercel + Supabase）
 
-1. **Supabase**：建项目，SQL Editor 按序执行 `supabase/migrations/` 全部迁移（001→010 共 11 个文件，002 编号重复系历史既成；全部幂等，可重复执行）。
+1. **Supabase**：建项目，SQL Editor 按序执行 `supabase/migrations/` 全部迁移（001→015，002 编号重复系历史既成；全部幂等，可重复执行）。
 2. **Web Push 密钥**：`npx web-push generate-vapid-keys` 生成密钥对。
 3. **Vercel**：导入仓库（框架预设 Vite，构建命令 `npm run build`），按下表配置环境变量。
 4. **定时提醒**：任意外部定时器每日调用 `POST /api/cron-notify`（Bearer `CRON_SECRET` 鉴权）——扫描到期任务/考试并发送 Web Push；另有 `/api/check-reminders`、`/api/test-notify` 两个辅助入口（均经 `vercel.json` rewrites 暴露）。
+5. **AI 日报**（v1.27，需先执行迁移 015）：外部定时器每天两次——`GET /api/digest-enrich`（抓取 → 落库 → 逐条 AI 摘要 → 事件聚簇）与 `GET /api/digest-build`（编排当日日报），均 Bearer `CRON_SECRET`。**两个时间都排在 DeepSeek 空闲时段**（高峰 = 北京周一至周五 9:00–12:00 / 14:00–18:00，其余半价）。详见 [docs/plans/PLAN_V127_AI日报接入.md](./docs/plans/PLAN_V127_AI日报接入.md)。
 
 ### 环境变量
 
@@ -135,16 +136,23 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 | `CRON_SECRET` | 仅 API | 定时入口 Bearer 鉴权 |
 | `VITE_VAPID_PUBLIC_KEY` | 前端 | Web Push 公钥 |
 | `VAPID_PRIVATE_KEY` | 仅 API | Web Push 私钥 |
+| `LLM_API_KEY` | 仅 API | AI 日报的模型 Key（缺省回落到 `DEEPSEEK_API_KEY`） |
+| `LLM_MODEL` | 仅 API | 默认 `deepseek-flash`。**写在环境变量里不要硬编码**——模型名会变 |
+| `LLM_BASE_URL` | 仅 API | 默认 `https://api.deepseek.com`；任何 OpenAI 兼容端点都可以，换供应商只改这一个 |
+| `DIGEST_USER_ID` | 仅 API | AI 日报归属用户；不配则自动取库里第一个用户（单用户应用够用） |
+| `DIGEST_ENRICH_LIMIT` | 仅 API | 单次最多处理多少条（默认 35）。**这是成本闸门** |
+| `DIGEST_CONCURRENCY` | 仅 API | 逐条摘要的并发数（默认 5） |
+| `DIGEST_PER_CATEGORY` | 仅 API | 日报每类最多几条（默认 4） |
 
 未配置 Supabase 变量时应用自动降级为纯本地模式——CI 的全部测试就是在无云端环境下跑的。
 
 ## 目录结构
 
 ```
-├── api/                    # Vercel Serverless Functions（单文件约束）：auth / hot / projects / reminders / weather / air-quality
+├── api/                    # Vercel Serverless Functions（单文件约束）：auth / hot / projects / reminders / weather / air-quality / digest
 ├── e2e/                    # Playwright 冒烟测试
 ├── scripts/                # release.mjs 发版 · check-bundle.mjs 体积门禁
-├── supabase/migrations/    # 001–010 幂等 SQL 迁移
+├── supabase/migrations/    # 001–015 幂等 SQL 迁移
 ├── src/
 │   ├── app/                # 应用壳层：布局导航 / 首页 / 主题 / 认证 / 命令面板 / 快速捕获 / 全局状态
 │   ├── registry.ts         # 模块注册表（路由 + 侧边栏 + 底部 Tab + 首页卡片）

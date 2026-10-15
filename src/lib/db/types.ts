@@ -133,6 +133,22 @@ export interface Reminder {
   createdAt: string
 }
 export interface PushSubscriptionRow { id: string; endpoint: string; keysP256dh: string; keysAuth: string; userAgent: string | null; createdAt: string }
+
+/** AI 日报（迁移 015 的 wb_daily_reports）。**由服务端 /api/digest 写入，前端只读**。 */
+export interface DailyReportSource { name: string; url: string }
+export interface DailyReportItem { eventId: string; title: string; point: string; sources: DailyReportSource[] }
+export interface DailyReportSection { category: string; items: DailyReportItem[] }
+export interface DailyReport {
+  id: string
+  reportDate: string
+  title: string
+  overview: string
+  sections: DailyReportSection[]
+  itemCount: number
+  sourceCount: number
+  model: string | null
+  generatedAt: string
+}
 /** 通知通道配置。telegramBotToken / telegramChatId 为 v1.26 新增（迁移 014）。
  *  ⚠️ saveChannelConfigs 是整行覆盖：调用方必须传**全部字段**，漏传即被清空（旧实现只传 serverchanKey）。 */
 export interface ChannelConfigs { serverchanKey: string | null; telegramBotToken: string | null; telegramChatId: string | null }
@@ -203,6 +219,10 @@ export interface WorkbenchRepository {
   removePushSubscription(endpoint: string): Promise<void>
   getChannelConfigs(): Promise<ChannelConfigs>
   saveChannelConfigs(c: ChannelConfigs): Promise<void>
+
+  /** AI 日报：服务端生成、前端只读。本地模式没有这条链路，恒为空 */
+  listDailyReports(limit?: number): Promise<DailyReport[]>
+  getDailyReport(reportDate: string): Promise<DailyReport | null>
 
   importAll(tables: BackupTables): Promise<void>
 }

@@ -1,4 +1,4 @@
-import { applyTaskPatch, bakeTaskSort, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput } from './types'
+import { applyTaskPatch, bakeTaskSort, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput, type DailyReport } from './types'
 import { assertNoCycle } from './folder-tree'
 
 const PREFIX = 'wb:'
@@ -294,4 +294,9 @@ export class LocalRepository implements WorkbenchRepository {
     } catch { return empty }
   }
   async saveChannelConfigs(c: ChannelConfigs) { localStorage.setItem('wb:channelConfigs', JSON.stringify(c)) }
+
+  // AI 日报由服务端（/api/digest → service role）生成并落在 Supabase；
+  // 本地模式没有这条链路，也拿不到 service role，故恒为空——前端据此显示「本地模式没有日报」空态。
+  async listDailyReports(): Promise<DailyReport[]> { return [] }
+  async getDailyReport(_reportDate: string): Promise<DailyReport | null> { void _reportDate; return null }
 }
