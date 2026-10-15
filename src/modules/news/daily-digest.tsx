@@ -36,7 +36,7 @@ export function DailyDigest({ onGoList }: { onGoList?: () => void } = {}) {
     return <div className="space-y-2"><Skeleton className="h-24 w-full rounded-2xl" /><Skeleton className="h-40 w-full rounded-2xl" /></div>
   }
 
-  // ⚠️ 两种「没有日报」必须分开说：表都不存在却写着「每天 07:30 自动生成」是在骗人
+  // ⚠️ 两种「没有日报」必须分开说：表都不存在却写着「每天 06:00 自动生成」是在骗人
   if (!current) {
     if (isDigestNotEnabled(error)) {
       return (
@@ -53,7 +53,7 @@ export function DailyDigest({ onGoList }: { onGoList?: () => void } = {}) {
         icon={<Sparkles />}
         title="还没有日报"
         desc={isCloudMode
-          ? '每天 07:30 由服务端自动抓取热点并整理成日报。也可以现在手动生成一次（需要当天已有抓取记录）'
+          ? '每天 06:00 由服务端自动抓取热点并整理成日报。也可以现在手动生成一次（需要当天已有抓取记录）'
           : 'AI 日报需要云端模式（服务端用 service role 抓取与生成），当前是本地模式'}
         action={isCloudMode
           ? <Button size="sm" onClick={buildNow} disabled={rebuild.isPending}><Sparkles className="mr-1 size-3.5" />{rebuild.isPending ? '生成中…' : '立即生成'}</Button>

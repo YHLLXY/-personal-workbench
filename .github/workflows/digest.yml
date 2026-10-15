@@ -1,6 +1,6 @@
 name: AI 日报
 
-# 每天北京时间 07:30 生成日报。
+# 每天北京时间 06:00 生成日报（起床早，要赶在人醒之前备好）。
 #
 # 为什么放在 GitHub Actions 而不是第三方定时服务：
 #   · 仓库本来就用 GitHub，不用再注册一个账号
@@ -8,13 +8,13 @@ name: AI 日报
 #   · 三步放在【同一个 job】里顺序执行 —— 顺序是确定的。
 #     拆成三个独立定时任务的话，各自的调度延迟会把 build 排到 enrich 前面，产出空日报。
 #
-# ⚠️ GitHub 的 cron 一律按 UTC：北京时间 07:30 = 前一天 23:30 UTC。
+# ⚠️ GitHub 的 cron 一律按 UTC：北京时间 06:00 = 前一天 22:00 UTC。
 # ⚠️ 计划任务在仓库连续 60 天没有提交后会被 GitHub 自动停用（本项目 CI 常在跑，风险很低；
 #    真被停用了 Actions 页面会有提示，点一下 Enable 即可）。
 
 on:
   schedule:
-    - cron: '30 23 * * *'
+    - cron: '0 22 * * *'
   workflow_dispatch:   # 手动触发：Actions 页面选这个 workflow → Run workflow
 
 jobs:

@@ -48,7 +48,7 @@
 ## 三、数据流与状态机
 
 `@
-外部定时器 07:30 → GET /api/digest-enrich （Bearer CRON_SECRET）
+外部定时器 06:00 → GET /api/digest-enrich （Bearer CRON_SECRET）
   ① fetch 本站 /api/hot          → 原始条目
   ② upsert wb_hot_items          → on conflict (user_id, url_hash) do nothing   ← 层次 1 去重
   ③ rpc wb_claim_items           → for update skip locked，并发安全领取        ← 层次 4 幂等
@@ -93,7 +93,7 @@
 
 沿用现有约定（外部定时器每日调用），**不用 Vercel Cron**：
 
-- 07:30 → `GET https://workbench.yuhailinlxy.com/api/digest-enrich`，Header `Authorization: Bearer <CRON_SECRET>`
+- 06:00 → `GET https://workbench.yuhailinlxy.com/api/digest-enrich`，Header `Authorization: Bearer <CRON_SECRET>`
 - 08:00 → `GET https://workbench.yuhailinlxy.com/api/digest-build`，同上
 
 > 两个时间都在 DeepSeek 空闲时段（高峰 = 北京周一至周五 9:00–12:00 / 14:00–18:00），天然半价。
@@ -331,7 +331,7 @@ Lobsters / 36氪 / 少数派 / 爱范儿 / Solidot / cnBeta / IT之家 / 开源�
 - 支持 `workflow_dispatch`，Actions 页面点一下就能手动跑一次（调参时很有用）
 - 失败会在 Actions 页面标红，比第三方服务的邮件更容易看见
 
-**踩到的坑**：GitHub 的 `cron` **一律按 UTC**。北京时间 07:30 = 前一天 `23:30 UTC`，写成 `30 23 * * *`。
+**踩到的坑**：GitHub 的 `cron` **一律按 UTC**。北京时间 06:00 = 前一天 `22:00 UTC`，写成 `0 22 * * *`（最初是 07:30 / `30 23 * * *`，后按用户作息提前到 06:00）。
 另外计划任务在仓库连续 60 天无提交后会被自动停用（本项目 CI 常在跑，风险很低）。
 
 ## 八、下一步（可选）
