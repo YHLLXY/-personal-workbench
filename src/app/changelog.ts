@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.28.0',
+    date: '2026-10-15',
+    title: '上线自检：一次看清日报链路哪儿没配好',
+    items: [
+      '新增（日报功能尚未启用）：上线自检接口——一次调用就能看清日报链路的每个前置条件到底哪一项没配好：环境变量是否齐（只报长度、不回显内容）、迁移 015 的四张表能不能读、归属用户能否解析、热榜抓取是否通、模型是否连得上。**任何一项失败都不影响其余项继续检查**，不用跑完一整轮才猜问题在哪。其中「模型连通」那项最省事：Key 写错或模型名写错，否则要跑完几十次模型调用才发现',
+      '内部：自检入口 GET /api/digest-selftest（Bearer CRON_SECRET），上线时排在 enrich / build 之前；见 README 部署第 5 步与 docs/plans/PLAN_V127_AI日报接入.md',
+    ],
+  },
+  {
     version: 'v1.27.3',
     date: '2026-10-15',
     title: '修复：日报召回少一层失败面 + 三项已知行为归档',
