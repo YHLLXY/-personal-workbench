@@ -204,3 +204,14 @@ export function weatherIconName(kind: WeatherKind, isDay: boolean): string {
   if (kind === 'snow' || kind === 'heavy-snow') return 'snow'
   return isDay ? 'thunderstorms-rain' : 'thunderstorms-night-rain' // thunder
 }
+
+/** 太阳在「日出 → 日落」区间内的归一化位置（0=日出，1=日落）与是否白天。
+ *  t 钳制到 [0,1]：夜间返回端点值，调用方据此把太阳停在轨道末端。
+ *  日出/日落缺失、时间非法或区间倒置时返回 null（v1.26 抽成纯函数以便单测——旧实现写死在组件里）。 */
+export function sunProgress(sunrise?: string | null, sunset?: string | null, now: number = Date.now()): { t: number; inDay: boolean } | null {
+  if (!sunrise || !sunset) return null
+  const sr = new Date(sunrise).getTime()
+  const ss = new Date(sunset).getTime()
+  if (!Number.isFinite(sr) || !Number.isFinite(ss) || ss <= sr) return null
+  return { inDay: now >= sr && now <= ss, t: Math.min(1, Math.max(0, (now - sr) / (ss - sr))) }
+}

@@ -3,7 +3,7 @@ import { Droplets, Leaf, SunMedium, Thermometer, Umbrella, Wind } from 'lucide-r
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  WEATHER_LABELS, aqiLabel, hhmm, uvLabel, type DailyForecast, type WeatherKind, type WeatherNow,
+  WEATHER_LABELS, aqiLabel, hhmm, sunProgress, uvLabel, type DailyForecast, type WeatherKind, type WeatherNow,
 } from '@/lib/weather'
 import { weatherIconUrl } from '@/lib/weather-icons'
 import { useWeatherQuery } from './weather-data'
@@ -148,35 +148,76 @@ function SceneSnow() {
   )
 }
 
-/** 日出日落滑条：小太阳沿轨道从日出滑到日落，按当前时间定位（夜晚月亮停靠在对应端点） */
+/** 日出/日落端点标记：地平线上的半日 + 上/下箭头（按参考图手写，约 400B，随主题色，不引图标库） */
+function RiseSetGlyph({ dir, className }: { dir: 'rise' | 'set'; className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {dir === 'rise'
+        ? <><path d="M12 2.6v4.8" /><path d="m9.6 5 2.4-2.4L14.4 5" /></>
+        : <><path d="M12 7.4V2.6" /><path d="m9.6 5 2.4 2.4L14.4 5" /></>}
+      <path d="M5.4 18.4a6.6 6.6 0 0 1 13.2 0" />
+      <path d="M3 18.4h18" />
+    </svg>
+  )
+}
+
+/** 太阳：实心圆 + 8 道短光线 */
+function SunGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round">
+      <circle cx="12" cy="12" r="4.4" fill="currentColor" stroke="none" />
+      <path d="M12 2.2v2.4M12 19.4v2.4M2.2 12h2.4M19.4 12h2.4M5.1 5.1l1.7 1.7M17.2 17.2l1.7 1.7M18.9 5.1l-1.7 1.7M6.8 17.2l-1.7 1.7" />
+    </svg>
+  )
+}
+
+/** 日出日落：轨道以太阳位置为界分两段——已过去的白天暗淡、未到来的白天暖色高亮，太阳正好坐在交界处。
+ *  v1.26 重做。旧版四个问题：① 彩色 meteocons 太阳压在「琥珀→蓝→琥珀」全天彩虹渐变轨道上，两种饱和色打架；
+ *  ② 抬升只有 sin×10px，看起来不是划弧而是没对齐；③ h-2 轨道配 size-7 图标头重脚轻；
+ *  ④ left: calc(t% - 14px) 在 t=0/1 时把太阳甩出容器半个身位。
+ *  新版：轨道两侧留半个太阳宽度的内边距（px-3），太阳用 left:t% + translateX(-50%)，两端自然收在轨道内。 */
 function SunArc({ today }: { today?: DailyForecast }) {
-  if (!today?.sunrise || !today.sunset) return null
-  const sr = new Date(today.sunrise)
-  const ss = new Date(today.sunset)
-  const now = Date.now()
-  const inDay = now >= sr.getTime() && now <= ss.getTime()
-  const t = Math.min(1, Math.max(0, (now - sr.getTime()) / Math.max(1, ss.getTime() - sr.getTime())))
-  const lift = inDay ? Math.sin(t * Math.PI) * 10 : 0
+  const p = sunProgress(today?.sunrise, today?.sunset)
+  if (!today?.sunrise || !today?.sunset || !p) return null
+  const { t, inDay } = p
+  const pct = (t * 100).toFixed(2) + '%'
   return (
     <section>
       <h3 className="mb-3 text-xs font-medium text-muted-foreground">日出日落</h3>
-      <div className="relative px-1 pt-1">
+      {/* 上排：图标 + 标签，两端对齐 */}
+      <div className="flex items-start justify-between">
+        <div className="flex flex-col items-center gap-1">
+          <RiseSetGlyph dir="rise" className="size-6 text-amber-500 dark:text-amber-300" />
+          <span className="text-[11px] text-muted-foreground">日出</span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <RiseSetGlyph dir="set" className="size-6 text-amber-500/70 dark:text-amber-300/60" />
+          <span className="text-[11px] text-muted-foreground">日落</span>
+        </div>
+      </div>
+      {/* 中排：轨道。px-3 = 半个太阳宽度（size-6 = 24px），保证 t=0/1 时太阳不越界 */}
+      <div className="mt-3 px-3">
         <div
-          className="h-2 rounded-full"
-          style={{ background: inDay
-            ? 'linear-gradient(90deg, #f59e0b 0%, #fbbf24 22%, #93c5fd 50%, #fbbf24 78%, #f59e0b 100%)'
-            : 'linear-gradient(90deg, #1e293b 0%, #475569 50%, #1e293b 100%)' }}
-        />
-        <div
-          className="absolute top-1/2"
-          style={{ left: `calc(${(t * 100).toFixed(1)}% - 14px)`, transform: `translateY(calc(-50% - ${lift.toFixed(1)}px))` }}
+          className="relative h-1.5 rounded-full bg-muted"
+          role="img"
+          aria-label={inDay
+            ? '日出 ' + hhmm(today.sunrise) + '，日落 ' + hhmm(today.sunset) + '，白天已过 ' + Math.round(t * 100) + '%'
+            : '日出 ' + hhmm(today.sunrise) + '，日落 ' + hhmm(today.sunset) + '，当前为夜间'}
         >
-          <img src={weatherIconUrl('clear', inDay)} alt="" className={cn('size-7 drop-shadow-md', !inDay && 'opacity-80')} draggable={false} />
+          {/* 尚未到来的白天：暖色高亮；已过去的部分保持轨道底色（与参考图一致） */}
+          <div className="absolute inset-y-0 right-0 rounded-full bg-amber-400/75 dark:bg-amber-300/55" style={{ left: pct }} />
+          <div
+            className={cn('absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2', inDay ? 'text-amber-500 dark:text-amber-300' : 'text-muted-foreground/45')}
+            style={{ left: pct }}
+          >
+            <SunGlyph className="size-6" />
+          </div>
         </div>
-        <div className="mt-2 flex justify-between text-[11px] text-muted-foreground font-numeric">
-          <span>↑ 日出 {hhmm(today.sunrise)}</span>
-          <span>日落 {hhmm(today.sunset)} ↓</span>
-        </div>
+      </div>
+      {/* 下排：时间（参考图里明显大于标签） */}
+      <div className="mt-3 flex justify-between font-numeric">
+        <span className="text-lg font-bold tabular-nums">{hhmm(today.sunrise)}</span>
+        <span className="text-lg font-bold tabular-nums text-muted-foreground/70">{hhmm(today.sunset)}</span>
       </div>
     </section>
   )

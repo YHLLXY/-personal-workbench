@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   mapWmoKind, parseWeather, parseAir, sliceHourly, hhmm, uvLabel, aqiLabel,
-  weatherIconName, WEATHER_KINDS, WEATHER_LABELS,
+  weatherIconName, sunProgress, WEATHER_KINDS, WEATHER_LABELS,
 } from '../src/lib/weather'
 
 describe('mapWmoKind（WMO 天气码 → 12 类）', () => {
@@ -189,5 +189,47 @@ describe('parseWeather 详情字段（湿度/体感/风/日出日落/UV/降水�
     const raw = { current: { weather_code: 2, is_day: 1 } }
     expect(parseWeather(raw)!.air).toBeNull()
     expect(parseWeather(raw, { aqi: 60, pm25: 20, pm10: 45 })!.air?.aqi).toBe(60)
+  })
+})
+
+describe('sunProgress（v1.26 日出日落滑条）', () => {
+  const SR = '2026-10-15T06:55:00+08:00'
+  const SS = '2026-10-15T18:24:00+08:00'
+  const at = (iso: string) => new Date(iso).getTime()
+  const sr = at(SR)
+  const ss = at(SS)
+
+  it('白天正中：t ≈ 0.5 且 inDay', () => {
+    const r = sunProgress(SR, SS, (sr + ss) / 2)
+    expect(r).not.toBeNull()
+    expect(r!.inDay).toBe(true)
+    expect(r!.t).toBeCloseTo(0.5, 5)
+  })
+
+  it('日出前：t 钳制到 0、inDay=false（太阳停在左端，不越界）', () => {
+    expect(sunProgress(SR, SS, sr - 3600_000)).toEqual({ t: 0, inDay: false })
+  })
+
+  it('日落后：t 钳制到 1、inDay=false（太阳停在右端）', () => {
+    expect(sunProgress(SR, SS, ss + 3600_000)).toEqual({ t: 1, inDay: false })
+  })
+
+  it('日出/日落缺失或非法一律返回 null', () => {
+    expect(sunProgress(undefined, SS)).toBeNull()
+    expect(sunProgress(SR, undefined)).toBeNull()
+    expect(sunProgress('', '')).toBeNull()
+    expect(sunProgress('不是时间', SS)).toBeNull()
+    // 区间倒置（日落早于日出）
+    expect(sunProgress(SS, SR)).toBeNull()
+    // 区间长度为 0
+    expect(sunProgress(SR, SR)).toBeNull()
+  })
+
+  it('t 在任意时刻都落在 [0, 1]', () => {
+    for (let m = -120; m <= 120; m += 7) {
+      const r = sunProgress(SR, SS, sr + m * 60_000)
+      expect(r!.t).toBeGreaterThanOrEqual(0)
+      expect(r!.t).toBeLessThanOrEqual(1)
+    }
   })
 })
