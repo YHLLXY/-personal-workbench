@@ -122,7 +122,7 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 1. **Supabase**：建项目，SQL Editor 按序执行 `supabase/migrations/` 全部迁移（001→016，002 编号重复系历史既成；全部幂等，可重复执行）。
 2. **Web Push 密钥**：`npx web-push generate-vapid-keys` 生成密钥对。
 3. **Vercel**：导入仓库（框架预设 Vite，构建命令 `npm run build`），按下表配置环境变量。
-4. **定时提醒**：任意外部定时器每日调用 `POST /api/cron-notify`（Bearer `CRON_SECRET` 鉴权）——扫描到期任务/考试并发送 Web Push；另有 `/api/check-reminders`、`/api/test-notify` 两个辅助入口（均经 `vercel.json` rewrites 暴露）。
+4. **定时提醒**：**仓库里已经配好了 `.github/workflows/reminders.yml`** —— 每小时（每小时第 17 分钟，避开整点拥堵）调一次 `POST /api/cron-notify`（Bearer `CRON_SECRET` 鉴权），扫描到期任务/考试/学习目标并发送 Web Push · Server酱 · Telegram。**为什么每小时而不是每天**：任务到期时间由用户自设（如 14:00），每天跑一次的话提醒可能晚 24 小时才到。**这是兜底**：前端打开提醒相关页面时也会调一次 `/api/check-reminders` 做全量扫描并发发送，所以只要当天开过 App 提醒就一定会出去。（因为要每小时跑，特意选了 GitHub Actions——公开仓库不计分钟数。）另有 `/api/check-reminders`、`/api/test-notify` 两个辅助入口（均经 `vercel.json` rewrites 暴露）。
 5. **AI 日报**（v1.27，需先执行迁移 015 + 016）：外部定时器每天两次——**仓库里已经配好了 `.github/workflows/digest.yml`**：每天北京时间 06:00 由一个 GitHub Actions job 依次跑「抓取 → 等 30 秒 → 再抓一次 → 编排日报」。（三步放在**同一个 job**里，顺序是确定的；拆成三个独立定时任务的话，各自的调度延迟会把 build 排到 enrich 前面。）手动触发：Actions 页面选「AI 日报」→ Run workflow。两条命令分别是 `GET /api/digest-enrich`（抓取 → 落库 → 逐条 AI 摘要 → 事件聚簇）与 `GET /api/digest-build`（编排当日日报），均 Bearer `CRON_SECRET`。**时间排在 DeepSeek 空闲时段**（高峰 = 北京周一至周五 9:00–12:00 / 14:00–18:00，其余半价）。详见 [docs/plans/PLAN_V127_AI日报接入.md](./docs/plans/PLAN_V127_AI日报接入.md)。
 
    **上线前先跑一次自检**：`GET /api/digest-selftest`（同样 Bearer `CRON_SECRET`）会逐项探测环境变量 / 4 张表 / 归属用户（含用户总数与来源）/ Telegram / 热榜抓取 / 模型连通，任何一项失败都不影响其余项，一次调用就能定位「到底哪儿没配好」。**只报有没有与长度，不回显任何密钥。**

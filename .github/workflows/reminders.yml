@@ -1,0 +1,39 @@
+name: 定时提醒
+
+# 每小时扫一次到期提醒（任务 / 考试 / 学习目标），推到 Web Push · Server酱 · Telegram。
+#
+# 为什么每小时而不是每天：任务的到期时间是你自己设的（比如 14:00），每天只跑一次的话
+# 提醒可能晚 24 小时才到。每小时一次，误差就在 1 小时以内。
+#
+# 这个定时任务是【兜底】。前端在打开提醒相关页面时也会调一次 /api/check-reminders
+# 做全量扫描并发发送——只要你每天开过 App，提醒就一定会出去；整天没开的那天靠这里补。
+#
+# ⚠️ 特意避开整点：cron 在 :00 是最拥挤的时段，GitHub 的调度延迟会更明显。
+# ⚠️ 计划任务在仓库连续 60 天没有提交后会被 GitHub 自动停用（本项目 CI 常在跑，风险很低）。
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:   # 手动触发：Actions 页面选这个 workflow → Run workflow
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检查 CRON_SECRET 是否配置
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::仓库没有配置 CRON_SECRET —— 到 Settings → Secrets and variables → Actions → New repository secret 添加，名字必须是 CRON_SECRET"
+            exit 1
+          fi
+
+      - name: 扫描并发送到期提醒
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # 响应体会打印出来（{created,due,sent,skipped}）——出问题时 Actions 日志里直接能看
+          curl -sS --fail-with-body -m 60 -X POST -H "Authorization: Bearer $CRON_SECRET" \
+            https://workbench.yuhailinlxy.com/api/cron-notify
+          echo
