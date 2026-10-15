@@ -21,6 +21,8 @@ vi.mock('../src/lib/db', () => ({
   isCloudMode: true,
   repository: { listDailyReports: vi.fn(async () => []) },
 }))
+// 首页卡（只要 1 条）与日报页（要 30 条）共用同一个 repository 方法——
+// 缓存键必须把 limit 算进去，否则先挂载的那个决定数据（v1.28.1 修的那个 bug）
 vi.mock('../src/lib/db/supabase-client', () => ({ getSupabaseClient: vi.fn() }))
 
 const { repository } = await import('../src/lib/db')
@@ -96,6 +98,21 @@ describe('DailyDigest（v1.27）', () => {
     renderDigest()
     await waitFor(() => expect(screen.getByText('还没有日报')).toBeTruthy())
     expect(screen.queryByText('日报功能还没启用')).toBeNull()
+  })
+
+  it('不同 limit 不共用缓存：首页卡先取过 1 条，日报页仍会取满 30 条', async () => {
+    const { useDailyReports } = await import('../src/modules/news/api')
+    function HomeCardProbe() { useDailyReports(1); return null }
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const first = render(<QueryClientProvider client={qc}><HomeCardProbe /></QueryClientProvider>)
+    await waitFor(() => expect(repository.listDailyReports).toHaveBeenCalledWith(1))
+    first.unmount()
+
+    // 同一个 QueryClient（模拟从首页点进「今日热点」）——若不重新请求，说明缓存键撞了
+    vi.mocked(repository.listDailyReports).mockResolvedValue([report] as never)
+    render(<QueryClientProvider client={qc}><DailyDigest /></QueryClientProvider>)
+    await waitFor(() => expect(repository.listDailyReports).toHaveBeenCalledWith(30))
+    await waitFor(() => expect(screen.getByText(report.title)).toBeTruthy())
   })
 
   it('来源为空的条目照常渲染，不出现空链接', async () => {

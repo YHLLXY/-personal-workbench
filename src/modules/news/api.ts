@@ -31,11 +31,17 @@ export function useFolderMutations() {
 }
 
 // —— AI 日报（服务端生成，前端只读；见 api/digest.ts 与迁移 015）——
-export const digestKeys = { all: ['dailyReports'] as const }
+// ⚠️ limit 必须进 queryKey。首页卡只要 1 条、日报页要 30 条，若共用 ['dailyReports']，
+// 先挂载的那个会决定缓存内容——从首页进「今日热点」时，日期切换器会只剩今天一条（v1.28.1 修复）。
+// root 保留成前缀，好让「重新生成」后的失效能一次覆盖所有 limit。
+export const digestKeys = {
+  root: ['dailyReports'] as const,
+  list: (limit: number) => ['dailyReports', limit] as const,
+}
 
 export function useDailyReports(limit = 30) {
   return useQuery({
-    queryKey: digestKeys.all,
+    queryKey: digestKeys.list(limit),
     queryFn: () => repository.listDailyReports(limit),
     staleTime: 5 * 60_000,
     // 迁移 015 没执行时表不存在，属于配置问题——重试只是白白多等一个来回
@@ -55,7 +61,8 @@ export function useRebuildDigest() {
       const r = await fetch('/api/build-digest', { method: 'POST', headers: { authorization: `Bearer ${session.access_token}` } })
       return await r.json() as { ok?: boolean; built?: boolean; items?: number; error?: string }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: digestKeys.all }),
+    // 前缀失效：一次覆盖所有 limit 的缓存条目
+    onSuccess: () => qc.invalidateQueries({ queryKey: digestKeys.root }),
   })
 }
 
