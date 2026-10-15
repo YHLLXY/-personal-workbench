@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeUrl, titleHash, parseLlmJson, normalizeEnrichment, groupByCategory, mapLimit } from '../api/digest'
+import { normalizeUrl, titleHash, parseLlmJson, normalizeEnrichment, groupByCategory, mapLimit, intEnv } from '../api/digest'
 
 /** AI 日报的纯函数（v1.27）。API 本体要打真网络，这里只钉住可判定的部分。 */
 
@@ -112,5 +112,41 @@ describe('mapLimit（内置并发限流，不引 p-limit）', () => {
   })
   it('空数组不启动 worker', async () => {
     expect(await mapLimit([], 5, async () => 1)).toEqual([])
+  })
+})
+
+describe('intEnv（环境变量配错不能把整条链路静默弄哑）', () => {
+  it('未配置 / 空串 → 回落默认值', () => {
+    delete process.env.T_X
+    expect(intEnv('T_X', 20, 0, 100)).toBe(20)
+    process.env.T_X = '   '
+    expect(intEnv('T_X', 20, 0, 100)).toBe(20)
+    delete process.env.T_X
+  })
+  it('非数字 → 回落默认值（而不是 NaN）', () => {
+    process.env.T_X = 'abc'
+    expect(intEnv('T_X', 20, 0, 100)).toBe(20)
+    process.env.T_X = 'NaN'
+    expect(intEnv('T_X', 20, 0, 100)).toBe(20)
+    process.env.T_X = 'Infinity'
+    expect(intEnv('T_X', 20, 0, 100)).toBe(20)
+    delete process.env.T_X
+  })
+  it('越界钳制，小数取整', () => {
+    process.env.T_X = '-5'; expect(intEnv('T_X', 20, 0, 100)).toBe(0)
+    process.env.T_X = '999'; expect(intEnv('T_X', 20, 0, 100)).toBe(100)
+    process.env.T_X = '7.9'; expect(intEnv('T_X', 20, 0, 100)).toBe(7)
+    delete process.env.T_X
+  })
+})
+
+describe('mapLimit 兜底', () => {
+  it('并发数传 NaN 时退化成串行，而不是起 0 个 worker 把整批活丢掉', async () => {
+    const out = await mapLimit([1, 2, 3], Number.NaN, async n => n * 2)
+    expect(out).toEqual([2, 4, 6])
+  })
+  it('并发数为 0 或负数时同样不会丢活', async () => {
+    expect(await mapLimit([1, 2], 0, async n => n)).toEqual([1, 2])
+    expect(await mapLimit([1, 2], -3, async n => n)).toEqual([1, 2])
   })
 })

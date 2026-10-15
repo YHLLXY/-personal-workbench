@@ -32,6 +32,7 @@ vi.mock('@supabase/supabase-js', () => {
       if (out.ai_retry == null) out.ai_retry = 0
       if (out.ai_tags == null) out.ai_tags = []
       if (out.event_id === undefined) out.event_id = null
+      if (out.claimed_at === undefined) out.claimed_at = null
       if (out.fetched_at == null) out.fetched_at = new Date().toISOString()
     }
     if (table === 'wb_hot_events') {
@@ -72,12 +73,20 @@ vi.mock('@supabase/supabase-js', () => {
           for (const r of list) state.rows.push({ table, row: r })
           return { select: () => ({ single: () => Promise.resolve({ data: list[0] ?? null, error: null }) }) }
         },
-        update: (payload: Row) => ({
-          eq: (c: string, v: unknown) => {
-            for (const r of state.rows) if (r.table === table && r.row[c] === v) r.row = { ...r.row, ...payload }
-            return { select: () => ({ single: () => Promise.resolve({ data: null, error: null }) }), then: (res?: (v: unknown) => unknown) => Promise.resolve({ error: null }).then(res) }
-          },
-        }),
+        update: (payload: Row) => {
+          const ok = () => ({ select: () => ({ single: () => Promise.resolve({ data: null, error: null }) }), then: (res?: (v: unknown) => unknown) => Promise.resolve({ error: null }).then(res) })
+          return {
+            eq: (c: string, v: unknown) => {
+              for (const r of state.rows) if (r.table === table && r.row[c] === v) r.row = { ...r.row, ...payload }
+              return ok()
+            },
+            // 批量放回 pending 用（enrichPending 的时间预算路径）
+            in: (c: string, vs: unknown[]) => {
+              for (const r of state.rows) if (r.table === table && vs.includes(r.row[c])) r.row = { ...r.row, ...payload }
+              return ok()
+            },
+          }
+        },
         upsert: (payload: Row | Row[], opts?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
           const keys = (opts?.onConflict ?? '').split(',').map(s => s.trim()).filter(Boolean)
           const list = Array.isArray(payload) ? payload : [payload]
@@ -103,9 +112,15 @@ vi.mock('@supabase/supabase-js', () => {
     // rpc：wb_claim_items（原子领取）与 wb_match_events（事件召回）
     function rpc(fn: string, args: Record<string, unknown>): Promise<{ data: unknown; error: null }> {
       if (fn === 'wb_claim_items') {
+        // 镜像迁移 015 的 SQL：pending，以及【陈旧的 processing 行】——函数被平台超时掐死后的兜底
         const limit = Number(args.p_limit ?? 20)
-        const picked = state.rows.filter(r => r.table === 'wb_hot_items' && r.row.user_id === args.p_user && r.row.ai_status === 'pending').slice(0, limit)
-        for (const r of picked) r.row = { ...r.row, ai_status: 'processing' }
+        const staleMins = Math.max(Number(args.p_stale_minutes ?? 15), 1)
+        const staleBefore = Date.now() - staleMins * 60_000
+        const picked = state.rows.filter(r => r.table === 'wb_hot_items' && r.row.user_id === args.p_user && (
+          r.row.ai_status === 'pending'
+          || (r.row.ai_status === 'processing' && r.row.claimed_at != null && Date.parse(String(r.row.claimed_at)) < staleBefore)
+        )).slice(0, limit)
+        for (const r of picked) r.row = { ...r.row, ai_status: 'processing', claimed_at: new Date().toISOString() }
         return Promise.resolve({ data: picked.map(r => r.row), error: null })
       }
       return Promise.resolve({ data: [], error: null })
@@ -301,4 +316,41 @@ describe('api/digest 入口', () => {
     expect(res.body).toMatchObject({ ok: true, built: true })
     expect(state.rowsOf('wb_daily_reports')[0].title).toBe('重生成')
   })
+  it('时间预算用尽：条目放回 pending 而不是卡在 processing（v1.27.2）', async () => {
+    state.hotPayload = {
+      items: [
+        { title: 'A', source: 'hn', url: 'https://a.com/a', category: 'tech' },
+        { title: 'B', source: 'hn', url: 'https://a.com/b', category: 'tech' },
+      ],
+      sources: [{ id: 'hn', name: 'HN', category: 'tech' }],
+    }
+    process.env.DIGEST_BUDGET_MS = '0'   // 预算为 0 = 只落库不处理
+    try {
+      const res = makeRes()
+      await handler(makeReq({ query: { entry: 'enrich' }, headers: CRON }), res as never)
+      expect(res.statusCode).toBe(200)
+      const body = res.body as { added: number; processed: number; deferred: number }
+      expect(body.added).toBe(2)         // 抓取落库照样做完了
+      expect(body.processed).toBe(0)
+      expect(body.deferred).toBe(2)
+      // 关键：没处理的必须回到 pending，否则只挑 pending 的 wb_claim_items 再也领不到它们
+      const items = state.rowsOf('wb_hot_items')
+      expect(items.every(i => i.ai_status === 'pending')).toBe(true)
+      expect(items.every(i => i.claimed_at === null)).toBe(true)
+    } finally { delete process.env.DIGEST_BUDGET_MS }
+  })
+
+  it('陈旧 processing 行会被重新领取（函数被平台超时掐死后的兜底）', async () => {
+    const stale = new Date(Date.now() - 30 * 60_000).toISOString()
+    state.hotPayload = { items: [], sources: [] }
+    state.rows.push({ table: 'wb_hot_items', row: { id: 'stuck', user_id: 'u1', title: '上次卡住的', source_name: 'HN', url: 'https://a.com/x', ai_status: 'processing', claimed_at: stale } })
+    state.rows.push({ table: 'wb_hot_items', row: { id: 'fresh', user_id: 'u1', title: '正在处理中', source_name: 'HN', url: 'https://a.com/y', ai_status: 'processing', claimed_at: new Date().toISOString() } })
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'enrich' }, headers: CRON }), res as never)
+    expect((res.body as { processed: number }).processed).toBe(1)   // 只捞回陈旧那条
+    const rows = state.rowsOf('wb_hot_items')
+    expect(rows.find(r => r.id === 'stuck')!.ai_status).toBe('done')
+    expect(rows.find(r => r.id === 'fresh')!.ai_status).toBe('processing')  // 正常在跑的不能被抢
+  })
+
 })

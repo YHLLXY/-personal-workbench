@@ -102,7 +102,9 @@ export function groupByCategory<T extends { ai_category: string | null; ai_score
 export async function mapLimit<T, R>(list: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(list.length)
   let cursor = 0
-  const workers = Array.from({ length: Math.max(1, Math.min(limit, list.length)) }, async () => {
+  // 并发数非法时退化成串行，而不是起 0 个 worker 把整批活静默丢掉
+  const width = Number.isFinite(limit) ? Math.max(1, Math.min(Math.trunc(limit), list.length)) : Math.max(1, list.length)
+  const workers = Array.from({ length: width }, async () => {
     for (;;) {
       const i = cursor++
       if (i >= list.length) return
@@ -120,6 +122,23 @@ function env(k: string): string {
   if (!v) throw new Error(`missing env ${k}`)
   return v
 }
+
+/** 读一个整数环境变量：空值 / 非数字一律回落默认，越界钳制。
+ *  ⚠️ 不能直接用 Number(process.env.X)——配成 'abc' 会得到 NaN：
+ *  NaN 传给 wb_claim_items 的 p_limit 会在 SQL 里炸；
+ *  传给 mapLimit 的并发数会让它起 0 个 worker，**静默什么都不做**（最难查的那种）。 */
+export function intEnv(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name]
+  if (raw == null || raw.trim() === '') return fallback
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(Math.max(Math.trunc(n), min), max)
+}
+
+/** 单次调用的时间预算（毫秒）。Vercel 函数有平台级超时，跑不完的条目必须放回 pending，
+ *  否则会卡在 processing。设小一点没坏处——状态是持久的，下次 cron 接着跑。 */
+// 下限允许 0：那等于「只落库、不处理」——函数超时限制极紧时，可以把抓取与处理拆到两次调用里跑
+const BUDGET_MS = () => intEnv('DIGEST_BUDGET_MS', 20_000, 0, 280_000)
 
 function adminClient(): SupabaseClient {
   return createClient(env('VITE_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), { auth: { persistSession: false } })
@@ -248,13 +267,24 @@ async function persistItems(sb: SupabaseClient, userId: string, items: HotItem[]
   return data?.length ?? 0
 }
 
-/** 领取待处理条目并逐条做 AI 摘要，写回 ai_* 字段。返回处理条数 */
-async function enrichPending(sb: SupabaseClient, userId: string, limit: number, concurrency: number): Promise<number> {
+/** 领取待处理条目并逐条做 AI 摘要，写回 ai_* 字段。
+ *  超出时间预算的条目**放回 pending**（而不是留在 processing）——下次 cron 接着跑。 */
+async function enrichPending(sb: SupabaseClient, userId: string, limit: number, concurrency: number, deadline: number): Promise<{ processed: number; deferred: number }> {
   const { data: claimed, error } = await sb.rpc('wb_claim_items', { p_user: userId, p_limit: limit })
   if (error) throw error
-  const items = (claimed ?? []) as Array<{ id: string; title: string; source_name: string }>
-  if (items.length === 0) return 0
-  await mapLimit(items, concurrency, async (it) => {
+  const items = (claimed ?? []) as Array<{ id: string; title: string; source_name: string; ai_retry?: number }>
+  if (items.length === 0) return { processed: 0, deferred: 0 }
+
+  const todo: typeof items = []
+  const deferred: typeof items = []
+  for (const it of items) (Date.now() < deadline ? todo : deferred).push(it)
+  if (deferred.length > 0) {
+    // 没轮到的放回去；claimed_at 一并清掉（配合 wb_claim_items 的陈旧回收形成双保险）
+    await sb.from('wb_hot_items').update({ ai_status: 'pending', claimed_at: null }).in('id', deferred.map(i => i.id))
+  }
+  if (todo.length === 0) return { processed: 0, deferred: deferred.length }
+
+  await mapLimit(todo, concurrency, async (it) => {
     try {
       const r = await enrichOne(it.title, it.source_name)
       await sb.from('wb_hot_items').update({
@@ -267,21 +297,24 @@ async function enrichPending(sb: SupabaseClient, userId: string, limit: number, 
       const msg = err instanceof Error ? err.message : String(err)
       const retry = Number((it as { ai_retry?: number }).ai_retry ?? 0) + 1
       await sb.from('wb_hot_items').update({
-        ai_status: retry >= 3 ? 'failed' : 'pending', ai_retry: retry, ai_summary: `[失败] ${msg.slice(0, 120)}`,
+        ai_status: retry >= 3 ? 'failed' : 'pending', ai_retry: retry, claimed_at: null,
+        ai_summary: `[失败] ${msg.slice(0, 120)}`,
       }).eq('id', it.id)
     }
   })
-  return items.length
+  return { processed: todo.length, deferred: deferred.length }
 }
 
-/** 事件聚簇（层次 3）：先召回候选，灰区才让模型判定，否则新建事件 */
-async function clusterItems(sb: SupabaseClient, userId: string): Promise<number> {
+/** 事件聚簇（层次 3）：先召回候选，灰区才让模型判定，否则新建事件。
+ *  超预算即停——未聚的条目 event_id 仍为 null，下次 enrich 接着聚。 */
+async function clusterItems(sb: SupabaseClient, userId: string, deadline: number): Promise<{ clustered: number; deferred: number }> {
   const { data: rows, error } = await sb.from('wb_hot_items')
     .select('id,title,ai_score,ai_category').eq('user_id', userId).eq('ai_status', 'done').is('event_id', null).limit(60)
   if (error) throw error
   const items = (rows ?? []) as Array<{ id: string; title: string; ai_score: number | null; ai_category: string | null }>
   let clustered = 0
   for (const it of items) {
+    if (Date.now() > deadline) break
     const { data: cands } = await sb.rpc('wb_match_events', { p_user: userId, p_title: it.title, p_embedding: null, p_days: 14, p_limit: 3 })
     const best = (cands ?? [])[0] as { event_id: string; title: string; similarity: number } | undefined
     let eventId: string | null = null
@@ -308,7 +341,7 @@ async function clusterItems(sb: SupabaseClient, userId: string): Promise<number>
     await sb.from('wb_hot_items').update({ event_id: eventId }).eq('id', it.id)
     clustered++
   }
-  return clustered
+  return { clustered, deferred: items.length - clustered }
 }
 
 // ========== 流程 2：事件 → 日报 ==========
@@ -413,27 +446,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sb = adminClient()
       const userId = await resolveUserId(sb)
       const origin = `https://${req.headers.host ?? ''}`
+      // 整条 enrich 共用一个时间预算：抓取已经花掉的时间也算在内
+      const deadline = t0 + BUDGET_MS()
       const { items, sources } = await fetchHot(origin)
       const added = await persistItems(sb, userId, items, sources)
-      const processed = await enrichPending(sb, userId, Number(process.env.DIGEST_ENRICH_LIMIT ?? 35), Number(process.env.DIGEST_CONCURRENCY ?? 5))
-      const clustered = await clusterItems(sb, userId)
-      await logRun(sb, userId, date, 'enrich', { status: 'ok', items_in: items.length, items_out: processed, detail: `新增 ${added} / 处理 ${processed} / 聚簇 ${clustered}` })
-      return res.json({ ok: true, fetched: items.length, added, processed, clustered, ms: Date.now() - t0 })
+      const enriched = await enrichPending(sb, userId, intEnv('DIGEST_ENRICH_LIMIT', 35, 1, 200), intEnv('DIGEST_CONCURRENCY', 5, 1, 20), deadline)
+      const clustered = await clusterItems(sb, userId, deadline)
+      await logRun(sb, userId, date, 'enrich', {
+        status: 'ok', items_in: items.length, items_out: enriched.processed,
+        detail: `新增 ${added} / 处理 ${enriched.processed}（顺延 ${enriched.deferred}）/ 聚簇 ${clustered.clustered}（顺延 ${clustered.deferred}）`,
+      })
+      return res.json({ ok: true, fetched: items.length, added, processed: enriched.processed, deferred: enriched.deferred, clustered: clustered.clustered, ms: Date.now() - t0 })
     }
 
     if (entry === 'build') {
       if (!isCron(req)) return res.status(401).json({ ok: false })
       const sb = adminClient()
       const userId = await resolveUserId(sb)
-      const r = await buildReport(sb, userId, date, Number(process.env.DIGEST_PER_CATEGORY ?? 4))
-      await logRun(sb, userId, date, 'digest', { status: r ? 'ok' : 'ok', items_out: r?.items ?? 0, detail: r ? `${r.items} 条事件 / ${r.sources} 个来源` : '今天还没有可编排的事件' })
+      const r = await buildReport(sb, userId, date, intEnv('DIGEST_PER_CATEGORY', 4, 1, 20))
+      await logRun(sb, userId, date, 'digest', { status: 'ok', items_out: r?.items ?? 0, detail: r ? `${r.items} 条事件 / ${r.sources} 个来源` : '今天还没有可编排的事件' })
       return res.json({ ok: true, built: r !== null, ...(r ?? {}), ms: Date.now() - t0 })
     }
 
     if (entry === 'force') {
       const sb = await authUser(req)
       if (!sb) return res.status(401).json({ ok: false })
-      const r = await buildReport(sb, (await sb.auth.getUser()).data.user?.id ?? '', date, Number(process.env.DIGEST_PER_CATEGORY ?? 4))
+      const r = await buildReport(sb, (await sb.auth.getUser()).data.user?.id ?? '', date, intEnv('DIGEST_PER_CATEGORY', 4, 1, 20))
       if (!r) return res.json({ ok: true, built: false, error: '今天还没有可编排的事件——先跑一次 enrich' })
       return res.json({ ok: true, built: true, ...r, ms: Date.now() - t0 })
     }

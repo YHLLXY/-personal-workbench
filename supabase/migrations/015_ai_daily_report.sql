@@ -43,7 +43,8 @@ create table if not exists public.wb_hot_items (
   processed_at timestamptz,
 
   event_id     text,                           -- 归入的事件（层次 3 聚簇）
-  embedding    vector(1024)                    -- 可空：没配向量服务时留空，走文本召回
+  embedding    vector(1024),                   -- 可空：没配向量服务时留空，走文本召回
+  claimed_at   timestamptz                     -- 被 wb_claim_items 领走的时刻；用于回收进程被平台超时掐掉后留下的 processing 行
 );
 
 create unique index if not exists wb_hot_items_url_uniq on public.wb_hot_items (user_id, url_hash);
@@ -129,20 +130,33 @@ create table if not exists public.wb_digest_runs (
   unique (user_id, run_date, stage)
 );
 
--- 原子领取待处理条目：SKIP LOCKED 保证两个并发的 cron 不会抢到同一批（层次 4 幂等）
-create or replace function public.wb_claim_items(p_user uuid, p_limit int default 20)
+-- 原子领取待处理条目：SKIP LOCKED 保证两个并发的 cron 不会抢到同一批（层次 4 幂等）。
+--
+-- ⚠️ 同时回收【陈旧的 processing 行】：领取会把状态改成 processing，而下面的 UPDATE 是
+--    一次性写库——如果 Vercel 函数中途被平台超时掐死，那批行就永远停在 processing，
+--    只挑 pending 的话它们再也不会被领到，等于永久失联。
+--    所以超过 p_stale_minutes 的 processing 行视为可重新领取。api/digest.ts 另有时间预算，
+--    正常情况下不会走到这条路径——它是兜底，不是主路径。
+create or replace function public.wb_claim_items(
+  p_user uuid, p_limit int default 20, p_stale_minutes int default 15)
 returns setof public.wb_hot_items
 language sql volatile as $$
-  with claimed as (
+  with claimable as (
     select id from public.wb_hot_items
-     where user_id = p_user and ai_status = 'pending'
+     where user_id = p_user
+       and (
+         ai_status = 'pending'
+         or (ai_status = 'processing'
+             and claimed_at is not null
+             and claimed_at < now() - make_interval(mins => greatest(p_stale_minutes, 1)))
+       )
      order by fetched_at desc
      limit greatest(p_limit, 1)
      for update skip locked
   )
   update public.wb_hot_items i
-     set ai_status = 'processing'
-    from claimed c
+     set ai_status = 'processing', claimed_at = now()
+    from claimable c
    where i.id = c.id
   returning i.*
 $$;
