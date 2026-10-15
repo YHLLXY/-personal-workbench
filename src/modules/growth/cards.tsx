@@ -5,6 +5,7 @@ import { celebrate } from '@/lib/celebrate'
 import { useHabits, useHabitLogs, useSetHabitLog } from '../health/api'
 import { todayStr } from '../../lib/db/types'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/empty-state'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -16,7 +17,21 @@ export function GrowthCard() {
   const today = todayStr()
 
   const active = (actions ?? []).filter(a => a.status === 'active').sort((a, b) => a.no - b.no)
-  if (active.length === 0) return null
+  // ⚠️ 不能 return null：home.tsx 的网格项 <div> 仍在，会照样占满一行高度 → 首页出现「一整行莫名其妙的空白」。
+  // 9 张首页卡片里只有这里曾返回 null，其余 8 张都有空态（v1.26 实测修复）。
+  if (active.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm"><TrendingUp className="size-4 text-primary" strokeWidth={1.7} />自我提升</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <EmptyState icon={<TrendingUp />} title="还没有行动" desc="添加想坚持的行动，这里按天打卡"
+            action={<Link to="/growth" className="text-xs text-primary hover:underline">去添加 →</Link>} className="py-6" />
+        </CardContent>
+      </Card>
+    )
+  }
 
   const habitOf = (habitId: string | null) => habits?.find(h => h.id === habitId && h.active)
   const doneSet = new Set<string>()

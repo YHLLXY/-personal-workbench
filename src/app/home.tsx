@@ -12,10 +12,18 @@ const SPAN_CLASS: Record<string, string> = {
   '4': 'md:col-span-4',
   '5': 'md:col-span-5',
   '7': 'md:col-span-7',
+  '8': 'md:col-span-8',
   '12': 'md:col-span-12',
 }
 
-/** 卡片 → 目标路由（HotCard 无映射，保持不可整卡跳转） */
+/** 卡片 → 目标路由。
+ *  ⚠️ 只有【内部不含链接】的卡片才能进这张表：CardLinkShell 会把整卡包成一个 <a>，
+ *  而 <a> 不能嵌套 <a>（React 报 hydration error，浏览器也会把内层链接拆开）。
+ *  - HotCard：内部有条目外链
+ *  - ProjectsCard：内部有「→」和每条项目名的 <Link>
+ *  - GrowthCard：内部有「查看全部 →」的 <Link>
+ *  以上三张一律不整卡跳转，靠卡片内的显式入口（v1.26 修复：home-projects / home-growth 曾在此表中，
+ *  控制台实测报 "In HTML, <a> cannot be a descendant of <a>"）。 */
 const CARD_LINK: Record<string, string> = {
   'home-tasks': '/tasks',
   'home-trend': '/tasks',
@@ -24,7 +32,6 @@ const CARD_LINK: Record<string, string> = {
   'home-heatmap': '/health',
   'home-review': '/review',
   'home-notes': '/notes',
-  'home-projects': '/projects',
 }
 
 /** 整卡 Link 统一外壳：border 基础透明 + hover 高亮边框 + 按压缩放 */
