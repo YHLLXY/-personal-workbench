@@ -12,12 +12,11 @@ import { getSupabaseClient } from '@/lib/db/supabase-client'
 import { AVATAR_COLORS } from '@/lib/profile'
 import { validateBackup, formatBytes, downloadBackupFile, markBackupDone, backupAgeDays, backupAgeLabel } from '@/lib/backup'
 import { taskCompletionRate, totalFocusMinutes, formatMinutes, activeNoteCount, buildWeeklyTrend } from '@/lib/stats'
-import { streakFromLogDates } from '@/lib/heatmap'
 import { streakMilestone } from '@/lib/celebrate'
 import { todayStr } from '@/lib/db/types'
 import { useTasks } from '@/modules/overview/api'
 import { useFocusSessions } from '@/modules/study/api'
-import { useHabitStats, useHabitLogs } from '@/modules/health/api'
+import { useHabitStats } from '@/modules/health/api'
 import { useReviews } from '@/modules/review/api'
 import { useNotes, usePapers } from '@/modules/news/api'
 import { useTheme, type Theme } from '@/app/theme'
@@ -153,28 +152,29 @@ function ProfileEditDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   )
 }
 
+/** 累计统计：一张卡 + 内部分隔线网格。
+ *  v1.26 改版——旧版是 6 张各自带边框的独立卡片，视觉碎片化（「分开放有些难看」）。
+ *  同时去掉与顶部身份卡重复的口径：连续打卡 / 待办完成率已在 ProfileHero 显示，这里只留「累计」。 */
 function StatsGrid() {
   const { data: tasks } = useTasks()
-  const { data: logs } = useHabitLogs()
   const { data: sessions } = useFocusSessions()
   const { data: reviews } = useReviews()
   const { data: notes } = useNotes()
   const { data: papers } = usePapers()
-  const rate = taskCompletionRate(tasks ?? [])
-  const streak = streakFromLogDates((logs ?? []).map(l => l.logDate))
   const items = [
-    { label: '待办完成率', value: rate.total === 0 ? '—' : `${rate.rate}%`, sub: `${rate.done} / ${rate.total} 项` },
-    { label: '连续打卡', value: `${streak}`, sub: '天' },
     { label: '专注总时长', value: formatMinutes(totalFocusMinutes(sessions ?? [])), sub: '番茄钟累计' },
-    { label: '复盘次数', value: `${reviews?.length ?? 0}`, sub: '篇' },
-    { label: '笔记数', value: `${activeNoteCount(notes ?? [])}`, sub: '未归档' },
+    { label: '专注次数', value: `${sessions?.length ?? 0}`, sub: '个番茄' },
+    { label: '累计完成任务', value: `${taskCompletionRate(tasks ?? []).done}`, sub: '项' },
+    { label: '复盘', value: `${reviews?.length ?? 0}`, sub: '篇' },
+    { label: '笔记', value: `${activeNoteCount(notes ?? [])}`, sub: '未归档' },
     { label: '资料库', value: `${papers?.length ?? 0}`, sub: '论文与文案' },
   ]
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+    // gap-px + bg-border 画内部分隔线：比逐格写边框稳，行末不会留悬空线
+    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border md:grid-cols-3">
       {items.map(it => (
-        <div key={it.label} className="rounded-2xl border border-border bg-card p-4">
-          <div className="text-lg font-bold font-numeric">{it.value}</div>
+        <div key={it.label} className="bg-card px-4 py-3.5">
+          <div className="text-base font-bold font-numeric leading-tight">{it.value}</div>
           <div className="mt-0.5 text-xs text-muted-foreground">{it.label}</div>
           <div className="mt-0.5 text-[10px] text-muted-foreground/70">{it.sub}</div>
         </div>
