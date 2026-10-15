@@ -142,7 +142,7 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 | `LLM_MODEL` | 仅 API | 默认 `deepseek-flash`。**写在环境变量里不要硬编码**——模型名会变 |
 | `LLM_BASE_URL` | 仅 API | 默认 `https://api.deepseek.com`；任何 OpenAI 兼容端点都可以，换供应商只改这一个 |
 | `LLM_THINKING` | 仅 API | 默认**不发思考**（仅对 DeepSeek 端点生效）；设 `on` 可打开思考模式。**为什么默认关**：DeepSeek 的思考 token 计入 `max_tokens`，线上实测 18 条真实标题的日报请求在 2000 额度里被 reasoning 吃掉 1925，正文只剩 100 出头 → `finish_reason=length` → JSON 截断；而逐条摘要那条路径**不报错**，只会静默套用兜底值、让摘要质量悄悄变差。关掉后不再产生 reasoning token，实测快 2~4 倍 |
-| `DIGEST_USER_ID` | 仅 API | AI 日报归属用户；不配则自动取库里第一个用户（单用户应用够用） |
+| `DIGEST_USER_ID` | 仅 API | AI 日报归属用户。**没配就取「库里的第一个用户」——多用户时它未必是你在应用里登录的那个**：日报会写到你看不到的账号下，前端被 RLS 过滤后只显示「还没有日报」，而库里明明有那一行。自检会报出用户总数与来源，多用户且未配置时直接告警 |
 | `DIGEST_ENRICH_LIMIT` | 仅 API | 单次最多处理多少条（默认 35）。**这是成本闸门** |
 | `DIGEST_CONCURRENCY` | 仅 API | 逐条摘要的并发数（默认 5） |
 | `DIGEST_PER_CATEGORY` | 仅 API | 日报每类最多几条（默认 4） |

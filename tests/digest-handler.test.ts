@@ -25,7 +25,8 @@ const state = vi.hoisted(() => ({
   llmBodies: [] as Array<Record<string, unknown>>,
   // 注入 finish_reason：用来复现「额度被思考吃光 → 输出截断」（v1.28.6）
   llmFinishReason: null as string | null,
-  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = []; state.rpcCalls = []; state.brokenTables = []; state.rpcError = null; state.llmBodies = []; state.llmFinishReason = null },
+  extraUsers: 0,   // 让 listUsers 多返回几个用户，测「归属用户可能选错」的告警
+  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = []; state.rpcCalls = []; state.brokenTables = []; state.rpcError = null; state.llmBodies = []; state.llmFinishReason = null; state.extraUsers = 0 },
   rowsOf(table: string) { return state.rows.filter(r => r.table === table).map(r => r.row) },
 }))
 
@@ -67,18 +68,24 @@ vi.mock('@supabase/supabase-js', () => {
       const tableErr = () => state.brokenTables.includes(table)
         ? { code: 'PGRST205', message: "Could not find the table 'public." + table + "' in the schema cache" }
         : null
+      // Postgres 把空串当非法 uuid：eq("user_id", "") 在真库上必然 22P02。
+      // 替身不模拟这一条，force 入口把 "" 当 user_id 送进数据库的 bug 就永远测不出来（v1.28.7）。
+      let badUuid = false
+      const dbErr = () => badUuid
+        ? { code: '22P02', message: 'invalid input syntax for type uuid: ""' }
+        : tableErr()
 
       const builder: Record<string, unknown> = {
         select: () => builder,
-        eq: (c: string, v: unknown) => { preds.push(r => r[c] === v); return builder },
+        eq: (c: string, v: unknown) => { preds.push(r => r[c] === v); if (c === 'user_id' && v === '') badUuid = true; return builder },
         is: (c: string, v: unknown) => { preds.push(r => r[c] === v); return builder },
         in: (c: string, vs: unknown[]) => { preds.push(r => vs.includes(r[c])); return builder },
         order: () => builder,
         limit: () => builder,
-        single: () => Promise.resolve({ data: tableErr() ? null : (matched()[0] ?? null), error: tableErr() }),
-        maybeSingle: () => Promise.resolve({ data: tableErr() ? null : (matched()[0] ?? null), error: tableErr() }),
+        single: () => Promise.resolve({ data: dbErr() ? null : (matched()[0] ?? null), error: dbErr() }),
+        maybeSingle: () => Promise.resolve({ data: dbErr() ? null : (matched()[0] ?? null), error: dbErr() }),
         then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
-          Promise.resolve({ data: tableErr() ? null : matched(), error: tableErr() }).then(res, rej),
+          Promise.resolve({ data: dbErr() ? null : matched(), error: dbErr() }).then(res, rej),
 
         insert: (payload: Row | Row[]) => {
           const list = (Array.isArray(payload) ? payload : [payload]).map(r => withDefaults(table, r))
@@ -115,7 +122,7 @@ vi.mock('@supabase/supabase-js', () => {
               written.push(row)
             }
           }
-          const err = tableErr()   // 表不存在时，upsert 同样会报错（自检之外的失败路径也要能造出来）
+          const err = dbErr()   // 表不存在时，upsert 同样会报错（自检之外的失败路径也要能造出来）
           return { data: err ? null : written, error: err, select: () => Promise.resolve({ data: err ? null : written, error: err }), then: (res?: (v: unknown) => unknown) => Promise.resolve({ data: err ? null : written, error: err }).then(res) }
         },
       }
@@ -146,8 +153,12 @@ vi.mock('@supabase/supabase-js', () => {
       from,
       rpc,
       auth: {
-        getUser: async () => ({ data: { user }, error: null }),
-        admin: { listUsers: async () => ({ data: { users: [user] }, error: null }) },
+        // 忠实于真库：只有【显式传 token】才拿得到用户。persistSession: false 的客户端没有 session，
+        // 不带参数调 getUser() 只会得到 null——force 入口正是栽在这里（旧代码 ?? '' → 22P02）
+        getUser: async (token?: string) => token
+          ? { data: { user }, error: null }
+          : { data: { user: null }, error: { name: 'AuthSessionMissingError', message: 'Auth session missing!' } },
+        admin: { listUsers: async () => ({ data: { users: [user, ...Array.from({ length: state.extraUsers }, (_, i) => ({ id: 'u' + (i + 2) }))] }, error: null }) },
       },
     } as unknown as SupabaseClient
   }
@@ -525,6 +536,19 @@ describe('api/digest 入口', () => {
     expect(state.llmBodies[0].thinking).toEqual({ type: 'disabled' })
     expect(state.llmBodies[0].response_format).toEqual({ type: 'json_object' })
     expect(Number(state.llmBodies[0].max_tokens)).toBeGreaterThanOrEqual(4000)
+  })
+
+  it('自检在库里有多个用户时告警——日报可能写到你看不到的账号下（v1.28.7）', async () => {
+    // resolveUserId 没配 DIGEST_USER_ID 时取「库里的第一个用户」，它未必是应用里登录的那个。
+    // 写错账号的表现极具迷惑性：日报真的生成了，前端却被 RLS 过滤掉，只显示「还没有日报」。
+    state.extraUsers = 1
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'selftest' }, headers: CRON }), res as never)
+    const checks = (res.body as { checks: Array<{ name: string; detail: string }> }).checks
+    const detail = checks.find(c => c.name === '归属用户')!.detail
+    expect(detail).toContain('2 个用户')
+    expect(detail).toContain('DIGEST_USER_ID')
+    expect(detail).toContain('库里的第一个用户')
   })
 
 })

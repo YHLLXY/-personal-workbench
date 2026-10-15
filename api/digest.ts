@@ -189,13 +189,21 @@ function adminClient(): SupabaseClient {
   return createClient(env('VITE_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), { auth: { persistSession: false } })
 }
 
-async function authUser(req: VercelRequest): Promise<SupabaseClient | null> {
+/** 用请求头里的【用户 JWT】建一个「以该用户身份」的客户端。
+ *
+ *  ⚠️ 必须把 userId 一起返回，调用方**不要**再调 sb.auth.getUser()：
+ *  这个客户端是 persistSession: false、不存 session 的，不带参数调 getUser() 只会拿到 null。
+ *  v1.28.7 之前 force 入口就是这么写的——`getUser().data.user?.id ?? ''` 把空串当 user_id
+ *  送进数据库，Postgres 回 22P02（invalid input syntax for type uuid: ""），
+ *  「立即生成」按钮**从来没有成功过**。测试替身每次都给回一个用户，所以完全看不见。 */
+async function authUser(req: VercelRequest): Promise<{ sb: SupabaseClient; userId: string } | null> {
   const token = (req.headers.authorization ?? '').replace(/^Bearer /i, '')
   if (!token) return null
   const anon = createClient(env('VITE_SUPABASE_URL'), env('VITE_SUPABASE_ANON_KEY'), { auth: { persistSession: false } })
   const { data } = await anon.auth.getUser(token)
   if (!data.user) return null
-  return createClient(env('VITE_SUPABASE_URL'), env('VITE_SUPABASE_ANON_KEY'), { auth: { persistSession: false }, global: { headers: { authorization: `Bearer ${token}` } } })
+  const sb = createClient(env('VITE_SUPABASE_URL'), env('VITE_SUPABASE_ANON_KEY'), { auth: { persistSession: false }, global: { headers: { authorization: `Bearer ${token}` } } })
+  return { sb, userId: data.user.id }
 }
 
 /** 定时入口鉴权：常数时间比较，且不向未认证调用者泄漏环境变量名 */
@@ -546,7 +554,22 @@ export async function runSelfTest(host: string | undefined): Promise<SelfCheck[]
 
     try {
       const uid = await resolveUserId(sb)
-      out.push({ name: '归属用户', ok: true, detail: uid.slice(0, 8) + '…（完整 ID 已隐去）' })
+      const configured = !!process.env.DIGEST_USER_ID
+      // 多用户时必须报出来：「库里的第一个用户」未必是你在应用里登录的那个。
+      // 写错账号的表现极具迷惑性——日报真的生成了，但前端被 RLS 过滤掉，只显示「还没有日报」。
+      let total = 0
+      try {
+        const { data } = await sb.auth.admin.listUsers({ page: 1, perPage: 200 })
+        total = data?.users?.length ?? 0
+      } catch { /* 数不出来不影响主判据 */ }
+      out.push({
+        name: '归属用户',
+        ok: true,
+        detail: uid.slice(0, 8) + '…（完整 ID 已隐去）· 来自 ' + (configured ? 'DIGEST_USER_ID' : '库里的第一个用户')
+          + (total > 1 && !configured
+            ? ' · ⚠️ 库里有 ' + total + ' 个用户，日报会写在上面这个账号下；若它不是你在应用里登录的那个，请在 Vercel 设 DIGEST_USER_ID'
+            : ''),
+      })
     } catch (err) {
       out.push({ name: '归属用户', ok: false, detail: err instanceof Error ? err.message : '解析失败' })
     }
@@ -623,6 +646,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch (logErr) { console.error('digest logRun failed', logErr) }
         return res.json({
           ok: true, fetched: items.length, added,
+          user: userId.slice(0, 8),   // 日报写在哪个账号下——多用户时一眼看出对不对
           processed: enriched.processed, deferred: enriched.deferred, clustered: clustered.clustered,
           // 摘要/聚簇各自实得多少毫秒——顺延很多时看这个就知道该不该调 DIGEST_BUDGET_MS
           enrichMs: budget.enrichUntil - fetchDone, clusterMs: budget.clusterUntil - fetchDone,
@@ -643,7 +667,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         await logRun(sb, userId, date, 'digest', { status: 'ok', items_out: r?.items ?? 0, detail: r ? `${r.items} 条事件 / ${r.sources} 个来源` : '今天还没有可编排的事件' })
       } catch (logErr) { console.error('digest logRun failed', logErr) }
-      return res.json({ ok: true, built: r !== null, ...(r ?? {}), ms: Date.now() - t0 })
+      return res.json({ ok: true, built: r !== null, ...(r ?? {}), user: userId.slice(0, 8), ms: Date.now() - t0 })
     }
 
     if (entry === 'selftest') {
@@ -653,11 +677,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (entry === 'force') {
-      const sb = await authUser(req)
-      if (!sb) return res.status(401).json({ ok: false })
-      const r = await buildReport(sb, (await sb.auth.getUser()).data.user?.id ?? '', date, intEnv('DIGEST_PER_CATEGORY', 4, 1, 20))
+      const auth = await authUser(req)
+      if (!auth) return res.status(401).json({ ok: false })
+      const r = await buildReport(auth.sb, auth.userId, date, intEnv('DIGEST_PER_CATEGORY', 4, 1, 20))
       if (!r) return res.json({ ok: true, built: false, error: '今天还没有可编排的事件——先跑一次 enrich' })
-      return res.json({ ok: true, built: true, ...r, ms: Date.now() - t0 })
+      return res.json({ ok: true, built: true, ...r, user: auth.userId.slice(0, 8), ms: Date.now() - t0 })
     }
 
     return res.status(404).json({ ok: false, error: 'not found' })

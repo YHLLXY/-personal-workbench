@@ -257,6 +257,45 @@ max_tokens=4000 → finish_reason=stop   | completion  546 起 | 正文 1527 字
 > 另一条：**关掉思考不是省钱的妥协，它同时修好了正确性**——逐条摘要的 500 额度同样可能被思考吃光，
 > 而那条路径 `parseLlmJson` 失败会静默走兜底值，条目照样标 `done`，故障表现只有「质量悄悄变差」。
 
+### 7.4 「立即生成」把空串当成了 user_id
+
+**症状**：App 里点「立即生成」，弹出 `invalid input syntax for type uuid: "" | code=22P02`。
+
+**顺藤**：`message | code=…` 这个格式是 7.2 新加的 `errText()` 才有的——说明这个错**来自我们自己的 API**，
+不是前端直连数据库。查 `force` 入口：
+
+```ts
+const sb = await authUser(req)                                   // 用 token 验证过 ✓
+const r = await buildReport(sb, (await sb.auth.getUser()).data.user?.id ?? '', ...)
+//                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 这个客户端没有 session
+```
+
+`authUser` 建的是 `persistSession: false` 的客户端，**不存 session**；不带参数调 `getUser()` 只会拿到 `null`，
+于是 `?? ''` 把空串当 uuid 送进 Postgres。**「立即生成」在线上从来没有成功过。**
+
+**为什么 22 个用例全绿**：测试替身的 `getUser` 每次都回一个用户，比真库宽松。
+改成忠实版（只有显式传 token 才拿得到用户；`eq('user_id', '')` 返回 22P02）之后，
+`force` 那条用例立刻先红：`expected 500 to be 200`。
+
+**修法**：`authUser` 返回 `{ sb, userId }`，调用方直接用，不再二次 `getUser()`。
+
+### 7.5 「日报生成了但看不到」——归属账号可能选错
+
+**症状**：服务端 `build` 返回 `{ok:true, built:true, items:11}`，App 里却还是「还没有日报」。
+
+**分析**：前端 `listDailyReports` 是干净的（不传 `user_id`，靠 RLS 过滤），所以要么这行不存在，
+要么它的 `user_id` **不是登录用户的 id**。而服务端的归属用户来自 `resolveUserId()`：
+配了 `DIGEST_USER_ID` 就用它，没配就取 `admin.listUsers({page:1, perPage:1}).users[0].id`——
+**「库里的第一个用户」未必是你在应用里登录的那个**。写错账号时前端被 RLS 过滤掉，
+表现就是「还没有日报」，而库里明明有那一行。
+
+**修法（让猜测可见）**：
+
+- 自检的「归属用户」现在报出**用户总数**与来源（`DIGEST_USER_ID` / 库里的第一个用户），多用户且未配置时直接告警
+- `enrich` / `build` / `force` 的响应都带上 `user`（id 前 8 位），命令行就能看出日报写到了谁名下
+
+> 教训：**凡是服务端替用户猜身份的地方，都要让这个猜测可见。**
+
 ## 八、下一步（可选）
 
 - 给 `wb_hot_items` 加 embedding 写入 + 打开向量召回
