@@ -8,7 +8,7 @@ vi.mock('@/lib/db', () => ({
     listPushSubscriptions: vi.fn(async () => []),
     savePushSubscription: vi.fn(async () => {}),
     removePushSubscription: vi.fn(async () => {}),
-    getChannelConfigs: vi.fn(async () => ({ serverchanKey: null })),
+    getChannelConfigs: vi.fn(async () => ({ serverchanKey: null, telegramBotToken: null, telegramChatId: null })),
     saveChannelConfigs: vi.fn(async () => {}),
   } as never,
 }))
@@ -59,7 +59,7 @@ describe('NotificationSection', () => {
     await waitFor(() => expect(repository.savePushSubscription).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'https://push.example/1', keysP256dh: 'AQIDBA==', keysAuth: 'CQgH' })))
   })
 
-  it('Server酱：输入 SendKey 保存 → saveChannelConfigs', async () => {
+  it('Server酱：输入 SendKey 保存 → saveChannelConfigs（三字段一起写，避免清掉 Telegram）', async () => {
     render(
       <QueryClientProvider client={qc}>
         <NotificationSection />
@@ -67,8 +67,43 @@ describe('NotificationSection', () => {
     )
     await waitFor(() => expect(screen.getByLabelText(/Server酱 SendKey/)).toBeTruthy())
     fireEvent.change(screen.getByLabelText(/Server酱 SendKey/), { target: { value: 'SCU123' } })
-    fireEvent.click(screen.getByRole('button', { name: /保存/ }))
-    await waitFor(() => expect(repository.saveChannelConfigs).toHaveBeenCalledWith({ serverchanKey: 'SCU123' }))
+    // 精确匹配「保存」——加 Telegram 后 /保存/ 会同时命中「保存并测试」（v1.26）
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(repository.saveChannelConfigs).toHaveBeenCalledWith({ serverchanKey: 'SCU123', telegramBotToken: null, telegramChatId: null }))
+  })
+
+  it('Telegram：校验通过才落库（v1.26）', async () => {
+    const fetchMock = vi.fn(async () => ({ json: async () => ({ ok: true, botUsername: 'my_bot' }) }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(
+      <QueryClientProvider client={qc}>
+        <NotificationSection />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByLabelText('Telegram Bot Token')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Telegram Bot Token'), { target: { value: '123:ABC' } })
+    fireEvent.change(screen.getByLabelText('Telegram Chat ID'), { target: { value: '456' } })
+    fireEvent.click(screen.getByRole('button', { name: /保存并测试/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/telegram-test', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(repository.saveChannelConfigs).toHaveBeenCalledWith({ serverchanKey: null, telegramBotToken: '123:ABC', telegramChatId: '456' }))
+    vi.unstubAllGlobals()
+  })
+
+  it('Telegram：Token 校验失败时不写库（配置错误不落库）', async () => {
+    const fetchMock = vi.fn(async () => ({ json: async () => ({ ok: false, step: 'token', error: 'Unauthorized' }) }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(
+      <QueryClientProvider client={qc}>
+        <NotificationSection />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByLabelText('Telegram Bot Token')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Telegram Bot Token'), { target: { value: 'bad' } })
+    fireEvent.change(screen.getByLabelText('Telegram Chat ID'), { target: { value: '456' } })
+    fireEvent.click(screen.getByRole('button', { name: /保存并测试/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(repository.saveChannelConfigs).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 })
 

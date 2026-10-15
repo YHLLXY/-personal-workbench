@@ -259,10 +259,71 @@ describe('api/reminders 入口', () => {
   it('test-notify：向本人通道发送测试通知', async () => {
     state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 't', created_at: '2026-08-08T00:00:00.000Z' })
     state.insert('wb_channel_configs', { user_id: 'u1', serverchan_key: 'SCU123' })
+    state.fetchResults.push({ status: 200, body: '{"code":0}' }) // Server酱
     const res = makeRes()
     await handler(makeReq({ method: 'POST', query: { entry: 'test' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
     expect(res.statusCode).toBe(200)
     expect((res.body as { sent: number }).sent).toBe(2) // web push 1 + serverchan 1
     expect(state.fetchCalls.some(c => c.url.includes('SCU123'))).toBe(true)
+  })
+
+  // —— v1.26 Telegram 通道 ——
+
+  it('check：配置了 Telegram 时同时推送，成功才标记 sent_at', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_channel_configs', { user_id: 'u1', telegram_bot_token: '123:ABC', telegram_chat_id: '456' })
+    state.fetchResults.push({ status: 200, body: '{"ok":true,"result":{"message_id":1}}' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    expect(res.statusCode).toBe(200)
+    expect((res.body as { sent: number }).sent).toBe(1)
+    const call = state.fetchCalls.find(c => c.url.includes('api.telegram.org'))
+    // 端点按 token 拼、正文走 JSON（parse_mode HTML 避免 Markdown 转义坑）
+    expect(call?.url).toBe('https://api.telegram.org/bot123:ABC/sendMessage')
+    expect(call?.body).toContain('"chat_id":"456"')
+    expect(call?.body).toContain('"parse_mode":"HTML"')
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).not.toBeNull()
+  })
+
+  it('check：Telegram 返回 ok:false（如 chat not found）→ skipped，sent_at 不标记', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_channel_configs', { user_id: 'u1', telegram_bot_token: '123:ABC', telegram_chat_id: '456' })
+    state.fetchResults.push({ status: 400, body: '{"ok":false,"description":"chat not found"}' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { sent: number; skipped: number }
+    expect(body.sent).toBe(0)
+    expect(body.skipped).toBe(1)
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
+  })
+
+  it('telegram-test：Token 无效 → step=token（UI 据此提示「Bot Token 有误」）', async () => {
+    state.fetchResults.push({ status: 401, body: '{"ok":false,"description":"Unauthorized"}' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'POST', query: { entry: 'telegram-test' }, headers: { authorization: 'Bearer jwt-1' }, body: { botToken: 'bad', chatId: '456' } } as never), res as never)
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toMatchObject({ ok: false, step: 'token', error: 'Unauthorized' })
+    expect(state.fetchCalls.filter(c => c.url.includes('sendMessage')).length).toBe(0)
+  })
+
+  it('telegram-test：Token 通过但 Chat ID 错 → step=chat', async () => {
+    state.fetchResults.push({ status: 200, body: '{"ok":true,"result":{"username":"my_bot"}}' })
+    state.fetchResults.push({ status: 400, body: '{"ok":false,"description":"chat not found"}' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'POST', query: { entry: 'telegram-test' }, headers: { authorization: 'Bearer jwt-1' }, body: { botToken: '123:ABC', chatId: '000' } } as never), res as never)
+    expect(res.body).toMatchObject({ ok: false, step: 'chat', botUsername: 'my_bot' })
+  })
+
+  it('telegram-test：全部通过 → ok + botUsername，且未登录返回 401', async () => {
+    state.fetchResults.push({ status: 200, body: '{"ok":true,"result":{"username":"my_bot"}}' })
+    state.fetchResults.push({ status: 200, body: '{"ok":true,"result":{"message_id":1}}' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'POST', query: { entry: 'telegram-test' }, headers: { authorization: 'Bearer jwt-1' }, body: { botToken: '123:ABC', chatId: '456' } } as never), res as never)
+    expect(res.body).toMatchObject({ ok: true, botUsername: 'my_bot' })
+    const noAuth = makeRes()
+    await handler(makeReq({ method: 'POST', query: { entry: 'telegram-test' }, headers: {} } as never), noAuth as never)
+    expect(noAuth.statusCode).toBe(401)
   })
 })

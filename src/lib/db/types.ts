@@ -133,7 +133,9 @@ export interface Reminder {
   createdAt: string
 }
 export interface PushSubscriptionRow { id: string; endpoint: string; keysP256dh: string; keysAuth: string; userAgent: string | null; createdAt: string }
-export interface ChannelConfigs { serverchanKey: string | null }
+/** 通知通道配置。telegramBotToken / telegramChatId 为 v1.26 新增（迁移 014）。
+ *  ⚠️ saveChannelConfigs 是整行覆盖：调用方必须传**全部字段**，漏传即被清空（旧实现只传 serverchanKey）。 */
+export interface ChannelConfigs { serverchanKey: string | null; telegramBotToken: string | null; telegramChatId: string | null }
 
 export interface WorkbenchRepository {
   listTasks(): Promise<Task[]>

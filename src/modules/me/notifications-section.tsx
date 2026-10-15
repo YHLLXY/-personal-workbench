@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BellRing, Send } from 'lucide-react'
+import { BellRing, MessageCircle, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,11 +19,19 @@ export function NotificationSection() {
   const [busy, setBusy] = useState(false)
   const [scKey, setScKey] = useState('')
   const [saving, setSaving] = useState(false)
+  // v1.26：Telegram 通道
+  const [tgToken, setTgToken] = useState('')
+  const [tgChatId, setTgChatId] = useState('')
+  const [tgBusy, setTgBusy] = useState(false)
 
   useEffect(() => {
     if (!isCloudMode) return
     repository.listPushSubscriptions().then(rows => setSubscribed(rows.length > 0)).catch(() => {})
-    repository.getChannelConfigs().then(c => setScKey(c.serverchanKey ?? '')).catch(() => {})
+    repository.getChannelConfigs().then(c => {
+      setScKey(c.serverchanKey ?? '')
+      setTgToken(c.telegramBotToken ?? '')
+      setTgChatId(c.telegramChatId ?? '')
+    }).catch(() => {})
   }, [])
 
   async function subscribe() {
@@ -71,12 +79,39 @@ export function NotificationSection() {
     } catch { toast.error('发送失败，请重试') }
   }
 
+  // ⚠️ saveChannelConfigs 是整行覆盖：三个字段必须一起传，否则会把另一个通道的配置清掉
   async function saveScKey() {
     setSaving(true)
     try {
-      await repository.saveChannelConfigs({ serverchanKey: scKey.trim() || null })
+      await repository.saveChannelConfigs({ serverchanKey: scKey.trim() || null, telegramBotToken: tgToken.trim() || null, telegramChatId: tgChatId.trim() || null })
       toast.success('已保存')
     } catch { toast.error('保存失败') } finally { setSaving(false) }
+  }
+
+  /** Telegram「保存并测试」：先在服务端 getMe 校验 Token + 真发一条测试消息，**通过才落库**。
+   *  这样错 Token / 错 Chat ID 不会污染数据库；错误描述（401 Unauthorized / chat not found）原样回显。 */
+  async function saveTelegram() {
+    const token = tgToken.trim()
+    const chat = tgChatId.trim()
+    if (!token || !chat) { toast.error('请填写 Bot Token 和 Chat ID'); return }
+    setTgBusy(true)
+    try {
+      const sb = getSupabaseClient()
+      const { data: { session } } = await sb.auth.getSession()
+      if (!session) { toast.error('未登录'); return }
+      const r = await fetch('/api/telegram-test', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ botToken: token, chatId: chat }),
+      })
+      const j = await r.json() as { ok?: boolean; step?: string; error?: string; botUsername?: string }
+      if (!j.ok) {
+        toast.error(j.step === 'chat' ? `Chat ID 有误：${j.error ?? ''}` : `Bot Token 有误：${j.error ?? ''}`)
+        return
+      }
+      await repository.saveChannelConfigs({ serverchanKey: scKey.trim() || null, telegramBotToken: token, telegramChatId: chat })
+      toast.success(`已连接 @${j.botUsername ?? 'bot'}，测试消息已发出`)
+    } catch { toast.error('保存失败，请重试') } finally { setTgBusy(false) }
   }
 
   if (!isCloudMode) {
@@ -109,7 +144,7 @@ export function NotificationSection() {
             ) : (
               <Button size="sm" onClick={subscribe} disabled={busy}><BellRing className="mr-1 size-3.5" />订阅推送</Button>
             )}
-            <Button size="sm" variant="outline" onClick={testSend} disabled={busy || (!subscribed && !scKey.trim())}>测试发送</Button>
+            <Button size="sm" variant="outline" onClick={testSend} disabled={busy || (!subscribed && !scKey.trim() && !tgToken.trim())}>测试发送</Button>
           </div>
           {isIOS && <p className="text-[10px] text-muted-foreground/70">📱 iPhone：请先分享到主屏幕（添加到主屏幕）后使用推送。</p>}
           {isAndroidChrome && <p className="text-[10px] text-muted-foreground/70">🤖 安卓 Chrome 的推送服务（FCM）在中国大陆不可用，请配置下方 Server酱通过微信接收。</p>}
@@ -126,6 +161,25 @@ export function NotificationSection() {
             <Button size="sm" variant="outline" onClick={saveScKey} disabled={saving}>保存</Button>
           </div>
           <p className="text-[10px] text-muted-foreground/70">在 sct.ftqq.com 获取 SendKey 后粘贴保存；保存后可点「测试发送」验证微信接收。</p>
+        </div>
+
+        <div className="space-y-2 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <MessageCircle className="size-4 shrink-0 text-primary" strokeWidth={1.7} />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm">Telegram Bot（服务端直发，不受 FCM 被墙影响）</div>
+              <p className="mt-0.5 text-xs text-muted-foreground">在 @BotFather 建 Bot 取 Token；先给这个 Bot 发一条消息，再用 @userinfobot 查你的 Chat ID</p>
+            </div>
+            <Badge variant={tgToken.trim() && tgChatId.trim() ? 'default' : 'outline'} className="shrink-0">{tgToken.trim() && tgChatId.trim() ? '已配置' : '未配置'}</Badge>
+          </div>
+          <div className="grid gap-2 pl-7 sm:grid-cols-2">
+            <Input aria-label="Telegram Bot Token" type="password" autoComplete="off" placeholder="123456789:AA…" value={tgToken} onChange={e => setTgToken(e.target.value)} className="h-9 font-mono text-xs" />
+            <Input aria-label="Telegram Chat ID" placeholder="Chat ID（形如 123456789）" value={tgChatId} onChange={e => setTgChatId(e.target.value)} className="h-9 font-mono text-xs" />
+          </div>
+          <div className="pl-7">
+            <Button size="sm" onClick={saveTelegram} disabled={tgBusy}>{tgBusy ? '校验中…' : '保存并测试'}</Button>
+          </div>
+          <p className="pl-7 text-[10px] text-muted-foreground/70">会先调 getMe 校验 Token、再真发一条测试消息；**校验不通过不会写库**。推送由 Vercel 服务端发起，国内无需代理。</p>
         </div>
       </div>
     </section>

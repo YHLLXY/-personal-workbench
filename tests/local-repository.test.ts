@@ -244,12 +244,19 @@ describe('定时提醒（2026-08-08）', () => {
     expect((await repo.listReminders())[0].dismissedAt).toBeNull()
   })
 
-  it('getChannelConfigs 无配置返回 null，save 后返回，再 save null 覆盖', async () => {
-    expect(await repo.getChannelConfigs()).toEqual({ serverchanKey: null })
-    await repo.saveChannelConfigs({ serverchanKey: 'SCU123' })
-    expect(await repo.getChannelConfigs()).toEqual({ serverchanKey: 'SCU123' })
-    await repo.saveChannelConfigs({ serverchanKey: null })
-    expect(await repo.getChannelConfigs()).toEqual({ serverchanKey: null })
+  it('getChannelConfigs 无配置返回 null，save 后返回，再 save null 覆盖（含 v1.26 Telegram 三字段）', async () => {
+    const empty = { serverchanKey: null, telegramBotToken: null, telegramChatId: null }
+    expect(await repo.getChannelConfigs()).toEqual(empty)
+    await repo.saveChannelConfigs({ serverchanKey: 'SCU123', telegramBotToken: '123:ABC', telegramChatId: '456' })
+    expect(await repo.getChannelConfigs()).toEqual({ serverchanKey: 'SCU123', telegramBotToken: '123:ABC', telegramChatId: '456' })
+    await repo.saveChannelConfigs(empty)
+    expect(await repo.getChannelConfigs()).toEqual(empty)
+  })
+
+  it('旧本地数据只有 serverchanKey 时，Telegram 字段补 null 而不是读崩', async () => {
+    localStorage.setItem('wb:channelConfigs', JSON.stringify({ serverchanKey: 'SCU-old' }))
+    expect(await repo.getChannelConfigs()).toEqual({ serverchanKey: 'SCU-old', telegramBotToken: null, telegramChatId: null })
+    localStorage.removeItem('wb:channelConfigs')
   })
 })
 

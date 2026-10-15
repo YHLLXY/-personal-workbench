@@ -324,20 +324,29 @@ describe('定时提醒（2026-08-08）', () => {
 
   it('getChannelConfigs 无行时返回空配置', async () => {
     const c = await repo.getChannelConfigs()
-    expect(c).toEqual({ serverchanKey: null })
+    expect(c).toEqual({ serverchanKey: null, telegramBotToken: null, telegramChatId: null })
   })
 
-  it('getChannelConfigs 有行时返回 serverchanKey', async () => {
+  it('getChannelConfigs 有行时返回三个字段', async () => {
+    setRows('wb_channel_configs', [{ user_id: 'u1', serverchan_key: 'SCU123', telegram_bot_token: '123:ABC', telegram_chat_id: '456' }])
+    const c = await repo.getChannelConfigs()
+    expect(c).toEqual({ serverchanKey: 'SCU123', telegramBotToken: '123:ABC', telegramChatId: '456' })
+  })
+
+  it('getChannelConfigs 旧行没有 Telegram 列时补 null', async () => {
     setRows('wb_channel_configs', [{ user_id: 'u1', serverchan_key: 'SCU123' }])
     const c = await repo.getChannelConfigs()
-    expect(c).toEqual({ serverchanKey: 'SCU123' })
+    expect(c).toEqual({ serverchanKey: 'SCU123', telegramBotToken: null, telegramChatId: null })
   })
 
-  it('saveChannelConfigs 载荷 snake_case 带 user_id', async () => {
-    await repo.saveChannelConfigs({ serverchanKey: 'SCUxxx' })
+  it('saveChannelConfigs 载荷 snake_case 带 user_id，且三字段一起写', async () => {
+    await repo.saveChannelConfigs({ serverchanKey: 'SCUxxx', telegramBotToken: '123:ABC', telegramChatId: '456' })
     const payload = upsertCalls[0].payload as Record<string, unknown>
     expect(payload).toHaveProperty('serverchan_key', 'SCUxxx')
+    expect(payload).toHaveProperty('telegram_bot_token', '123:ABC')
+    expect(payload).toHaveProperty('telegram_chat_id', '456')
     expect(payload).toHaveProperty('user_id')
     expect(payload).not.toHaveProperty('serverchanKey')
+    expect(payload).not.toHaveProperty('telegramBotToken')
   })
 })

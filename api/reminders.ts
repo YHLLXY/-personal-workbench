@@ -179,6 +179,33 @@ function ensureVapid(): void {
 }
 
 /** 到期未发未忽略 → 逐条发送（Web Push + Server酱）；真实送达才标记 sent_at（无通道/全失败保留 NULL 待补发）；410/404 删除过期订阅 */
+/** HTML 模式转义：提醒正文里出现 < > & 会让 Telegram 解析失败（400 Bad Request） */
+function tgEscape(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** 发一条 Telegram 消息。失败抛错（description 原样带出，供 UI 显示配置错误）。
+ *  ⚠️ api.telegram.org 在中国大陆被墙，但本函数运行在 Vercel（服务端出网），
+ *  与 Server酱 走同一条路径——浏览器直连不通不影响这里。 */
+async function sendTelegram(botToken: string, chatId: string, text: string): Promise<void> {
+  const r = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text: tgEscape(text), parse_mode: 'HTML', disable_web_page_preview: true }),
+    signal: AbortSignal.timeout(8000),
+  })
+  const j = (await r.json().catch(() => null)) as { ok?: boolean; description?: string } | null
+  if (!r.ok || !j?.ok) throw new Error(j?.description ?? `HTTP ${r.status}`)
+}
+
+/** 校验 Bot Token（getMe）。设置页在落库前先调它，避免把错 Token 写进数据库。 */
+async function telegramGetMe(botToken: string): Promise<string> {
+  const r = await fetch(`https://api.telegram.org/bot${botToken}/getMe`, { signal: AbortSignal.timeout(8000) })
+  const j = (await r.json().catch(() => null)) as { ok?: boolean; description?: string; result?: { username?: string } } | null
+  if (!r.ok || !j?.ok) throw new Error(j?.description ?? `HTTP ${r.status}`)
+  return j.result?.username ?? 'bot'
+}
+
 async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[], goals: GoalLike[], now: Date): Promise<{ sent: number; skipped: number }> {
   ensureVapid()
   const [dueRes, subsRes, configsRes] = await Promise.all([
@@ -200,7 +227,12 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
     subsByUser.set(uid, list)
   }
   const chanByUser = new Map<string, string>()
-  for (const c of configsRes.data ?? []) if (c.serverchan_key) chanByUser.set(String(c.user_id), String(c.serverchan_key))
+  const tgByUser = new Map<string, { token: string; chatId: string }>()
+  for (const c of configsRes.data ?? []) {
+    const uid = String(c.user_id)
+    if (c.serverchan_key) chanByUser.set(uid, String(c.serverchan_key))
+    if (c.telegram_bot_token && c.telegram_chat_id) tgByUser.set(uid, { token: String(c.telegram_bot_token), chatId: String(c.telegram_chat_id) })
+  }
 
   let sent = 0
   let skipped = 0
@@ -248,6 +280,10 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
         if (r.ok && j?.code === 0) { sent++; delivered++ } else skipped++
       } catch { skipped++ }
     }
+    const tg = tgByUser.get(uid)
+    if (tg) {
+      try { await sendTelegram(tg.token, tg.chatId, text); sent++; delivered++ } catch { skipped++ }
+    }
     // 真实送达才标记 sent_at；无通道/全部失败时保留 NULL，下次 cron/check 会补发
     if (delivered > 0) await sb.from('wb_reminders').update({ sent_at: now.toISOString() }).eq('id', String(row.id))
   }
@@ -286,6 +322,10 @@ async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number 
       if (r.ok && j?.code === 0) sent++
     } catch { /* 静默 */ }
   }
+  for (const c of configs ?? []) {
+    if (!c.telegram_bot_token || !c.telegram_chat_id) continue
+    try { await sendTelegram(String(c.telegram_bot_token), String(c.telegram_chat_id), '这是一条测试通知，通知功能已就绪 ✅'); sent++ } catch { /* 静默 */ }
+  }
   return { sent }
 }
 
@@ -317,6 +357,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!sb) return res.status(401).json({ error: 'unauthorized' })
       const result = await sendTest(sb, new Date())
       return res.json({ ok: true, ...result })
+    }
+    if (entry === 'telegram-test') {
+      const sb = await authUser(req)
+      if (!sb) return res.status(401).json({ error: 'unauthorized' })
+      const body = (req.body ?? {}) as { botToken?: string; chatId?: string }
+      const botToken = String(body.botToken ?? '').trim()
+      const chatId = String(body.chatId ?? '').trim()
+      if (!botToken || !chatId) return res.json({ ok: false, step: 'input', error: '请填写 Bot Token 和 Chat ID' })
+      // 分两步，好让 UI 明确告诉用户是 Token 错还是 Chat ID 错
+      let botUsername = ''
+      try { botUsername = await telegramGetMe(botToken) }
+      catch (err) { return res.json({ ok: false, step: 'token', error: err instanceof Error ? err.message : 'Token 校验失败' }) }
+      try { await sendTelegram(botToken, chatId, '个人工作台已连上 Telegram ✅') }
+      catch (err) { return res.json({ ok: false, step: 'chat', error: err instanceof Error ? err.message : '发送失败', botUsername }) }
+      return res.json({ ok: true, botUsername })
     }
     return res.status(404).json({ error: 'not found' })
   } catch (err) {
