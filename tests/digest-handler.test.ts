@@ -413,6 +413,18 @@ describe('api/digest 入口', () => {
     expect(body.checks.find(c => c.name === '热榜抓取')!.ok).toBe(true)
   })
 
+  it('selftest：模型只回空正文也算连通（思考模式会吃满 token 额度——线上实测踩到过）', async () => {
+    state.hotPayload = { items: [{ title: 'x', source: 'hn', url: 'https://a.com/1', category: 'tech' }], sources: [{ id: 'hn', name: 'HN', category: 'tech' }] }
+    state.llmQueue = ['']            // 2xx 但 content 为空
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'selftest' }, headers: CRON }), res as never)
+    const body = res.body as { ok: boolean; checks: Array<{ name: string; ok: boolean; detail: string }> }
+    const m = body.checks.find(c => c.name === '模型连通')!
+    expect(m.ok).toBe(true)          // 判据是「通不通」，不是「有没有正文」
+    expect(m.detail).toContain('未返回正文')
+    expect(body.ok).toBe(true)
+  })
+
   it('selftest：热榜返回 0 条时也要标出来（说明抓取链路有上游问题，跑 enrich 会空转）', async () => {
     state.hotPayload = { items: [], sources: [] }
     const res = makeRes()

@@ -510,8 +510,17 @@ export async function runSelfTest(host: string | undefined): Promise<SelfCheck[]
   if (key.length > 0) {
     const t0 = Date.now()
     try {
-      const { text } = await chat('你是连通性探针，只回一个 JSON。', '返回 {"ok":true}', { maxTokens: 20 })
-      out.push({ name: '模型连通', ok: text.length > 0, detail: LLM_MODEL() + ' 正常，耗时 ' + (Date.now() - t0) + 'ms' })
+      // ⚠️ 判据是「这次调用通不通」，**不是「有没有正文」**：
+      // deepseek-flash 默认走思考模式，max_tokens 给小了会全花在思考上、content 返回空串——
+      // 那依然是连通正常。2026-10-15 线上实测踩到过：自检报红，detail 却写着「正常」。
+      // 真正的不通（Key 错 / 模型名错 / 余额不足）会以非 2xx 抛错，走下面的 catch。
+      const { text } = await chat('你是连通性探针，只回一个 JSON。', '返回 {"ok":true}', { maxTokens: 200 })
+      out.push({
+        name: '模型连通',
+        ok: true,
+        detail: LLM_MODEL() + ' 连通正常，耗时 ' + (Date.now() - t0) + 'ms'
+          + (text.length === 0 ? '（本次未返回正文，通常是思考模式占满了 token 额度，不影响使用）' : ''),
+      })
     } catch (err) {
       out.push({ name: '模型连通', ok: false, detail: err instanceof Error ? err.message : '调用失败' })
     }
