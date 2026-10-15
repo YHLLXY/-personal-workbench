@@ -118,7 +118,9 @@
 2. **日报只做中文**（用户拍板）。`DIGEST_SYSTEM` 已按中文写死；要双语得改提示词并加列。
 3. **`wb_hot_items` / `wb_hot_events` 不进备份**。`exportAll` 仍是既有 12 张表——这两张是服务端中间产物（体量大、可重建），日报 `wb_daily_reports` 也是生成物，不塞进 JSON 备份。
 4. **前端零新增依赖**：日报用普通 JSX 渲染结构化字段，不引 markdown 渲染器（体积门禁首屏 723/790 KB，装不下）。
-5. **`api/digest.ts` 未做端到端集成测试**（要打真 LLM + Supabase）。目前覆盖的是可判定的纯函数 21 条；网络路径靠上面的手动验收清单。
+5. ~~`api/digest.ts` 未做端到端集成测试~~ → **已补**（2026-10-15）：`tests/digest-handler.test.ts` 用有状态 fake 接管 Supabase + `/api/hot` + LLM 三处网络，直接驱动 `handler()`，8 条用例覆盖鉴权 / 去重 / 状态机 / 聚簇 / 成刊 / 运行日志。
+   其中「enrich 第二次 added=0 且不再调模型」一条**已做反证**——去掉 `ignoreDuplicates` 该用例立刻变红（`expected 1 to be +0`），其余 7 条不受影响。
+   仍然**没有**覆盖的是：真实 PostgREST 的语义差异、真实模型的输出质量、以及生产环境的并发行为——这些只能等 015 执行后在线上验。
 
 ---
 
