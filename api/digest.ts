@@ -181,7 +181,7 @@ const LLM_KEY = () => process.env.LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ??
 interface ChatResult { text: string }
 
 /** 唯一的模型调用出口。json=true 时要求 JSON 输出（DeepSeek 支持 response_format） */
-async function chat(system: string, user: string, opts: { json?: boolean; maxTokens?: number } = {}): Promise<ChatResult> {
+async function chat(system: string, user: string, opts: { json?: boolean; maxTokens?: number; timeoutMs?: number } = {}): Promise<ChatResult> {
   const key = LLM_KEY()
   if (!key) throw new Error('未配置 LLM_API_KEY / DEEPSEEK_API_KEY')
   const r = await fetch(`${LLM_BASE()}/chat/completions`, {
@@ -194,7 +194,8 @@ async function chat(system: string, user: string, opts: { json?: boolean; maxTok
       max_tokens: opts.maxTokens ?? 1200,
       ...(opts.json === false ? {} : { response_format: { type: 'json_object' } }),
     }),
-    signal: AbortSignal.timeout(60_000),
+    // 单次调用也要受时间预算约束：固定 60s 的话，一个卡住的请求会把预算和平台超时一起撑爆
+    signal: AbortSignal.timeout(Math.min(Math.max(opts.timeoutMs ?? 60_000, 3_000), 60_000)),
   })
   if (!r.ok) throw new Error(`LLM ${r.status} ${(await r.text()).slice(0, 200)}`)
   const j = (await r.json()) as { choices?: Array<{ message?: { content?: string } }> }
@@ -215,17 +216,17 @@ const ENRICH_SYSTEM = [
   '6. 只输出 JSON，不要任何解释或 Markdown 围栏。',
 ].join('\n')
 
-async function enrichOne(title: string, sourceName: string): Promise<EnrichedItem> {
-  const { text } = await chat(ENRICH_SYSTEM, `来源：${sourceName}\n标题：${title}`, { maxTokens: 500 })
+async function enrichOne(title: string, sourceName: string, timeoutMs?: number): Promise<EnrichedItem> {
+  const { text } = await chat(ENRICH_SYSTEM, `来源：${sourceName}\n标题：${title}`, { maxTokens: 500, timeoutMs })
   return normalizeEnrichment(parseLlmJson<Partial<EnrichedItem>>(text))
 }
 
 /** 判断两条标题是否在说同一件事（只在文本相似度落在灰区时才花这一次调用） */
-async function isSameEvent(a: string, b: string): Promise<boolean> {
+async function isSameEvent(a: string, b: string, timeoutMs?: number): Promise<boolean> {
   const { text } = await chat(
     '你判断两条新闻标题是否在讲同一件事（同一事件的后续进展算同一件事）。只输出 JSON：{"same": boolean}',
     `标题一：${a}\n标题二：${b}`,
-    { maxTokens: 60 },
+    { maxTokens: 60, timeoutMs },
   )
   return parseLlmJson<{ same?: boolean }>(text)?.same === true
 }
@@ -286,7 +287,8 @@ async function enrichPending(sb: SupabaseClient, userId: string, limit: number, 
 
   await mapLimit(todo, concurrency, async (it) => {
     try {
-      const r = await enrichOne(it.title, it.source_name)
+      // 单次调用最多等到预算耗尽为止（下限 5s）：否则一个卡住的请求会把整个函数拖过平台超时
+      const r = await enrichOne(it.title, it.source_name, Math.max(5_000, deadline - Date.now()))
       await sb.from('wb_hot_items').update({
         ai_status: r.skip ? 'skipped' : 'done',
         ai_score: r.score, ai_summary: r.summary, ai_category: r.category, ai_tags: r.tags,
@@ -324,7 +326,7 @@ async function clusterItems(sb: SupabaseClient, userId: string, deadline: number
     const best = (cands ?? [])[0] as { event_id: string; title: string; similarity: number } | undefined
     let eventId: string | null = null
     if (best && best.similarity >= 0.75) eventId = best.event_id
-    else if (best && best.similarity >= 0.35) eventId = (await isSameEvent(best.title, it.title)) ? best.event_id : null
+    else if (best && best.similarity >= 0.35) eventId = (await isSameEvent(best.title, it.title, Math.max(5_000, deadline - Date.now()))) ? best.event_id : null
 
     if (eventId) {
       const { data: ev } = await sb.from('wb_hot_events').select('item_ids,source_count,heat').eq('id', eventId).maybeSingle()
