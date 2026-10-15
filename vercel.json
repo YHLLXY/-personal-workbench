@@ -4,6 +4,9 @@
     { "source": "/api/check-reminders", "destination": "/api/reminders?entry=check" },
     { "source": "/api/test-notify", "destination": "/api/reminders?entry=test" },
     { "source": "/api/telegram-test", "destination": "/api/reminders?entry=telegram-test" },
+    { "source": "/api/digest-enrich", "destination": "/api/digest?entry=enrich" },
+    { "source": "/api/digest-build", "destination": "/api/digest?entry=build" },
+    { "source": "/api/build-digest", "destination": "/api/digest?entry=force" },
     { "source": "/api/resolve-phone", "destination": "/api/auth?entry=resolve-phone" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
