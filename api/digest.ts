@@ -135,6 +135,27 @@ export function intEnv(name: string, fallback: number, min: number, max: number)
   return Math.min(Math.max(Math.trunc(n), min), max)
 }
 
+/** 把任意抛出物摊平成可读文本。
+ *
+ *  ⚠️ PostgREST 的错误是**普通对象**（{ message, code, details, hint }），不是 Error 实例。
+ *  所以 err instanceof Error ? err.message : 'internal error' 这种写法会把真正的原因整个吞掉，
+ *  调用方只看到一句没用的 internal error——v1.28.4 之前 enrich 稳定 500 却查不出原因，
+ *  正是栽在这里。本文件里每条链式查询都写了 `if (error) throw error`，全都会走到这个分支。 */
+export function errText(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object') {
+    const o = err as Record<string, unknown>
+    const parts: string[] = []
+    if (o.message) parts.push(String(o.message))
+    if (o.code) parts.push('code=' + String(o.code))
+    if (o.details) parts.push('details=' + String(o.details))
+    if (o.hint) parts.push('hint=' + String(o.hint))
+    if (parts.length > 0) return parts.join(' | ')
+    try { return JSON.stringify(err) } catch { return 'unknown error' }
+  }
+  return String(err)
+}
+
 /** 单次调用的时间预算（毫秒）。Vercel 函数有平台级超时，跑不完的条目必须放回 pending，
  *  否则会卡在 processing。设小一点没坏处——状态是持久的，下次 cron 接着跑。
  *
@@ -551,29 +572,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (entry === 'enrich') {
       if (!isCron(req)) return res.status(401).json({ ok: false })
-      const sb = adminClient()
-      const userId = await resolveUserId(sb)
-      const origin = `https://${req.headers.host ?? ''}`
-      // 整条 enrich 共用一个总截止时刻（抓取也算在内，否则会撞上平台超时）
-      const deadline = t0 + BUDGET_MS()
-      const { items, sources } = await fetchHot(origin)
-      const added = await persistItems(sb, userId, items, sources)
-      // 抓取是固定开销，等它结束后再按【剩余】时间 60/40 分给摘要与聚簇
-      const fetchDone = Date.now()
-      const budget = splitBudget(fetchDone, deadline)
-      const enriched = await enrichPending(sb, userId, intEnv('DIGEST_ENRICH_LIMIT', 35, 1, 200), intEnv('DIGEST_CONCURRENCY', 5, 1, 20), budget.enrichUntil)
-      const clustered = await clusterItems(sb, userId, budget.clusterUntil)
-      await logRun(sb, userId, date, 'enrich', {
-        status: 'ok', items_in: items.length, items_out: enriched.processed,
-        detail: `新增 ${added} / 处理 ${enriched.processed}（顺延 ${enriched.deferred}）/ 聚簇 ${clustered.clustered}（顺延 ${clustered.deferred}）`,
-      })
-      return res.json({
-        ok: true, fetched: items.length, added,
-        processed: enriched.processed, deferred: enriched.deferred, clustered: clustered.clustered,
-        // 摘要/聚簇各自实得多少毫秒——顺延很多时看这个就知道该不该调 DIGEST_BUDGET_MS
-        enrichMs: budget.enrichUntil - fetchDone, clusterMs: budget.clusterUntil - fetchDone,
-        ms: Date.now() - t0,
-      })
+      // 每段都打标签：失败时把 stage 一起回给调用方，省得再去翻 Vercel 日志
+      let stage = 'resolve-user'
+      try {
+        const sb = adminClient()
+        const userId = await resolveUserId(sb)
+        const origin = `https://${req.headers.host ?? ''}`
+        // 整条 enrich 共用一个总截止时刻（抓取也算在内，否则会撞上平台超时）
+        const deadline = t0 + BUDGET_MS()
+        stage = 'fetch-hot'
+        const { items, sources } = await fetchHot(origin)
+        stage = 'persist-items'
+        const added = await persistItems(sb, userId, items, sources)
+        // 抓取是固定开销，等它结束后再按【剩余】时间 60/40 分给摘要与聚簇
+        const fetchDone = Date.now()
+        const budget = splitBudget(fetchDone, deadline)
+        stage = 'enrich-items'
+        const enriched = await enrichPending(sb, userId, intEnv('DIGEST_ENRICH_LIMIT', 35, 1, 200), intEnv('DIGEST_CONCURRENCY', 5, 1, 20), budget.enrichUntil)
+        stage = 'cluster-events'
+        const clustered = await clusterItems(sb, userId, budget.clusterUntil)
+        // 运行日志写不进去不该让整次成功白费——条目和事件都已经落库了
+        try {
+          await logRun(sb, userId, date, 'enrich', {
+            status: 'ok', items_in: items.length, items_out: enriched.processed,
+            detail: `新增 ${added} / 处理 ${enriched.processed}（顺延 ${enriched.deferred}）/ 聚簇 ${clustered.clustered}（顺延 ${clustered.deferred}）`,
+          })
+        } catch (logErr) { console.error('digest logRun failed', logErr) }
+        return res.json({
+          ok: true, fetched: items.length, added,
+          processed: enriched.processed, deferred: enriched.deferred, clustered: clustered.clustered,
+          // 摘要/聚簇各自实得多少毫秒——顺延很多时看这个就知道该不该调 DIGEST_BUDGET_MS
+          enrichMs: budget.enrichUntil - fetchDone, clusterMs: budget.clusterUntil - fetchDone,
+          ms: Date.now() - t0,
+        })
+      } catch (err) {
+        console.error('digest enrich failed at', stage, err)
+        return res.status(500).json({ ok: false, stage, error: errText(err), ms: Date.now() - t0 })
+      }
     }
 
     if (entry === 'build') {
@@ -581,7 +616,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sb = adminClient()
       const userId = await resolveUserId(sb)
       const r = await buildReport(sb, userId, date, intEnv('DIGEST_PER_CATEGORY', 4, 1, 20))
-      await logRun(sb, userId, date, 'digest', { status: 'ok', items_out: r?.items ?? 0, detail: r ? `${r.items} 条事件 / ${r.sources} 个来源` : '今天还没有可编排的事件' })
+      // 同上：日报已经写库了，日志写不进去不该把它变成 500
+      try {
+        await logRun(sb, userId, date, 'digest', { status: 'ok', items_out: r?.items ?? 0, detail: r ? `${r.items} 条事件 / ${r.sources} 个来源` : '今天还没有可编排的事件' })
+      } catch (logErr) { console.error('digest logRun failed', logErr) }
       return res.json({ ok: true, built: r !== null, ...(r ?? {}), ms: Date.now() - t0 })
     }
 
@@ -602,6 +640,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(404).json({ ok: false, error: 'not found' })
   } catch (err) {
     console.error('digest handler error', err)
-    return res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'internal error' })
+    return res.status(500).json({ ok: false, error: errText(err) })
   }
 }

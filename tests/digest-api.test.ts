@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeUrl, titleHash, parseLlmJson, normalizeEnrichment, groupByCategory, mapLimit, intEnv, splitBudget } from '../api/digest'
+import { normalizeUrl, titleHash, parseLlmJson, normalizeEnrichment, groupByCategory, mapLimit, intEnv, splitBudget, errText } from '../api/digest'
 
 /** AI 日报的纯函数（v1.27）。API 本体要打真网络，这里只钉住可判定的部分。 */
 
@@ -175,5 +175,28 @@ describe('splitBudget（按【剩余】时间拆，抓取开销不挤占模型�
     expect(splitBudget(1_000, 1_000)).toEqual({ enrichUntil: 1_000, clusterUntil: 1_000 })
     // 抓取比整个预算还慢的极端情况也不会出现负份额
     expect(splitBudget(9_000, 1_000)).toEqual({ enrichUntil: 9_000, clusterUntil: 9_000 })
+  })
+})
+
+describe('errText（PostgREST 的错是普通对象，不是 Error——不能按 instanceof 判）', () => {
+  it('Error 实例取 message', () => {
+    expect(errText(new Error('模型未返回可解析的 JSON'))).toBe('模型未返回可解析的 JSON')
+  })
+  it('PostgREST 错误对象摊平成 message + code + details + hint', () => {
+    expect(errText({
+      message: 'new row violates check constraint', code: '23514',
+      details: 'Failing row contains (a, processing).', hint: '把 processing 加进 CHECK',
+    })).toBe('new row violates check constraint | code=23514 | details=Failing row contains (a, processing). | hint=把 processing 加进 CHECK')
+  })
+  it('只有 message 时不带多余分隔符', () => {
+    expect(errText({ message: 'boom' })).toBe('boom')
+  })
+  it('完全不认识的普通对象退化成 JSON，而不是 internal error', () => {
+    expect(errText({ weird: 1 })).toBe('{"weird":1}')
+  })
+  it('非对象一律 String()，null / undefined 也不例外', () => {
+    expect(errText('炸了')).toBe('炸了')
+    expect(errText(null)).toBe('null')
+    expect(errText(undefined)).toBe('undefined')
   })
 })

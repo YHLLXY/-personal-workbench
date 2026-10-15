@@ -181,7 +181,52 @@ Authorization: Bearer <CRON_SECRET>
 > ⚠️ 第 1 条的修复在 **SQL 里**，vitest 覆盖不到——测试覆盖的是第 2、3 条（含「预算用尽后条目确实回到 pending」的状态断言）。
 > 第 1 条只能等 015 执行后，用「故意让函数超时一次，看下次 enrich 能不能把行捞回来」来验。
 
-## 七、下一步（可选）
+## 七、上线实测（2026-10-15）：两个只有真跑才会暴露的缺陷
+
+留档，别再犯。两条都不是逻辑错，是「两份真相没对齐」和「错误信息被吞掉」。
+
+### 7.1 CHECK 约束漏了 `processing`，整条链路一次都没跑通
+
+**症状**：`GET /api/digest-enrich` 稳定 500，正文只有一句 `{"ok":false,"error":"internal error"}`；
+紧接着 `GET /api/digest-build` 返回 `{"ok":true,"built":false}`。两个现象是同一条链子上的。
+
+**根因**：迁移 015 建表时把状态机写成
+
+```sql
+check (ai_status in ('pending','done','skipped','failed'))
+```
+
+—— **漏了 `processing`**，而**同一个文件**里的 `wb_claim_items()` 领取条目时正是
+`set ai_status = 'processing'`。于是这个函数每次调用都抛 `23514 check_violation`：
+条目一条也领不出来 → 没有 `done` 条目可聚簇 → 一个事件都建不起来 → `build` 无从编排。
+
+**为什么全套单测没拦住**：`tests/digest-handler.test.ts` 里的 Supabase 替身是 JS 实现的，
+它只认逻辑、不认 CHECK 约束——建表语句和领取函数之间的矛盾，在那个抽象层完全不可见。
+**替身的保真度就是测试的保真度；替身没实现的那部分，测了等于没测。**
+
+**修法**：迁移 `016_ai_status_processing.sql` 按**定义内容**（而不是按名字）找到这条 CHECK、
+删掉、重建为 5 个取值。同时补 `tests/digest-schema.test.ts`：直接解析迁移 SQL，断言
+「代码与 SQL 写进该列的每个取值，都落在**最新一次** CHECK 定义里」——**先跑红**
+（`expected [ 'processing' ] to deeply equal []`）再修。
+
+> 教训：**凡是数据库能拒绝的写入，都不要指望 JS 替身替你发现。**
+
+### 7.2 错误信息被吞掉，500 查不出原因
+
+```ts
+return res.status(500).json({ ok: false, error: err instanceof Error ? err.message : 'internal error' })
+```
+
+PostgREST 的报错是**普通对象** `{ message, code, details, hint }`，不是 `Error` 实例——
+所以这个三元表达式**永远**走 `: 'internal error'` 分支，把 `23514` 和那句
+`violates check constraint` 一起丢掉。**错误信息被吞掉，等于没有错误信息。**
+
+**修法**：`errText()` 把各种形态摊平成可读文本（`message | code=… | details=… | hint=…`）；
+enrich 分支再逐段打 `stage` 标签，500 时一并回传「哪一段炸的 + 真正的原因」。
+顺带把 `logRun` 的失败降级成非致命——运行日志写不进去，不该让一次**已经成功**的
+抓取处理变成 500。
+
+## 八、下一步（可选）
 
 - 给 `wb_hot_items` 加 embedding 写入 + 打开向量召回
 - 日报推送到 Telegram（通道 v1.26 已就绪，加一次 `sendTelegram` 调用即可）

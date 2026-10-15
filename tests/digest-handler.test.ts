@@ -19,7 +19,10 @@ const state = vi.hoisted(() => ({
   llmCalls: [] as Array<{ system: string; user: string }>,
   rpcCalls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
   brokenTables: [] as string[],
-  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = []; state.rpcCalls = []; state.brokenTables = [] },
+  // 注入一个 PostgREST 风格的【普通对象】错误：它故意不是 Error 实例，
+  // 因为老代码正是用 `instanceof Error` 判断、把真正的原因吞成了 internal error（v1.28.5）
+  rpcError: null as null | { code: string; message: string },
+  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = []; state.rpcCalls = []; state.brokenTables = []; state.rpcError = null },
   rowsOf(table: string) { return state.rows.filter(r => r.table === table).map(r => r.row) },
 }))
 
@@ -109,15 +112,17 @@ vi.mock('@supabase/supabase-js', () => {
               written.push(row)
             }
           }
-          return { data: written, error: null, select: () => Promise.resolve({ data: written, error: null }), then: (res?: (v: unknown) => unknown) => Promise.resolve({ data: written, error: null }).then(res) }
+          const err = tableErr()   // 表不存在时，upsert 同样会报错（自检之外的失败路径也要能造出来）
+          return { data: err ? null : written, error: err, select: () => Promise.resolve({ data: err ? null : written, error: err }), then: (res?: (v: unknown) => unknown) => Promise.resolve({ data: err ? null : written, error: err }).then(res) }
         },
       }
       return builder
     }
 
     // rpc：wb_claim_items（原子领取）与 wb_match_events（事件召回）
-    function rpc(fn: string, args: Record<string, unknown>): Promise<{ data: unknown; error: null }> {
+    function rpc(fn: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { code: string; message: string } | null }> {
       state.rpcCalls.push({ fn, args })
+      if (state.rpcError) return Promise.resolve({ data: null, error: state.rpcError })
       if (fn === 'wb_claim_items') {
         // 镜像迁移 015 的 SQL：pending，以及【陈旧的 processing 行】——函数被平台超时掐死后的兜底
         const limit = Number(args.p_limit ?? 20)
@@ -455,6 +460,34 @@ describe('api/digest 入口', () => {
     const res = makeRes()
     await handler(makeReq({ query: { entry: 'selftest' }, headers: {} }), res as never)
     expect(res.statusCode).toBe(401)
+  })
+
+  it('enrich 失败时回传真正的原因与失败阶段，而不是一句 internal error（v1.28.5）', async () => {
+    // 伪装 PostgREST 的错误对象：它是普通对象、【不是】Error 实例，
+    // 正是老代码 `err instanceof Error ? err.message : 'internal error'` 吞掉原因的地方。
+    // 线上真实发生过：wb_claim_items 写 'processing' 撞上 015 的 CHECK 约束，稳定 500 却查不出原因。
+    state.rpcError = { code: '23514', message: 'new row for relation "wb_hot_items" violates check constraint "wb_hot_items_ai_status_check"' }
+    state.hotPayload = { items: [{ title: 'A', source: 'hn', url: 'https://a.com/a', category: 'tech' }], sources: [{ id: 'hn', name: 'HN', category: 'tech' }] }
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'enrich' }, headers: CRON }), res as never)
+    expect(res.statusCode).toBe(500)
+    const body = res.body as { ok: boolean; stage: string; error: string }
+    expect(body.ok).toBe(false)
+    expect(body.stage).toBe('enrich-items')            // 一眼看出是哪一段炸的
+    expect(body.error).toContain('check constraint')   // 真正的原因没有被吞掉
+    expect(body.error).toContain('code=23514')
+    expect(body.error).not.toBe('internal error')
+  })
+
+  it('落库阶段失败时 stage 指向 persist-items，不会误报成别的段', async () => {
+    state.brokenTables.push('wb_hot_items')
+    state.hotPayload = { items: [{ title: 'A', source: 'hn', url: 'https://a.com/a', category: 'tech' }], sources: [] }
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'enrich' }, headers: CRON }), res as never)
+    expect(res.statusCode).toBe(500)
+    const body = res.body as { stage: string; error: string }
+    expect(body.stage).toBe('persist-items')
+    expect(body.error).toContain('wb_hot_items')
   })
 
 })

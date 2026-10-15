@@ -52,7 +52,7 @@ src/
   components/ui/  shadcn 组件（base-ui 底座，非 radix）
   sw.ts           Service Worker（Workbox injectManifest）
 api/              Vercel Serverless Functions（auth/hot/projects/reminders/weather/air-quality/digest）—— 单文件约束！
-supabase/migrations/  001-015 共 16 个文件（002 编号重复：002_add_folders / 002_subscriptions，历史既成不改名）；全部幂等可重复执行（003_reminders 自述策略块除外）
+supabase/migrations/  001-016 共 17 个文件（002 编号重复：002_add_folders / 002_subscriptions，历史既成不改名）；全部幂等可重复执行（003_reminders 自述策略块除外）
 tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 时走本地仓储真库）
 ```
 
@@ -96,6 +96,8 @@ tests/            vitest（组件测试 jsdom + 纯函数测试；无云端 env 
 - **别拿产物 hash 比对来证明「部署到了」**：部署时 `VITE_*` 会被内联进 bundle（本地是 local 模式、线上是 cloud 模式），字节不同、hash 必然不同。要证部署请用 GitHub deployment status（`api.github.com/repos/<owner>/<repo>/commits/<sha>/status`，仓库 public 无需 token）。
 - **改源码前先停掉 dev server**（2026-10-15 教训）：vite 的文件监视会占住 `src/` 下的文件，此时 edit/write 的原子替换（Windows ReplaceFileW）报 `EIO (Win32 32)`——不是权限问题、也不是文件损坏，纯粹是同名替换失败，重试多少次都一样。**先 kill 掉 dev server 再改**，改完重新起。
 - **探针/脚本类排查的环境坑**：① 本机 vite dev server 只监听 `localhost`（::1），连 `127.0.0.1:<port>` 报 ERR_CONNECTION_REFUSED 不是服务没起来；② 脚本用 `import.meta.url` 取项目路径必须 `decodeURIComponent`（中文目录被百分号编码 → 静态服务 500）；③ 沙箱网络是白名单（`api.github.com` 通，`vercel.com` / `*.vercel.app` 全挡，先 `curl` 探可达性再定验证方案）；④ 收工必须删净临时目录/脚本/日志（`git status` 不留 untracked 探针文件）并 kill 后台进程。
+- **迁移里的 CHECK 约束与代码写入的字面量必须一致，而 JS 测试替身看不见数据库约束**（2026-10-15 v1.28.5 教训）：`015` 建表时把 `wb_hot_items.ai_status` 的状态机写成 `pending/done/skipped/failed` —— 漏了 `processing`，而**同一个文件**里的 `wb_claim_items()` 领取条目时正是把它置为 `processing`。于是这个函数每次调用都抛 `23514 check_violation`：条目一条也领不出来 → `/api/digest-enrich` 稳定 500 → `/api/digest-build` 只能回 `built:false`。**整套单测全绿** —— 因为 Supabase 替身是 JS 写的，只认逻辑、不认 CHECK。**对策**：`tests/digest-schema.test.ts` 直接解析迁移 SQL，断言「代码与 SQL 写进该列的每个取值，都落在**最新一次** CHECK 定义里」，先跑红再修。**凡是数据库能拒绝的写入，都不要指望 JS 替身替你发现。**
+- **`err instanceof Error ? err.message : '...'` 会吞掉 PostgREST 的错误**（同上）：PostgREST 的报错是**普通对象** `{ message, code, details, hint }`，不是 Error 实例 —— 于是线上只看到一句 `internal error`，真正的原因（那个 `23514`）连影子都没有，只能靠猜。**对策**：`api/digest.ts` 的 `errText()` 把各种形态摊平成可读文本；enrich 分支还逐段打 `stage` 标签，500 时一并回传「哪一段炸的 + 真正的原因」。**错误信息被吞掉，等于没有错误信息。**
 
 ## 工作流程 SOP
 
