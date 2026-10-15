@@ -125,6 +125,8 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 4. **定时提醒**：任意外部定时器每日调用 `POST /api/cron-notify`（Bearer `CRON_SECRET` 鉴权）——扫描到期任务/考试并发送 Web Push；另有 `/api/check-reminders`、`/api/test-notify` 两个辅助入口（均经 `vercel.json` rewrites 暴露）。
 5. **AI 日报**（v1.27，需先执行迁移 015）：外部定时器每天两次——`GET /api/digest-enrich`（抓取 → 落库 → 逐条 AI 摘要 → 事件聚簇）与 `GET /api/digest-build`（编排当日日报），均 Bearer `CRON_SECRET`。**两个时间都排在 DeepSeek 空闲时段**（高峰 = 北京周一至周五 9:00–12:00 / 14:00–18:00，其余半价）。详见 [docs/plans/PLAN_V127_AI日报接入.md](./docs/plans/PLAN_V127_AI日报接入.md)。
 
+   **上线前先跑一次自检**：`GET /api/digest-selftest`（同样 Bearer `CRON_SECRET`）会逐项探测环境变量 / 4 张表 / 归属用户 / 热榜抓取 / 模型连通，任何一项失败都不影响其余项，一次调用就能定位「到底哪儿没配好」。**只报有没有与长度，不回显任何密钥。**
+
 ### 环境变量
 
 | 变量 | 用在 | 说明 |

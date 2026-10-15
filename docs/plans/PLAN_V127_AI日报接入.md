@@ -100,6 +100,28 @@
 
 ---
 
+### 0. 先跑自检（v1.28 新增）
+
+```
+GET https://workbench.yuhailinlxy.com/api/digest-selftest
+Authorization: Bearer <CRON_SECRET>
+```
+
+逐项探测五个前置条件，**任何一项失败都不影响其余项继续检查**：
+
+| 检查项 | 失败通常意味着 |
+|---|---|
+| 环境变量 | `LLM_API_KEY` 没配 |
+| 数据库表 | 迁移 015 没执行（会直接把表名报出来） |
+| 归属用户 | 库里没有用户，或 service role key 不对 |
+| 热榜抓取 | 自调用 `/api/hot` 失败（**开了 Deployment Protection**）或上游全挂 → 返回 0 条 |
+| 模型连通 | Key 错了，或模型名写错（**这一项最值钱：否则要跑一整轮 enrich 才发现**） |
+
+返回值形如 `{ ok: false, checks: [{ name, ok, detail }] }`。**只报有没有与长度，不回显任何密钥内容。**
+
+> 为什么要这个：enrich 是个「跑完才知道错」的长流程。自检把「配置没配好」和「代码有 bug」分开，
+> 让第一次上线不至于靠猜。
+
 ## 五、验收
 
 - [ ] 迁移执行后 4 张表都在，`rowsecurity = true`
