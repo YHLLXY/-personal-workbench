@@ -145,7 +145,7 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 | `DIGEST_ENRICH_LIMIT` | 仅 API | 单次最多处理多少条（默认 35）。**这是成本闸门** |
 | `DIGEST_CONCURRENCY` | 仅 API | 逐条摘要的并发数（默认 5） |
 | `DIGEST_PER_CATEGORY` | 仅 API | 日报每类最多几条（默认 4） |
-| `DIGEST_BUDGET_MS` | 仅 API | 单次 enrich 的时间预算（默认 20000）。**超预算的条目会放回 pending，下次调用接着跑**——Vercel 函数超时限制紧时调小它；设为 0 等于「只抓取落库、不做 AI 处理」 |
+| `DIGEST_BUDGET_MS` | 仅 API | 单次 enrich 的时间预算（默认 20000）。**前 60% 给逐条摘要、后 40% 留给事件聚簇**——否则摘要吃满预算后聚簇颗粒无收，日报会是空的。**超预算的条目会放回 pending，下次调用接着跑**；Vercel 函数超时限制紧时调小它；设为 0 等于「只抓取落库、不做 AI 处理」 |
 
 未配置 Supabase 变量时应用自动降级为纯本地模式——CI 的全部测试就是在无云端环境下跑的。
 
