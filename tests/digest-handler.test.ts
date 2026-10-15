@@ -18,7 +18,8 @@ const state = vi.hoisted(() => ({
   llmQueue: [] as string[],
   llmCalls: [] as Array<{ system: string; user: string }>,
   rpcCalls: [] as Array<{ fn: string; args: Record<string, unknown> }>,
-  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = []; state.rpcCalls = [] },
+  brokenTables: [] as string[],
+  reset() { state.rows = []; state.hotPayload = { items: [], sources: [] }; state.llmQueue = []; state.llmCalls = []; state.rpcCalls = []; state.brokenTables = [] },
   rowsOf(table: string) { return state.rows.filter(r => r.table === table).map(r => r.row) },
 }))
 
@@ -56,6 +57,10 @@ vi.mock('@supabase/supabase-js', () => {
       type Pred = (r: Row) => boolean
       const preds: Pred[] = []
       const matched = () => rowsOf(table).filter(r => preds.every(p => p(r)))
+      // 模拟「表不存在」：自检要靠它把「迁移没执行」和「代码有 bug」分开
+      const tableErr = () => state.brokenTables.includes(table)
+        ? { code: 'PGRST205', message: "Could not find the table 'public." + table + "' in the schema cache" }
+        : null
 
       const builder: Record<string, unknown> = {
         select: () => builder,
@@ -64,10 +69,10 @@ vi.mock('@supabase/supabase-js', () => {
         in: (c: string, vs: unknown[]) => { preds.push(r => vs.includes(r[c])); return builder },
         order: () => builder,
         limit: () => builder,
-        single: () => Promise.resolve({ data: matched()[0] ?? null, error: null }),
-        maybeSingle: () => Promise.resolve({ data: matched()[0] ?? null, error: null }),
+        single: () => Promise.resolve({ data: tableErr() ? null : (matched()[0] ?? null), error: tableErr() }),
+        maybeSingle: () => Promise.resolve({ data: tableErr() ? null : (matched()[0] ?? null), error: tableErr() }),
         then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
-          Promise.resolve({ data: matched(), error: null }).then(res, rej),
+          Promise.resolve({ data: tableErr() ? null : matched(), error: tableErr() }).then(res, rej),
 
         insert: (payload: Row | Row[]) => {
           const list = (Array.isArray(payload) ? payload : [payload]).map(r => withDefaults(table, r))
@@ -359,6 +364,69 @@ describe('api/digest 入口', () => {
     const rows = state.rowsOf('wb_hot_items')
     expect(rows.find(r => r.id === 'stuck')!.ai_status).toBe('done')
     expect(rows.find(r => r.id === 'fresh')!.ai_status).toBe('processing')  // 正常在跑的不能被抢
+  })
+
+  it('selftest：全绿时逐项 ok，且不回显任何密钥内容', async () => {
+    state.hotPayload = { items: [{ title: 'x', source: 'hn', url: 'https://a.com/1', category: 'tech' }], sources: [{ id: 'hn', name: 'HN', category: 'tech' }] }
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'selftest' }, headers: CRON }), res as never)
+    expect(res.statusCode).toBe(200)
+    const body = res.body as { ok: boolean; checks: Array<{ name: string; ok: boolean; detail: string }> }
+    expect(body.ok).toBe(true)
+    expect(body.checks.map(c => c.name)).toEqual(['环境变量', '数据库表', '归属用户', '热榜抓取', '模型连通'])
+    expect(body.checks.every(c => c.ok)).toBe(true)
+    // 只报「已配置 + 长度」，绝不回显 key 本身
+    const env = body.checks[0].detail
+    expect(env).toContain('llm-key'.length + ' 字符')
+    expect(env).not.toContain(process.env.LLM_API_KEY!)
+  })
+
+  it('selftest：迁移没执行时明确指向迁移，而不是让人去猜代码', async () => {
+    state.brokenTables = ['wb_daily_reports']
+    // 抓取这条要单独给数据，否则「0 条」本身就会被判成 not ok，混掉本用例的焦点
+    state.hotPayload = { items: [{ title: 'x', source: 'hn', url: 'https://a.com/1', category: 'tech' }], sources: [{ id: 'hn', name: 'HN', category: 'tech' }] }
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'selftest' }, headers: CRON }), res as never)
+    const body = res.body as { ok: boolean; checks: Array<{ name: string; ok: boolean; detail: string }> }
+    expect(body.ok).toBe(false)
+    const db = body.checks.find(c => c.name === '数据库表')!
+    expect(db.ok).toBe(false)
+    expect(db.detail).toContain('wb_daily_reports')
+    expect(db.detail).toContain('迁移 015')
+    // 一项失败不影响其余项继续检查
+    expect(body.checks.find(c => c.name === '热榜抓取')!.ok).toBe(true)
+  })
+
+  it('selftest：热榜返回 0 条时也要标出来（说明抓取链路有上游问题，跑 enrich 会空转）', async () => {
+    state.hotPayload = { items: [], sources: [] }
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'selftest' }, headers: CRON }), res as never)
+    const body = res.body as { ok: boolean; checks: Array<{ name: string; ok: boolean; detail: string }> }
+    const hot = body.checks.find(c => c.name === '热榜抓取')!
+    expect(hot.ok).toBe(false)
+    expect(hot.detail).toContain('0 条')
+  })
+
+  it('selftest：没配模型 Key 时只跳过模型那一项，其余照常报', async () => {
+    state.hotPayload = { items: [{ title: 'x', source: 'hn', url: 'https://a.com/1', category: 'tech' }], sources: [{ id: 'hn', name: 'HN', category: 'tech' }] }
+    const saved = process.env.LLM_API_KEY
+    delete process.env.LLM_API_KEY
+    delete process.env.DEEPSEEK_API_KEY
+    try {
+      const res = makeRes()
+      await handler(makeReq({ query: { entry: 'selftest' }, headers: CRON }), res as never)
+      const body = res.body as { ok: boolean; checks: Array<{ name: string; ok: boolean; detail: string }> }
+      expect(body.ok).toBe(false)
+      expect(body.checks.find(c => c.name === '环境变量')!.detail).toContain('LLM_API_KEY')
+      expect(body.checks.some(c => c.name === '模型连通')).toBe(false)   // 没 key 就不调，避免必然失败的一次外呼
+      expect(body.checks.find(c => c.name === '数据库表')!.ok).toBe(true)
+    } finally { process.env.LLM_API_KEY = saved }
+  })
+
+  it('selftest：没有 CRON_SECRET 一律 401', async () => {
+    const res = makeRes()
+    await handler(makeReq({ query: { entry: 'selftest' }, headers: {} }), res as never)
+    expect(res.statusCode).toBe(401)
   })
 
 })

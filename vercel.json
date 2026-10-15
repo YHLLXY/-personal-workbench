@@ -7,6 +7,7 @@
     { "source": "/api/digest-enrich", "destination": "/api/digest?entry=enrich" },
     { "source": "/api/digest-build", "destination": "/api/digest?entry=build" },
     { "source": "/api/build-digest", "destination": "/api/digest?entry=force" },
+    { "source": "/api/digest-selftest", "destination": "/api/digest?entry=selftest" },
     { "source": "/api/resolve-phone", "destination": "/api/auth?entry=resolve-phone" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

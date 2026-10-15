@@ -438,6 +438,74 @@ function todayShanghai(): string {
   return t.toISOString().slice(0, 10)
 }
 
+// ========== 自检（第一次上线时用：把「配置没配好」和「代码有 bug」分开） ==========
+
+export interface SelfCheck { name: string; ok: boolean; detail: string }
+
+/** 逐项探测日报链路的每个前置条件。**任何一项失败都不影响其余项继续检查**，
+ *  一次调用就能把「到底哪儿没配好」全列出来，而不是跑一次 enrich 猜一次。
+ *  ⚠️ 只报「有没有 / 多长 / 哪个模型名」，**绝不回显任何密钥内容**。 */
+export async function runSelfTest(host: string | undefined): Promise<SelfCheck[]> {
+  const out: SelfCheck[] = []
+  const key = LLM_KEY()
+  const missing = ['VITE_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'].filter(k => !process.env[k])
+
+  out.push({
+    name: '环境变量',
+    ok: missing.length === 0 && key.length > 0,
+    detail: missing.length > 0
+      ? '缺少：' + missing.join('、')
+      : key.length === 0
+        ? '缺少 LLM_API_KEY（或 DEEPSEEK_API_KEY）'
+        : '模型 Key 已配置（' + key.length + ' 字符，不回显）、模型 ' + LLM_MODEL() + '、端点 ' + LLM_BASE(),
+  })
+
+  if (missing.length === 0) {
+    const sb = adminClient()
+    const tables = ['wb_hot_items', 'wb_hot_events', 'wb_daily_reports', 'wb_digest_runs']
+    const bad: string[] = []
+    for (const t of tables) {
+      const { error } = await sb.from(t).select('id').limit(1)
+      if (error) bad.push(t + '（' + String(error.code ?? error.message) + '）')
+    }
+    out.push({
+      name: '数据库表',
+      ok: bad.length === 0,
+      detail: bad.length > 0 ? '读不到：' + bad.join('、') + '——迁移 015 执行了吗？' : tables.length + ' 张表均可读',
+    })
+
+    try {
+      const uid = await resolveUserId(sb)
+      out.push({ name: '归属用户', ok: true, detail: uid.slice(0, 8) + '…（完整 ID 已隐去）' })
+    } catch (err) {
+      out.push({ name: '归属用户', ok: false, detail: err instanceof Error ? err.message : '解析失败' })
+    }
+  }
+
+  try {
+    const { items, sources } = await fetchHot('https://' + (host ?? ''))
+    out.push({ name: '热榜抓取', ok: items.length > 0, detail: items.length + ' 条 / ' + sources.length + ' 个源' })
+  } catch (err) {
+    out.push({
+      name: '热榜抓取',
+      ok: false,
+      detail: (err instanceof Error ? err.message : '失败') + '（自调用本站 /api/hot 失败：检查部署是否开了 Deployment Protection）',
+    })
+  }
+
+  if (key.length > 0) {
+    const t0 = Date.now()
+    try {
+      const { text } = await chat('你是连通性探针，只回一个 JSON。', '返回 {"ok":true}', { maxTokens: 20 })
+      out.push({ name: '模型连通', ok: text.length > 0, detail: LLM_MODEL() + ' 正常，耗时 ' + (Date.now() - t0) + 'ms' })
+    } catch (err) {
+      out.push({ name: '模型连通', ok: false, detail: err instanceof Error ? err.message : '调用失败' })
+    }
+  }
+
+  return out
+}
+
 // ========== 函数入口 ==========
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -471,6 +539,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const r = await buildReport(sb, userId, date, intEnv('DIGEST_PER_CATEGORY', 4, 1, 20))
       await logRun(sb, userId, date, 'digest', { status: 'ok', items_out: r?.items ?? 0, detail: r ? `${r.items} 条事件 / ${r.sources} 个来源` : '今天还没有可编排的事件' })
       return res.json({ ok: true, built: r !== null, ...(r ?? {}), ms: Date.now() - t0 })
+    }
+
+    if (entry === 'selftest') {
+      if (!isCron(req)) return res.status(401).json({ ok: false })
+      const checks = await runSelfTest(req.headers.host)
+      return res.json({ ok: checks.every(c => c.ok), checks, ms: Date.now() - t0 })
     }
 
     if (entry === 'force') {
