@@ -16,7 +16,7 @@
 | 5 | `src/modules/news/daily-digest.tsx` | 日报视图（列表 + 原地展开的来源链接 + 日期切换） |
 | 6 | `src/modules/news/hot.tsx` | 「日报（默认）｜热榜」两个 Tab |
 | 7 | `src/modules/news/cards.tsx` | 首页热点卡优先露出当日日报标题 |
-| 8 | `tests/digest-api.test.ts` | 21 条纯函数用例 |
+| 8 | `tests/digest-api.test.ts` | 28 条纯函数用例（URL 归一化 / 标题指纹 / 抠模型 JSON / 输出钳制 / 分组排序 / 并发限流 / 环境变量解析 / 预算拆分） |
 
 ---
 
@@ -141,7 +141,7 @@ Authorization: Bearer <CRON_SECRET>
 2. **日报只做中文**（用户拍板）。`DIGEST_SYSTEM` 已按中文写死；要双语得改提示词并加列。
 3. **`wb_hot_items` / `wb_hot_events` 不进备份**。`exportAll` 仍是既有 12 张表——这两张是服务端中间产物（体量大、可重建），日报 `wb_daily_reports` 也是生成物，不塞进 JSON 备份。
 4. **前端零新增依赖**：日报用普通 JSX 渲染结构化字段，不引 markdown 渲染器（体积门禁首屏 723/790 KB，装不下）。
-5. ~~`api/digest.ts` 未做端到端集成测试~~ → **已补**（2026-10-15）：`tests/digest-handler.test.ts` 用有状态 fake 接管 Supabase + `/api/hot` + LLM 三处网络，直接驱动 `handler()`，8 条用例覆盖鉴权 / 去重 / 状态机 / 聚簇 / 成刊 / 运行日志。
+5. ~~`api/digest.ts` 未做端到端集成测试~~ → **已补**（2026-10-15）：`tests/digest-handler.test.ts` 用有状态 fake 接管 Supabase + `/api/hot` + LLM 三处网络，直接驱动 `handler()`，16 条用例覆盖鉴权 / 去重 / 状态机 / 聚簇 / 成刊 / 运行日志 / 自检。
    其中「enrich 第二次 added=0 且不再调模型」一条**已做反证**——去掉 `ignoreDuplicates` 该用例立刻变红（`expected 1 to be +0`），其余 7 条不受影响。
    仍然**没有**覆盖的是：真实 PostgREST 的语义差异、真实模型的输出质量、以及生产环境的并发行为——这些只能在线上验。
    其中一条已经预防性处理掉了：`wb_match_events` 的调用**刻意不传 `p_embedding`**（走 SQL 默认 NULL）。显式传 `null` 要 PostgREST 把 JSON null 转成 `vector`，多一层失败面——而这层失败会让整条 enrich 在「条目已经处理完」之后才 500（事件全没建、日报为空）。已有测试断言参数表里没有它。
