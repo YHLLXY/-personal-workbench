@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { formatReportDate } from '../src/modules/news/digest-view'
+import { formatReportDate, isDigestNotEnabled } from '../src/modules/news/digest-view'
 import type { DailyReport } from '../src/lib/db/types'
 
 const report: DailyReport = {
@@ -41,6 +41,24 @@ describe('formatReportDate', () => {
   })
 })
 
+describe('isDigestNotEnabled（区分「功能未启用」与「网络抖动」）', () => {
+  it('认得 PostgREST 与 Postgres 两种「表不存在」', () => {
+    expect(isDigestNotEnabled({ code: 'PGRST205' })).toBe(true)
+    expect(isDigestNotEnabled({ code: '42P01' })).toBe(true)
+    expect(isDigestNotEnabled({ message: "Could not find the table 'public.wb_daily_reports' in the schema cache" })).toBe(true)
+  })
+  it('网络错误 / 空错误不误判成「去跑迁移」', () => {
+    expect(isDigestNotEnabled(new Error('Failed to fetch'))).toBe(false)
+    expect(isDigestNotEnabled(new Error('JWT expired'))).toBe(false)
+    expect(isDigestNotEnabled(null)).toBe(false)
+    expect(isDigestNotEnabled(undefined)).toBe(false)
+  })
+  it('提到别的表不存在时也不算', () => {
+    expect(isDigestNotEnabled({ code: '42P01', message: 'relation "public.wb_tasks" does not exist' })).toBe(true) // 有 code 时按 code 认
+    expect(isDigestNotEnabled({ message: 'relation "public.wb_tasks" does not exist' })).toBe(false)
+  })
+})
+
 describe('DailyDigest（v1.27）', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
@@ -61,6 +79,23 @@ describe('DailyDigest（v1.27）', () => {
     renderDigest()
     await waitFor(() => expect(screen.getByText('还没有日报')).toBeTruthy())
     expect(screen.getByText(/每天 07:30 由服务端自动抓取/)).toBeTruthy()
+  })
+
+  it('表不存在（迁移 015 未执行）时，说的是「功能还没启用」而不是「每天会自动生成」', async () => {
+    vi.mocked(repository.listDailyReports).mockRejectedValueOnce(
+      Object.assign(new Error("Could not find the table 'public.wb_daily_reports' in the schema cache"), { code: 'PGRST205' }),
+    )
+    renderDigest()
+    await waitFor(() => expect(screen.getByText('日报功能还没启用')).toBeTruthy())
+    expect(screen.getByText(/先在 Supabase 执行迁移 015/)).toBeTruthy()
+    expect(screen.queryByText('还没有日报')).toBeNull()
+  })
+
+  it('网络错误不误判成「没有日报」：走普通空态而不是让用户去跑迁移', async () => {
+    vi.mocked(repository.listDailyReports).mockRejectedValueOnce(new Error('Failed to fetch'))
+    renderDigest()
+    await waitFor(() => expect(screen.getByText('还没有日报')).toBeTruthy())
+    expect(screen.queryByText('日报功能还没启用')).toBeNull()
   })
 
   it('来源为空的条目照常渲染，不出现空链接', async () => {

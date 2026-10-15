@@ -6,7 +6,7 @@ import { isCloudMode } from '@/lib/db'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/empty-state'
-import { formatReportDate } from './digest-view'
+import { formatReportDate, isDigestNotEnabled } from './digest-view'
 import { cn } from '@/lib/utils'
 import type { DailyReport } from '@/lib/db/types'
 
@@ -14,8 +14,8 @@ import type { DailyReport } from '@/lib/db/types'
  * AI 日报（v1.27）：/api/digest 服务端生成，这里只读。
  * 与「热榜」是同一批数据的两个视图——热榜是素材层，日报是成品层。
  */
-export function DailyDigest() {
-  const { data: reports, isLoading } = useDailyReports()
+export function DailyDigest({ onGoList }: { onGoList?: () => void } = {}) {
+  const { data: reports, isLoading, error } = useDailyReports()
   const rebuild = useRebuildDigest()
   const [picked, setPicked] = useState<string | null>(null)
   const list = reports ?? []
@@ -35,7 +35,18 @@ export function DailyDigest() {
     return <div className="space-y-2"><Skeleton className="h-24 w-full rounded-2xl" /><Skeleton className="h-40 w-full rounded-2xl" /></div>
   }
 
+  // ⚠️ 两种「没有日报」必须分开说：表都不存在却写着「每天 07:30 自动生成」是在骗人
   if (!current) {
+    if (isDigestNotEnabled(error)) {
+      return (
+        <EmptyState
+          icon={<Sparkles />}
+          title="日报功能还没启用"
+          desc="需要先在 Supabase 执行迁移 015，并在 Vercel 配好模型 Key 与每日定时任务。在那之前「热榜」Tab 照常可用"
+          action={onGoList ? <Button size="sm" variant="outline" onClick={onGoList}>去看热榜</Button> : undefined}
+        />
+      )
+    }
     return (
       <EmptyState
         icon={<Sparkles />}

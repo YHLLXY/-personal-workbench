@@ -4,6 +4,7 @@ import { loadHot, filterByTopics, formatFetchedAt, type HotResult, type HotCateg
 import { repository } from '@/lib/db'
 import { HotSettingsDialog } from './hot-settings-dialog'
 import { DailyDigest } from './daily-digest'
+import { useDailyReports } from './api'
 import { useNoteMutations } from './api'
 import { loadReadIds, saveReadId, hotNoteText } from './news-view'
 import { Input } from '@/components/ui/input'
@@ -17,7 +18,10 @@ const CATEGORY_LABELS: Record<HotCategory, string> = { tech: '技术', academic:
 
 export default function Hot() {
   // v1.27：热榜是素材层、日报是成品层，同一批数据的两个视图 → 同一页面两个 Tab，不新增侧边栏入口
-  const [tab, setTab] = useState<'digest' | 'list'>('digest')
+  // tab 初始为 null = 「还没决定」：等日报查询落地后再定，有日报落日报、没有落热榜——
+  // 否则在迁移 015 尚未执行时，用户会默认打开一个空页面（v1.27.1 修复）
+  const [tab, setTab] = useState<'digest' | 'list' | null>(null)
+  const { data: reports, isLoading: digestLoading } = useDailyReports()
   const [res, setRes] = useState<HotResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [subs, setSubs] = useState<Subscriptions>({ sourceIds: [], topics: [] })
@@ -49,11 +53,22 @@ export default function Hot() {
     repository.getSubscriptions().then(s => { setSubs(s); load(false, false, s.sourceIds) }).catch(() => load())
   }, [])
 
+  const activeTab: 'digest' | 'list' = tab ?? ((reports?.length ?? 0) > 0 ? 'digest' : 'list')
   const nameOf = (id: string) => res?.sources.find(s => s.id === id)?.name ?? id
   const q = query.trim().toLowerCase()
   const visible = (activeTopic ? filterByTopics(res?.items ?? [], [activeTopic]) : res?.items ?? [])
     .filter(it => !q || it.title.toLowerCase().includes(q))
   const fetchedAt = formatFetchedAt(res?.fetchedAt ?? null)
+
+  // 日报查询落地前不渲染内容，避免先画出「日报」再跳到「热榜」的闪烁
+  if (digestLoading) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <h1 className="mb-3 text-xl font-bold">今日热点</h1>
+        <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -61,12 +76,12 @@ export default function Hot() {
         <div>
           <h1 className="text-xl font-bold">今日热点</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {tab === 'digest'
+            {activeTab === 'digest'
               ? 'AI 整理的每日报告 · 每天早上自动生成'
               : <>{res?.fromCache ? '缓存数据 · ' : ''}{fetchedAt ? `更新于 ${fetchedAt} · 每 30 分钟自动刷新` : '加载中…'}</>}
           </p>
         </div>
-        {tab === 'list' && (
+        {activeTab === 'list' && (
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}><Settings2 className="size-3.5 mr-1" />管理源</Button>
             <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}><RefreshCw className="size-3.5 mr-1" />刷新</Button>
@@ -76,16 +91,16 @@ export default function Hot() {
 
       <div className="mb-3 flex w-fit gap-1 rounded-full bg-muted p-1" role="tablist">
         {([['digest', '日报'], ['list', '热榜']] as const).map(([v, label]) => (
-          <button key={v} role="tab" aria-selected={tab === v} onClick={() => setTab(v)}
-            className={`px-4 py-1.5 text-xs rounded-full transition-colors ${tab === v ? 'bg-card font-medium shadow-sm' : 'text-muted-foreground'}`}>
+          <button key={v} role="tab" aria-selected={activeTab === v} onClick={() => setTab(v)}
+            className={`px-4 py-1.5 text-xs rounded-full transition-colors ${activeTab === v ? 'bg-card font-medium shadow-sm' : 'text-muted-foreground'}`}>
             {label}
           </button>
         ))}
       </div>
 
-      {tab === 'digest' && <DailyDigest />}
+      {activeTab === 'digest' && <DailyDigest onGoList={() => setTab('list')} />}
 
-      {tab === 'list' && subs.topics.length > 0 && (
+      {activeTab === 'list' && subs.topics.length > 0 && (
         <div className="flex gap-1.5 overflow-x-auto pb-3 mb-1">
           <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索标题…" className="h-8 w-36 text-xs mr-2" />
           <button onClick={() => setActiveTopic('')} className={`shrink-0 text-xs rounded-full px-3 py-1 border ${activeTopic === '' ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted/50'}`}>全部</button>
@@ -95,7 +110,7 @@ export default function Hot() {
         </div>
       )}
 
-      {tab === 'list' && (loading && res === null ? <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+      {activeTab === 'list' && (loading && res === null ? <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
         : visible.length === 0 ? <p className="text-sm text-muted-foreground py-8 text-center">{subs.sourceIds.length === 0 ? '暂无热点数据' : '当前订阅源无匹配内容，去「管理源」调整'}</p>
         : <div className="bg-card border border-border rounded-2xl divide-y divide-border/70">
             {visible.map((it, i) => {

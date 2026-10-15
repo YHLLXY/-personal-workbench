@@ -34,7 +34,13 @@ export function useFolderMutations() {
 export const digestKeys = { all: ['dailyReports'] as const }
 
 export function useDailyReports(limit = 30) {
-  return useQuery({ queryKey: digestKeys.all, queryFn: () => repository.listDailyReports(limit), staleTime: 5 * 60_000 })
+  return useQuery({
+    queryKey: digestKeys.all,
+    queryFn: () => repository.listDailyReports(limit),
+    staleTime: 5 * 60_000,
+    // 迁移 015 没执行时表不存在，属于配置问题——重试只是白白多等一个来回
+    retry: false,
+  })
 }
 
 /** 手动重生成当日日报。只有云端模式有这条链路（本地模式拿不到 service role） */
