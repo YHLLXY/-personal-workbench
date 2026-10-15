@@ -146,6 +146,14 @@ test('复盘：展开成就分区 → 填写保存 → 成功反馈', async ({ p
   await expect(page.getByText('今日复盘已保存')).toBeVisible()
 })
 
+test('今日热点：日报不可用时默认落热榜，日报 Tab 说清原因（v1.27.1）', async ({ page }) => {
+  await goto(page, '/hot')
+  // 默认 Tab 由日报是否可用决定：本地模式没有服务端生成链路 → 落热榜，而不是打开一个空页面
+  await expect(page.getByRole('tab', { name: '热榜' })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('tab', { name: '日报' }).click()
+  await expect(page.getByText('还没有日报')).toBeVisible()
+})
+
 test('我的页：五段式渲染 → 版本号动态展示 → 更新日志弹窗可见', async ({ page }) => {
   await goto(page, '/settings')
   await expect(page.getByRole('heading', { level: 1, name: '我的' })).toBeVisible()
