@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.30.1',
+    date: '2026-10-15',
+    title: '日报生成时间提前到早上六点',
+    items: [
+      '调整：日报的自动生成时间从早上 07:30 提前到 **06:00**，应用里那句提示文案也一并改了。你起床早，赶在人醒之前把日报备好。顺带一提，这个时间点仍在模型的空闲计费时段，价格是高峰的一半',
+    ],
+  },
+  {
     version: 'v1.30.0',
     date: '2026-10-15',
     title: '自检多了一项：Telegram 配好没有',
