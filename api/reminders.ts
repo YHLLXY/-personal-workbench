@@ -78,10 +78,43 @@ export function computeReminders(tasks: TaskLike[], exams: ExamLike[], goals: Go
   return out
 }
 
-/** 与已有记录求差：返回需要新增的节点（(refType, refId, kind) 幂等去重） */
-export function diffReminders(existing: Array<{ refType: string; refId: string; kind: string }>, computed: ReminderSpec[]): ReminderSpec[] {
-  const seen = new Set(existing.map(r => `${r.refType}:${r.refId}:${r.kind}`))
-  return computed.filter(s => !seen.has(`${s.refType}:${s.refId}:${s.kind}`))
+/**
+ * 引用对象是否「活着」——决定提醒行该不该继续存在。
+ * 提醒是**派生数据**（v1.31 重构）：任务完成/删除、考试已过、目标归档/删除 → 行必须消失，
+ * 而不是像旧实现那样只 skipped 不发送、永久滞留在列表里等人点「忽略」。
+ * 与 computeReminders 的差别：这里只看「对象活不活」，不看「节点时刻过没过」——
+ * 考试当天 3 天前/1 天前的节点虽然不再生成，但那条已发出的通知记录要留到考试结束。
+ */
+export function liveRefKeys(tasks: TaskLike[], exams: ExamLike[], goals: GoalLike[], now: Date): Set<string> {
+  const today = todayShanghai(now)
+  const live = new Set<string>()
+  for (const t of tasks) if (t.status !== 'done') live.add(`task:${t.id}`)
+  for (const e of exams) if (e.examDate >= today) live.add(`exam:${e.id}`)
+  for (const g of goals) if (g.status !== 'done' && g.deadline) live.add(`goal:${g.id}`)
+  return live
+}
+
+export interface ExistingReminder { id: string; refType: string; refId: string; kind: string; scheduledAt: string }
+export interface ReminderTimeChange { id: string; scheduledAt: string; /** true = 新时刻在未来 → 清空 sent_at 重新计时 */ resetDelivery: boolean }
+export interface ReminderPlan { create: ReminderSpec[]; update: ReminderTimeChange[]; remove: string[] }
+
+/**
+ * 增 / 改 / 删 三向对齐（替换 v1.31 之前的「只增不删不改」版 diffReminders）。
+ * 旧版按 (refType, refId, kind) 去重且**不比较 scheduledAt** —— 后果是把任务的提醒时间从 09:00 改到 18:00
+ * 永远不会生效（key 没变 → 判定「已存在」→ 库里还是 09:00）。这是本轮修掉的核心缺陷之一。
+ */
+export function planReminders(existing: ExistingReminder[], computed: ReminderSpec[], live: Set<string>, now: Date): ReminderPlan {
+  const plan: ReminderPlan = { create: [], update: [], remove: [] }
+  const prevByKey = new Map(existing.map(r => [`${r.refType}:${r.refId}:${r.kind}`, r]))
+  for (const spec of computed) {
+    const prev = prevByKey.get(`${spec.refType}:${spec.refId}:${spec.kind}`)
+    if (!prev) { plan.create.push(spec); continue }
+    if (prev.scheduledAt !== spec.scheduledAt) {
+      plan.update.push({ id: prev.id, scheduledAt: spec.scheduledAt, resetDelivery: new Date(spec.scheduledAt).getTime() > now.getTime() })
+    }
+  }
+  for (const r of existing) if (!live.has(`${r.refType}:${r.refId}`)) plan.remove.push(r.id)
+  return plan
 }
 
 /** 到期判断：scheduledAt <= now */
@@ -103,7 +136,7 @@ export function reminderText(kind: ReminderKind, title: string, date: string, ti
 
 /** PostgREST 行 → 前端 Reminder（camelCase） */
 function reminderRowToClient(r: Record<string, unknown>) {
-  return { id: String(r.id), refType: r.ref_type as 'task' | 'exam' | 'goal', refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, dismissedAt: r.dismissed_at ? String(r.dismissed_at) : null, createdAt: String(r.created_at) }
+  return { id: String(r.id), refType: r.ref_type as 'task' | 'exam' | 'goal', refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, createdAt: String(r.created_at) }
 }
 
 // ========== 工具 ==========
@@ -137,12 +170,12 @@ async function authUser(req: VercelRequest): Promise<SupabaseClient | null> {
 
 // ========== 核心流程：生成 + 幂等写入 + 到期统计 + 发送 ==========
 
-async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: number; due: number; sent: number; skipped: number }> {
+async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: number; updated: number; removed: number; due: number; sent: number; skipped: number }> {
   const [tasksRes, examsRes, goalsRes, remindersRes] = await Promise.all([
     sb.from('wb_tasks').select('id,user_id,title,status,due_date,due_time'),
     sb.from('wb_exams').select('id,user_id,title,exam_date,exam_time'),
     sb.from('wb_study_goals').select('id,user_id,title,status,deadline'),
-    sb.from('wb_reminders').select('ref_type,ref_id,kind'),
+    sb.from('wb_reminders').select('id,ref_type,ref_id,kind,scheduled_at'),
   ])
   if (tasksRes.error) throw tasksRes.error
   if (examsRes.error) throw examsRes.error
@@ -152,16 +185,34 @@ async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: numbe
   const exams: ExamLike[] = (examsRes.data ?? []).map(r => ({ id: String(r.id), userId: String(r.user_id), title: String(r.title), examDate: String(r.exam_date), examTime: r.exam_time as string | null }))
   const goals: GoalLike[] = (goalsRes.data ?? []).map(r => ({ id: String(r.id), userId: String(r.user_id), title: String(r.title), status: String(r.status), deadline: r.deadline as string | null }))
   const specs = computeReminders(tasks, exams, goals, now)
-  const existing = (remindersRes.data ?? []).map(r => ({ refType: String(r.ref_type), refId: String(r.ref_id), kind: String(r.kind) }))
-  const fresh = diffReminders(existing, specs)
-  if (fresh.length > 0) {
-    // upsert + ignoreDuplicates：并发 cron/check 同时 diff 出相同 fresh 时，慢的一方不再撞 unique 约束
-    const { error } = await sb.from('wb_reminders').upsert(fresh.map(s => ({ id: genId(), user_id: s.userId, ref_type: s.refType, ref_id: s.refId, kind: s.kind, scheduled_at: s.scheduledAt })), { onConflict: 'user_id,ref_type,ref_id,kind', ignoreDuplicates: true })
+  const existing: ExistingReminder[] = (remindersRes.data ?? []).map(r => ({ id: String(r.id), refType: String(r.ref_type), refId: String(r.ref_id), kind: String(r.kind), scheduledAt: String(r.scheduled_at) }))
+  const plan = planReminders(existing, specs, liveRefKeys(tasks, exams, goals, now), now)
+
+  // 删：引用对象已终结（任务完成/删除、考试已过、目标归档/删除）的孤儿行
+  if (plan.remove.length > 0) {
+    const { error } = await sb.from('wb_reminders').delete().in('id', plan.remove)
+    if (error) throw error
+  }
+  // 改：节点时刻变了（用户改了 dueDate/dueTime/deadline）。逐条 update——每行的新时刻不同，无法批量
+  for (const u of plan.update) {
+    const { error } = await sb.from('wb_reminders')
+      .update(u.resetDelivery ? { scheduled_at: u.scheduledAt, sent_at: null } : { scheduled_at: u.scheduledAt })
+      .eq('id', u.id)
+    if (error) throw error
+  }
+  if (plan.create.length > 0) {
+    // upsert + ignoreDuplicates：并发 cron/check 同时算出相同新增时，慢的一方不再撞 unique 约束。
+    // scheduled_at 已过的节点直接写 sent_at = now：**不补发**——否则首次接云端 / 撤销完成 / 从「将来」转回来
+    // 会把几十条历史提醒一次性炸出来（提醒是给未来时刻设的，已经过期的只该以「已逾期」出现在提醒中心）。
+    const { error } = await sb.from('wb_reminders').upsert(plan.create.map(s => ({
+      id: genId(), user_id: s.userId, ref_type: s.refType, ref_id: s.refId, kind: s.kind, scheduled_at: s.scheduledAt,
+      sent_at: new Date(s.scheduledAt).getTime() <= now.getTime() ? now.toISOString() : null,
+    })), { onConflict: 'user_id,ref_type,ref_id,kind', ignoreDuplicates: true })
     if (error) throw error
   }
   const dueCount = specs.filter(s => isDueNow(s, now)).length
   const sentResult = await sendDue(sb, tasks, exams, goals, now)
-  return { created: fresh.length, due: dueCount, ...sentResult }
+  return { created: plan.create.length, updated: plan.update.length, removed: plan.remove.length, due: dueCount, ...sentResult }
 }
 
 // ========== 发送通道 ==========
@@ -178,7 +229,7 @@ function ensureVapid(): void {
   }
 }
 
-/** 到期未发未忽略 → 逐条发送（Web Push + Server酱）；真实送达才标记 sent_at（无通道/全失败保留 NULL 待补发）；410/404 删除过期订阅 */
+/** 到期未发 → 逐条发送（Web Push + Server酱/Telegram）；真实送达才标记 sent_at（无通道/全失败保留 NULL 待补发）；410/404 删除过期订阅 */
 /** HTML 模式转义：提醒正文里出现 < > & 会让 Telegram 解析失败（400 Bad Request） */
 function tgEscape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -209,7 +260,7 @@ async function telegramGetMe(botToken: string): Promise<string> {
 async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[], goals: GoalLike[], now: Date): Promise<{ sent: number; skipped: number }> {
   ensureVapid()
   const [dueRes, subsRes, configsRes] = await Promise.all([
-    sb.from('wb_reminders').select('*').lte('scheduled_at', now.toISOString()).is('sent_at', null).is('dismissed_at', null),
+    sb.from('wb_reminders').select('*').lte('scheduled_at', now.toISOString()).is('sent_at', null),
     sb.from('wb_push_subscriptions').select('*'),
     sb.from('wb_channel_configs').select('*'),
   ])
@@ -241,10 +292,9 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
     const kind = row.kind as ReminderKind
     const refType = row.ref_type as 'task' | 'exam' | 'goal'
     const ref = refType === 'task' ? tasksById.get(String(row.ref_id)) : refType === 'goal' ? goalsById.get(String(row.ref_id)) : examsById.get(String(row.ref_id))
-    // 已完成任务/已归档目标 / 已删除引用：跳过（不发送，保留行——恢复后可继续提醒）
+    // 已完成/已删除的引用对象由 runCheck 的 plan.remove 直接删行，这里理论上取不到；
+    // 保留兜底只为「拿不到引用就没法拼文案」，不再有「留着行等恢复」的语义（v1.31）
     if (!ref) { skipped++; continue }
-    if (refType === 'task' && (ref as TaskLike).status === 'done') { skipped++; continue }
-    if (refType === 'goal' && (ref as GoalLike).status === 'done') { skipped++; continue }
     // refType 决定 ref 来自哪个 map，故按 refType 分支后安全断言具体类型
     const date = refType === 'task' ? String((ref as TaskLike).dueDate) : refType === 'goal' ? String((ref as GoalLike).deadline) : String((ref as ExamLike).examDate)
     const time = refType === 'task' ? String((ref as TaskLike).dueTime) : ''

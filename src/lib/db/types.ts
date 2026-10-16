@@ -128,8 +128,7 @@ export interface Reminder {
   refId: string
   kind: ReminderKind
   scheduledAt: string   // UTC ISO
-  sentAt: string | null
-  dismissedAt: string | null
+  sentAt: string | null // 真实送达时刻（null = 待发送；无通道/全失败时保留 null 待下次补发）
   createdAt: string
 }
 export interface PushSubscriptionRow { id: string; endpoint: string; keysP256dh: string; keysAuth: string; userAgent: string | null; createdAt: string }
@@ -212,8 +211,6 @@ export interface WorkbenchRepository {
   saveSubscriptions(s: Subscriptions): Promise<void>
 
   listReminders(): Promise<Reminder[]>
-  dismissReminder(id: string): Promise<void>
-  restoreReminder(id: string): Promise<void>
   listPushSubscriptions(): Promise<PushSubscriptionRow[]>
   savePushSubscription(input: { endpoint: string; keysP256dh: string; keysAuth: string; userAgent?: string }): Promise<void>
   removePushSubscription(endpoint: string): Promise<void>

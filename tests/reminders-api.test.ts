@@ -54,6 +54,12 @@ function makeFakeClient(_headers?: Record<string, string>): SupabaseClient {
           state.rows = state.rows.filter(r => !(r.table === table && r.row[col] === val))
           return Promise.resolve({ error: null })
         }),
+        // v1.31：runCheck 用 .delete().in('id', ids) 批量清孤儿行
+        in: vi.fn((col: string, vals: unknown[]) => {
+          const set = new Set(vals.map(String))
+          state.rows = state.rows.filter(r => !(r.table === table && set.has(String(r.row[col]))))
+          return Promise.resolve({ error: null })
+        }),
       })),
       upsert: vi.fn((rows: unknown[]) => { (Array.isArray(rows) ? rows : [rows]).forEach(r => state.insert(table, r as Record<string, unknown>)); return Promise.resolve({ error: null }) }),
       lte: vi.fn(() => Promise.resolve({ data: [], error: null })),
@@ -135,29 +141,36 @@ describe('api/reminders 入口', () => {
 
   it('cron：正确密钥 → 生成并插入新提醒，返回 created 数', async () => {
     state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-08-08', due_time: '09:30', user_id: 'u1' })
-    state.insert('wb_reminders', { ref_type: 'exam', ref_id: 'e1', kind: 'exam-3d' }) // 已存在节点
+    state.insert('wb_reminders', { id: 'r0', user_id: 'u1', ref_type: 'task', ref_id: 't9', kind: 'due', scheduled_at: '2026-08-08T01:30:00.000Z', sent_at: null, created_at: '2026-08-08T00:00:00.000Z' }) // 孤儿行：t9 已不存在
     const res = makeRes()
     await handler(makeReq({ method: 'POST', query: { entry: 'cron' }, headers: { authorization: `Bearer ${CRON_SECRET}` } }), res as never)
     expect(res.statusCode).toBe(200)
-    const body = res.body as { ok: boolean; created: number }
+    const body = res.body as { ok: boolean; created: number; removed: number }
     expect(body.ok).toBe(true)
-    expect(body.created).toBe(1) // t1 的 due 节点新增；exam-3d 已存在跳过
+    expect(body.created).toBe(1) // t1 的 due 节点新增
+    expect(body.removed).toBe(1) // 引用对象已消失的孤儿行被删
     expect(state.rows.some(r => r.table === 'wb_reminders' && r.row.ref_type === 'task' && r.row.ref_id === 't1')).toBe(true)
+    expect(state.rows.some(r => r.table === 'wb_reminders' && r.row.id === 'r0')).toBe(false)
   })
 
   it('cron：重复触发幂等（created 为 0）', async () => {
     state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-08-08', due_time: '09:30', user_id: 'u1' })
-    state.insert('wb_reminders', { ref_type: 'task', ref_id: 't1', kind: 'due' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-08-08T01:30:00.000Z', sent_at: null, created_at: '2026-08-08T00:00:00.000Z' })
     const res = makeRes()
     await handler(makeReq({ method: 'POST', query: { entry: 'cron' }, headers: { authorization: `Bearer ${CRON_SECRET}` } }), res as never)
-    expect((res.body as { created: number }).created).toBe(0)
+    const body = res.body as { created: number; updated: number; removed: number }
+    expect(body.created).toBe(0)
+    expect(body.updated).toBe(0)
+    expect(body.removed).toBe(0)
   })
 
   it('check：无 JWT → 401；有效 JWT → 返回 reminders 与 vapidPublicKey', async () => {
     const res401 = makeRes()
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: {} }), res401 as never)
     expect(res401.statusCode).toBe(401)
-    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    // 提醒行必须有一个「活着」的引用对象，否则会被 runCheck 当孤儿行删掉（v1.31）
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, created_at: '2026-01-01T00:00:00.000Z' })
     const res = makeRes()
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
     expect(res.statusCode).toBe(200)
@@ -168,7 +181,7 @@ describe('api/reminders 入口', () => {
     expect(first).toHaveProperty('refType', 'task')
     expect(first).toHaveProperty('refId', 't1')
     expect(first).toHaveProperty('scheduledAt')
-    expect(first).toHaveProperty('dismissedAt')
+    expect(first).not.toHaveProperty('dismissedAt') // v1.31：忽略态整体移除
     expect(first).not.toHaveProperty('ref_type')
     expect(first).not.toHaveProperty('scheduled_at')
     expect(body.vapidPublicKey).toBe(VAPID_PUB)
@@ -204,7 +217,7 @@ describe('api/reminders 入口', () => {
 
   it('check：未来提醒不发送（scheduled_at 在 now 之后，lte 过滤）', async () => {
     state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2099-01-01', due_time: '09:30', user_id: 'u1' })
-    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2099-01-01T00:00:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2099-01-01T01:30:00.000Z', sent_at: null, created_at: '2026-01-01T00:00:00.000Z' })
     state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 't', created_at: '2026-01-01T00:00:00.000Z' })
     const res = makeRes()
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
@@ -213,18 +226,19 @@ describe('api/reminders 入口', () => {
     expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
   })
 
-  it('check：已完成任务的到期提醒行不发送（skipped，保留行待任务恢复后继续提醒）', async () => {
+  it('check：任务已完成 → 到期提醒行被删除（v1.31：不再 skipped 保留等人点「忽略」）', async () => {
     state.insert('wb_tasks', { id: 't1', title: '已完成', status: 'done', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
     state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
     state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 't', created_at: '2026-01-01T00:00:00.000Z' })
     const res = makeRes()
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
     expect(res.statusCode).toBe(200)
-    const body = res.body as { sent: number; skipped: number }
+    const body = res.body as { sent: number; skipped: number; removed: number }
+    expect(body.removed).toBe(1)
     expect(body.sent).toBe(0)
-    expect(body.skipped).toBe(1)
+    expect(body.skipped).toBe(0)
     expect(state.sent.length).toBe(0) // 未调用 web-push
-    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
+    expect(state.rows.some(r => r.table === 'wb_reminders' && r.row.id === 'r1')).toBe(false) // 行已消失
   })
 
   it('check：推送非 410/404 错误 → skipped，sent_at 不标记（下次可补发）', async () => {
@@ -254,6 +268,30 @@ describe('api/reminders 入口', () => {
     expect(body.sent).toBe(0)
     expect(body.skipped).toBe(1)
     expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeNull()
+  })
+
+  it('check：改了任务的提醒时间 → 已有行 update 到新时刻（v1.31 回归：旧版按 key 去重，改时间永远不生效）', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2099-01-02', due_time: '18:00', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2099-01-02T01:30:00.000Z', sent_at: null, created_at: '2026-08-08T00:00:00.000Z' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { created: number; updated: number }
+    expect(body.created).toBe(0)
+    expect(body.updated).toBe(1)
+    // 2099-01-02 18:00 上海 = 10:00 UTC
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.scheduled_at).toBe('2099-01-02T10:00:00.000Z')
+  })
+
+  it('check：新建一个已经过期的提醒节点 → 直接标记已发送，不补发历史通知', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '补录的旧任务', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 't', created_at: '2026-01-01T00:00:00.000Z' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { created: number; sent: number }
+    expect(body.created).toBe(1)
+    expect(body.sent).toBe(0)
+    expect(state.sent.length).toBe(0)
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.ref_id === 't1')?.row.sent_at).toBeTruthy()
   })
 
   it('test-notify：向本人通道发送测试通知', async () => {

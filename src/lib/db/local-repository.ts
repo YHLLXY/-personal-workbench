@@ -267,8 +267,6 @@ export class LocalRepository implements WorkbenchRepository {
   }
 
   async listReminders() { return read<Reminder>('reminders') }
-  async dismissReminder(id: string) { patch<Reminder>('reminders', id, { dismissedAt: new Date().toISOString() }) }
-  async restoreReminder(id: string) { patch<Reminder>('reminders', id, { dismissedAt: null }) }
   async listPushSubscriptions() { return read<PushSubscriptionRow>('pushSubscriptions') }
   async savePushSubscription(input: { endpoint: string; keysP256dh: string; keysAuth: string; userAgent?: string }) {
     const rows = read<PushSubscriptionRow>('pushSubscriptions')

@@ -234,14 +234,10 @@ describe('定时提醒（2026-08-08）', () => {
     expect(subs[0].endpoint).toBe('https://push.example/2')
   })
 
-  it('dismissReminder 置 dismissedAt（ISO 非 null），restoreReminder 置 null', async () => {
-    localStorage.setItem('wb:reminders', JSON.stringify([{ id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: '2026-08-08T01:30:00.000Z', sentAt: null, dismissedAt: null, createdAt: '2026-08-08T00:00:00.000Z' }]))
-    await repo.dismissReminder('r1')
-    const dismissed = (await repo.listReminders())[0]
-    expect(dismissed.dismissedAt).not.toBeNull()
-    expect(new Date(dismissed.dismissedAt as string).toISOString()).toBe(dismissed.dismissedAt)
-    await repo.restoreReminder('r1')
-    expect((await repo.listReminders())[0].dismissedAt).toBeNull()
+  it('listReminders 原样返回行——v1.31 起仓储层不再有「忽略 / 恢复」写入（提醒是派生数据）', async () => {
+    const row = { id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: '2026-08-08T01:30:00.000Z', sentAt: null, createdAt: '2026-08-08T00:00:00.000Z' }
+    localStorage.setItem('wb:reminders', JSON.stringify([row]))
+    expect(await repo.listReminders()).toEqual([row])
   })
 
   it('getChannelConfigs 无配置返回 null，save 后返回，再 save null 覆盖（含 v1.26 Telegram 三字段）', async () => {

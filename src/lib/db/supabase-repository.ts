@@ -89,7 +89,7 @@ function growthFromRow(r: Row): GrowthAction {
   }
 }
 function reminderFromRow(r: Row): Reminder {
-  return { id: String(r.id), refType: r.ref_type as Reminder['refType'], refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, dismissedAt: r.dismissed_at ? String(r.dismissed_at) : null, createdAt: String(r.created_at) }
+  return { id: String(r.id), refType: r.ref_type as Reminder['refType'], refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, createdAt: String(r.created_at) }
 }
 function pushSubFromRow(r: Row): PushSubscriptionRow {
   return { id: String(r.id), endpoint: String(r.endpoint), keysP256dh: String(r.keys_p256dh), keysAuth: String(r.keys_auth), userAgent: r.user_agent as string | null, createdAt: String(r.created_at) }
@@ -356,8 +356,6 @@ export class SupabaseRepository implements WorkbenchRepository {
   }
 
   async listReminders() { const { data, error } = await this.sb.from('wb_reminders').select('*').order('scheduled_at', { ascending: false }); if (error) throw error; return (data ?? []).map(reminderFromRow) }
-  async dismissReminder(id: string) { const { error } = await this.sb.from('wb_reminders').update({ dismissed_at: new Date().toISOString() }).eq('id', id); if (error) throw error }
-  async restoreReminder(id: string) { const { error } = await this.sb.from('wb_reminders').update({ dismissed_at: null }).eq('id', id); if (error) throw error }
   async listPushSubscriptions() { const { data, error } = await this.sb.from('wb_push_subscriptions').select('*'); if (error) throw error; return (data ?? []).map(pushSubFromRow) }
   async savePushSubscription(input: { endpoint: string; keysP256dh: string; keysAuth: string; userAgent?: string }) {
     const { error } = await this.sb.from('wb_push_subscriptions')

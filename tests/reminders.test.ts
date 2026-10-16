@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeReminders, diffReminders, isDueNow, reminderText, shanghaiMs, todayShanghai } from '../api/reminders'
+import { computeReminders, isDueNow, liveRefKeys, planReminders, reminderText, shanghaiMs, todayShanghai, type ExistingReminder, type ReminderSpec } from '../api/reminders'
 
 // 固定时刻：2026-08-08 12:00 上海 = 2026-08-08T04:00:00.000Z
 const NOW = new Date('2026-08-08T04:00:00.000Z')
@@ -83,19 +83,75 @@ describe('computeReminders', () => {
   })
 })
 
-describe('diffReminders（幂等）', () => {
-  it('已有 (refType, refId, kind) 的节点跳过，只返回新增', () => {
-    const computed = [
-      { userId: 'u1', refType: 'task' as const, refId: 't1', kind: 'due' as const, scheduledAt: 'x', title: 'a' },
-      { userId: 'u2', refType: 'exam' as const, refId: 'e1', kind: 'exam-3d' as const, scheduledAt: 'y', title: 'b' },
-    ]
-    const fresh = diffReminders([{ refType: 'task', refId: 't1', kind: 'due' }], computed)
-    expect(fresh).toHaveLength(1)
-    expect(fresh[0].refId).toBe('e1')
+describe('liveRefKeys（引用对象存活判定——提醒行该不该继续存在）', () => {
+  const NOW2 = new Date('2026-08-08T04:00:00.000Z') // 上海 08-08 12:00
+  it('任务未完成=活；考试今天及以后=活；目标未归档且有截止日=活', () => {
+    const live = liveRefKeys(
+      [{ id: 't1', userId: 'u1', title: 'a', status: 'todo', dueDate: null, dueTime: null },
+       { id: 't2', userId: 'u1', title: 'b', status: 'done', dueDate: null, dueTime: null }],
+      [{ id: 'e1', userId: 'u1', title: 'c', examDate: '2026-08-08', examTime: null },
+       { id: 'e2', userId: 'u1', title: 'd', examDate: '2026-08-07', examTime: null }],
+      [{ id: 'g1', userId: 'u1', title: 'e', status: 'active', deadline: '2026-08-12' },
+       { id: 'g2', userId: 'u1', title: 'f', status: 'done', deadline: '2026-08-12' },
+       { id: 'g3', userId: 'u1', title: 'g', status: 'active', deadline: null }],
+      NOW2)
+    expect([...live].sort()).toEqual(['exam:e1', 'goal:g1', 'task:t1'])
   })
-  it('全部已有 → 空', () => {
-    const computed = [{ userId: 'u1', refType: 'task' as const, refId: 't1', kind: 'due' as const, scheduledAt: 'x', title: 'a' }]
-    expect(diffReminders([{ refType: 'task', refId: 't1', kind: 'due' }], computed)).toHaveLength(0)
+})
+
+describe('planReminders（增 / 改 / 删 三向对齐）', () => {
+  const NOW2 = new Date('2026-08-08T04:00:00.000Z')
+  const FUTURE = '2026-08-09T02:00:00.000Z'
+  const spec = (over: Partial<ReminderSpec> = {}): ReminderSpec =>
+    ({ userId: 'u1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: FUTURE, title: '交报告', ...over })
+  const row = (over: Partial<ExistingReminder> = {}): ExistingReminder =>
+    ({ id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: FUTURE, ...over })
+  const liveAll = new Set(['task:t1'])
+
+  it('新增：key 不存在 → create', () => {
+    const plan = planReminders([], [spec()], liveAll, NOW2)
+    expect(plan.create).toHaveLength(1)
+    expect(plan.update).toHaveLength(0)
+    expect(plan.remove).toHaveLength(0)
+  })
+
+  it('幂等：scheduledAt 一致 → 三个方向都不动', () => {
+    const plan = planReminders([row()], [spec()], liveAll, NOW2)
+    expect(plan).toEqual({ create: [], update: [], remove: [] })
+  })
+
+  it('改期到未来 → update 且 resetDelivery=true（清空 sent_at 重新计时）', () => {
+    // 回归：旧版 diffReminders 只按 (refType,refId,kind) 去重、不比较 scheduledAt，
+    // 于是把任务提醒从 09:00 改到 18:00 永远不生效——这条用例就是那个缺陷的守门人
+    const plan = planReminders([row({ scheduledAt: '2026-08-08T01:00:00.000Z' })], [spec({ scheduledAt: FUTURE })], liveAll, NOW2)
+    expect(plan.create).toHaveLength(0)
+    expect(plan.update).toEqual([{ id: 'r1', scheduledAt: FUTURE, resetDelivery: true }])
+  })
+
+  it('改期到过去 → update 但 resetDelivery=false（保留投递记录，不补发也不抹掉）', () => {
+    const past = '2026-08-01T01:00:00.000Z'
+    const plan = planReminders([row({ scheduledAt: FUTURE })], [spec({ scheduledAt: past })], liveAll, NOW2)
+    expect(plan.update).toEqual([{ id: 'r1', scheduledAt: past, resetDelivery: false }])
+  })
+
+  it('引用对象已终结 → remove（任务完成/删除、考试已过、目标归档）', () => {
+    const existing = [
+      row({ id: 'r1' }),
+      row({ id: 'r2', refType: 'exam', refId: 'e9', kind: 'exam-1d' }),
+    ]
+    const plan = planReminders(existing, [spec()], liveAll, NOW2)
+    expect(plan.remove).toEqual(['r2'])
+    expect(() => planReminders(existing, [spec()], new Set(), NOW2)).not.toThrow()
+    expect(planReminders(existing, [spec()], new Set(), NOW2).remove).toEqual(['r1', 'r2'])
+  })
+
+  it('节点时刻已过但引用对象还活着 → 保留该行（已发出的通知记录不被误删）', () => {
+    // 考试 08-10，考前 3 天节点（08-07）已过 → computeReminders 不再生成它，
+    // 但考试还没结束，那条「还有 3 天」的记录要留到考试结束
+    const existing = [row({ id: 'r1', refType: 'exam', refId: 'e1', kind: 'exam-3d', scheduledAt: '2026-08-07T00:00:00.000Z' })]
+    const plan = planReminders(existing, [], new Set(['exam:e1']), NOW2)
+    expect(plan.remove).toHaveLength(0)
+    expect(plan.update).toHaveLength(0)
   })
 })
 

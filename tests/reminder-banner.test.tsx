@@ -5,15 +5,22 @@ import { MemoryRouter } from 'react-router-dom'
 
 // scheduledAt 一律用确定性的过去时间（避免测试在到期时刻之前运行时横幅不渲染）
 const PAST = '2026-08-01T01:30:00.000Z'
+const FUTURE = '2099-01-01T00:00:00.000Z'
+
+const task = (id: string, title: string) => ({
+  id, title, focus: false, priority: 'medium', status: 'todo', dueDate: '2026-08-01', dueTime: '09:30',
+  tags: [], sort: 1, completedAt: null, createdAt: '2026-07-01T00:00:00.000Z',
+})
 
 vi.mock('@/lib/db', () => ({
   isCloudMode: false,
   repository: {
     listReminders: vi.fn(async () => [
-      { id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: PAST, sentAt: null, dismissedAt: null, createdAt: PAST },
+      { id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: PAST, sentAt: null, createdAt: PAST },
     ]),
-    listTasks: vi.fn(async () => [{ id: 't1', title: '交报告', focus: false, priority: 'medium', status: 'todo', dueDate: '2026-08-01', dueTime: '09:30', tags: [], sort: 1, completedAt: null, createdAt: '2026-07-01T00:00:00.000Z' }]),
+    listTasks: vi.fn(async () => [task('t1', '交报告')]),
     listExams: vi.fn(async () => []),
+    listStudyGoals: vi.fn(async () => []),
   } as never,
 }))
 
@@ -34,7 +41,7 @@ function renderBanner() {
 describe('ReminderBanner', () => {
   beforeEach(() => { qc.clear(); vi.clearAllMocks() })
 
-  it('有未读到期提醒时显示横幅、提醒文案与数量，点击跳提醒中心', async () => {
+  it('有到期提醒时显示横幅、提醒文案与数量，点击跳提醒中心', async () => {
     renderBanner()
     await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
     expect(screen.getByText(/到点了，记得处理/)).toBeTruthy()
@@ -44,14 +51,29 @@ describe('ReminderBanner', () => {
     expect(screen.getByRole('link')).toHaveAttribute('href', '/reminders')
   })
 
-  it('无未读提醒时不渲染', async () => {
+  it('没有到期提醒时不渲染（全部未到期）', async () => {
     vi.mocked(repository.listReminders).mockResolvedValueOnce([
-      { id: 'r2', refType: 'task', refId: 't1', kind: 'due', scheduledAt: PAST, sentAt: null, dismissedAt: '2026-08-01T02:00:00.000Z', createdAt: PAST } as never,
+      { id: 'r2', refType: 'task', refId: 't1', kind: 'due', scheduledAt: FUTURE, sentAt: null, createdAt: PAST } as never,
     ])
     renderBanner()
     await waitFor(() => expect(repository.listReminders).toHaveBeenCalled())
     expect(screen.queryByText(/交报告/)).toBeNull()
     expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('正文取**最早到期**的那条，未到期的不参与（v1.31 回归：旧版取 scheduledAt 倒序第一条 = 最不紧急）', async () => {
+    vi.mocked(repository.listTasks).mockResolvedValueOnce([
+      task('t1', '拖最久的'), task('t2', '刚过期的'), task('t3', '下周才到'),
+    ] as never)
+    vi.mocked(repository.listReminders).mockResolvedValueOnce([
+      { id: 'rFuture', refType: 'task', refId: 't3', kind: 'due', scheduledAt: FUTURE, sentAt: null, createdAt: PAST },
+      { id: 'rLate', refType: 'task', refId: 't2', kind: 'due', scheduledAt: '2026-08-05T01:30:00.000Z', sentAt: null, createdAt: PAST },
+      { id: 'rEarly', refType: 'task', refId: 't1', kind: 'due', scheduledAt: PAST, sentAt: null, createdAt: PAST },
+    ] as never)
+    renderBanner()
+    await waitFor(() => expect(screen.getByText(/拖最久的/)).toBeTruthy())
+    expect(screen.queryByText(/下周才到/)).toBeNull()
+    expect(screen.getByText('2')).toBeTruthy() // 角标只数已到期的两条
   })
 })
 
@@ -78,17 +100,18 @@ describe('ReminderBanner 前台通知去重', () => {
   })
   afterEach(() => { vi.unstubAllGlobals(); stubServiceWorker(undefined) })
 
-  it('授权 + 到期未发 → 走 SW 通道弹一次；数据刷新（新数组引用，同一提醒仍在）→ 不重复', async () => {
+  it('授权 + 到期未发 → 走 SW 通道弹一次，正文是提醒原文；数据刷新不重复弹', async () => {
     renderBanner()
     await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
     expect(showNotification.mock.calls[0][0]).toBe('个人工作台提醒')
+    // v1.31：单条通知直接给正文，不再是一句没有信息量的「N 条提醒待处理」
+    expect(String((showNotification.mock.calls[0][1] as { body: string }).body)).toContain('交报告')
     // 模拟 focus refetch：重新拉取产生新的数组引用（仍含同一到期提醒）→ 不重复弹
     vi.mocked(repository.listReminders).mockResolvedValueOnce([
-      { id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: PAST, sentAt: null, dismissedAt: null, createdAt: PAST, note: 'fresh-read' } as never,
+      { id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: PAST, sentAt: null, createdAt: PAST, note: 'fresh-read' } as never,
     ])
     qc.invalidateQueries()
     await waitFor(() => expect(repository.listReminders).toHaveBeenCalledTimes(2))
-    // 等 refetch 数据提交、effect 执行窗口关闭后再断言通知数
     await act(async () => { await new Promise(r => setTimeout(r, 0)) })
     expect(showNotification).toHaveBeenCalledTimes(1)
   })
@@ -115,7 +138,7 @@ describe('ReminderBanner 通知通道防崩回归（v1.23 全站崩溃根因）'
     // 被 Node 判为 unhandledrejection（噪音，且与被测行为无关）
     stubServiceWorker({ get ready() { return Promise.reject(new Error('no sw')) } })
     renderBanner()
-    await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy()) // 横幅照常显示
+    await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
     expect(screen.getByText('1')).toBeTruthy()
   })
 

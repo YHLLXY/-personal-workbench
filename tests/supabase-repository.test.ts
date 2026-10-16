@@ -282,26 +282,14 @@ describe('定时提醒（2026-08-08）', () => {
   it('listReminders 映射行（snake_case → camelCase）', async () => {
     setRows('wb_reminders', [{ id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-08-08T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-08-08T00:00:00.000Z' }])
     const reminders = await repo.listReminders()
-    expect(reminders[0]).toEqual({ id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: '2026-08-08T01:30:00.000Z', sentAt: null, dismissedAt: null, createdAt: '2026-08-08T00:00:00.000Z' })
+    expect(reminders[0]).toEqual({ id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: '2026-08-08T01:30:00.000Z', sentAt: null, createdAt: '2026-08-08T00:00:00.000Z' })
   })
 
-  it('dismissReminder 调 update 置 dismissed_at（非 null）', async () => {
-    await repo.dismissReminder('r1')
-    expect(updateCalls.length).toBe(1)
-    const call = updateCalls[0]
-    expect(call.table).toBe('wb_reminders')
-    expect(call.payload).toHaveProperty('dismissed_at')
-    expect(call.payload.dismissed_at).not.toBeNull()
-    expect(call.where).toEqual({ column: 'id', value: 'r1' })
-  })
-
-  it('restoreReminder 调 update 置 dismissed_at: null', async () => {
-    await repo.restoreReminder('r1')
-    expect(updateCalls.length).toBe(1)
-    const call = updateCalls[0]
-    expect(call.table).toBe('wb_reminders')
-    expect(call.payload).toEqual({ dismissed_at: null })
-    expect(call.where).toEqual({ column: 'id', value: 'r1' })
+  it('listReminders 是只读路径——v1.31 删掉 ignore/restore 后不应再产生任何写操作', async () => {
+    setRows('wb_reminders', [])
+    await repo.listReminders()
+    expect(updateCalls.length).toBe(0)
+    expect(upsertCalls.length).toBe(0)
   })
 
   it('savePushSubscription 载荷 snake_case 且带 id（endpoint 幂等）', async () => {
