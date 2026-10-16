@@ -41,9 +41,13 @@ export function useTaskMutations() {
   }
 }
 
-/** 今日口径：仅今日到期或今日焦点（历史逾期不计入今日统计，逾期走单独提示，2026-08 反馈：8/8 混入积压旧任务） */
+/** 今日口径：今日到期、今日焦点，或**标记为「进行中」**（v1.31 补语义）。
+ *  历史逾期不计入今日统计，逾期走单独提示（2026-08 反馈：8/8 混入积压旧任务）。
+ *  为什么把 doing 纳进来：在此之前 doing 只影响今日区的排序档位、不影响任何过滤 —— 一个任务是「进行中」
+ *  但日期不是今天时，它在今日待办里**完全看不见**，等于标了个找不到的标记。现在它的含义是
+ *  「正在推进、要天天看到」，因此必须出现在今日区。 */
 export function isTodayScope(t: Task, today: string): boolean {
-  return t.dueDate === today || (t.focus && t.focusDate === today)
+  return t.dueDate === today || (t.focus && t.focusDate === today) || t.status === 'doing'
 }
 
 /** v1.24 重复任务的「已完成」判定：普通完成（status done）或 repeat 任务当天已滚动完成。

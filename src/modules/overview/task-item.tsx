@@ -3,14 +3,16 @@ import { CalendarClock, Check, ChevronDown, Clock, GripVertical, MoreHorizontal,
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { genId, todayStr, type ChecklistItem, type Task } from '@/lib/db/types'
 import { addDays, nextMonday, repeatLabel } from '@/lib/repeat'
-import { dueDateChip } from './task-card'
+import { dueDateChip, taskCardTone } from './task-card'
 import type { DragHandleProps } from '@/lib/drag-sort'
 import { cn } from '@/lib/utils'
 
 const PRIORITY_DOT: Record<Task['priority'], string> = { high: 'bg-destructive', medium: 'bg-accent', low: 'bg-muted-foreground/40' }
 
-export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, onDelete, onPostpone, onChecklist, onReschedule, onSkip, drag }: {
+export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, onDelete, onPostpone, onToggleDoing, onChecklist, onReschedule, onSkip, drag }: {
   task: Task; done?: boolean; onToggle: () => void; onFocus?: () => void; onEdit: () => void; onDelete: () => void; onPostpone?: () => void
+  /** 「进行中」胶囊的出口：点一下回到普通待办（v1.31） */
+  onToggleDoing?: () => void
   onChecklist?: (items: ChecklistItem[]) => void
   onReschedule?: (date: string) => void
   onSkip?: () => void
@@ -27,6 +29,8 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
   const checklistEditable = Boolean(onChecklist) && !done
   const note = task.note?.trim()
   const chip = dueDateChip(task.dueDate, todayStr())
+  // 底色 = 紧急程度，边框 = 焦点优先（v1.31，见 task-card.ts）。完成态一律走灰底，不再叠优先级色
+  const tone = taskCardTone(task)
   function addChecklistItem() {
     const text = newItem.trim()
     if (!text || !onChecklist) return
@@ -42,7 +46,7 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
     // data-flip-id：FLIP 布局动画锚点（src/lib/flip.ts）——同列表重排平滑（补加星标滑顶，不再瞬跳闪没），
     // 今日↔已完成跨区块连续滑移（坠落/飞回）。一条任务同一时刻只挂载在一个区块，task.id 全局唯一
     <div data-flip-id={task.id} data-drag-id={drag?.id}
-      className={cn('group bg-card border border-border rounded-xl px-3 py-2.5 transition-colors', done && 'opacity-60 bg-muted/40')}>
+      className={cn('group border rounded-xl px-3 py-2.5 transition-colors', done ? 'opacity-60 bg-muted/40 border-border' : cn(tone.card, tone.border))}>
       {/* v1.25 卡片信息升级（RESEARCH_TASK_CARD.md）：items-start 让标题完整换行时控件顶对齐；
           焦点/进行中/清单徽章从标题行挪到元信息行，标题不再与徽章/元数据抢同一行宽度 */}
       <div className="flex items-start gap-2">
@@ -67,6 +71,8 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-start gap-2">
+            {/* 焦点：金黄色实心星（v1.31 用户要求「加上金黄色的星星 + 边框也变金黄」） */}
+            {task.focus && !done && <Star className="size-3.5 shrink-0 mt-[3px] text-amber-500 fill-amber-400" strokeWidth={1.7} aria-label="今日焦点" />}
             <span className={cn('size-2 rounded-full shrink-0 mt-[6px]', PRIORITY_DOT[task.priority])} title={`优先级 ${task.priority}`} />
             <button onClick={onEdit} className="flex-1 min-w-0 text-left">
               {/* v1.25：去掉 truncate 完整换行（TickTick/Reminders 截断标题是头号用户抱怨，个人工具无密度压力） */}
@@ -83,8 +89,11 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
               {chip && <span className={cn('flex items-center gap-0.5', chip.overdue && 'text-destructive font-medium')}><CalendarClock className="size-3" />{chip.label}</span>}
               {task.dueTime && <span className="flex items-center gap-0.5"><Clock className="size-3" />{task.dueTime}</span>}
               {task.repeat && <span className="flex items-center gap-0.5"><Repeat className="size-3" />{repeatLabel(task.repeat, task.dueDate)}</span>}
-              {task.focus && !done && <span className="bg-primary/12 text-primary rounded-full px-2 py-0.5">今日焦点</span>}
-              {task.status === 'doing' && !done && <span className="bg-accent/20 text-accent-foreground rounded-full px-2 py-0.5">进行中</span>}
+              {task.focus && !done && <span className="bg-amber-400/20 text-amber-700 dark:text-amber-300 rounded-full px-2 py-0.5">今日焦点</span>}
+              {/* 进行中可点：这是它唯一的出口（旧版只能在编辑弹窗里改回「待办」） */}
+              {task.status === 'doing' && !done && (onToggleDoing
+                ? <button onClick={onToggleDoing} title="点击改回「待办」" className="bg-primary/12 text-primary rounded-full px-2 py-0.5 hover:bg-primary/25 transition-colors">进行中</button>
+                : <span className="bg-primary/12 text-primary rounded-full px-2 py-0.5">进行中</span>)}
               {checklist.length > 0 && (
                 <span className={cn('rounded-full px-1.5 py-px', checklistDone === checklist.length ? 'bg-primary/12 text-primary' : 'bg-muted')}>
                   {checklistDone}/{checklist.length}
@@ -104,7 +113,7 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
             </button>
           )}
           {onFocus && (
-            <button onClick={onFocus} aria-label="设为今日焦点" className={cn('text-muted-foreground/50 hover:text-primary transition-colors', task.focus && 'text-primary')}>
+            <button onClick={onFocus} aria-label="设为今日焦点" className={cn('transition-colors', task.focus ? 'text-amber-500' : 'text-muted-foreground/50 hover:text-primary')}>
               <Star className="size-4" strokeWidth={1.7} fill={task.focus ? 'currentColor' : 'none'} />
             </button>
           )}

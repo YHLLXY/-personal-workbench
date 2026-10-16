@@ -99,6 +99,9 @@ export default function TodayTasks() {
   const todayList = list.filter(t => !overdue.some(o => o.id === t.id))
   const allTags = [...new Set((tasks ?? []).flatMap(t => t.tags))] // 全部任务的去重标签
   const filtering = Boolean(tag || query.trim())
+  // 「进行中」的唯一出口：点卡片上的胶囊回到普通待办（v1.31——此前只能进编辑弹窗改，等于没有出口）
+  const toggleDoing = (t: Task) => update.mutate({ id: t.id, patch: { status: t.status === 'doing' ? 'todo' : 'doing' } })
+
   // v1.24 E：今日区手动拖拽排序——半序只写被拖项一项（上/下邻 sort 中点），焦点/doing 分组由比较器保持
   const todayById = new Map(todayList.map(t => [t.id, t]))
   const drag = useDragSort(todayList.map(t => t.id), (newOrder, movedId) => {
@@ -156,6 +159,7 @@ export default function TodayTasks() {
                         onEdit={() => { setEditing(t); setDialogOpen(true) }}
                         onDelete={() => remove.mutate(t.id)}
                         onPostpone={() => update.mutate({ id: t.id, patch: { dueDate: today } })}
+                        onToggleDoing={() => toggleDoing(t)}
                         onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
                         onReschedule={date => reschedule(t, date)}
                         onSkip={t.repeat ? () => skipOnce(t) : undefined} />
@@ -180,6 +184,7 @@ export default function TodayTasks() {
                         onEdit={() => { setEditing(t); setDialogOpen(true) }}
                         onDelete={() => remove.mutate(t.id)}
                         onPostpone={() => update.mutate({ id: t.id, patch: { dueDate: today } })}
+                        onToggleDoing={() => toggleDoing(t)}
                         onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
                         onReschedule={date => reschedule(t, date)}
                         onSkip={t.repeat ? () => skipOnce(t) : undefined} />
@@ -217,6 +222,7 @@ export default function TodayTasks() {
                       onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus, focusDate: t.focus ? null : today } })}
                       onEdit={() => { setEditing(t); setDialogOpen(true) }}
                       onDelete={() => remove.mutate(t.id)}
+                      onToggleDoing={() => toggleDoing(t)}
                       onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
                       onReschedule={date => reschedule(t, date)}
                       onSkip={t.repeat ? () => skipOnce(t) : undefined} />

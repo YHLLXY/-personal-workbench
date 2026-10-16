@@ -118,7 +118,7 @@ describe('oldOverdue', () => {
 })
 
 describe('isTodayScope（今日口径，历史逾期不计入）', () => {
-  it('仅今日到期或今日焦点算今日；昨日到期、昨日焦点、未来任务都不算', () => {
+  it('今日到期 / 今日焦点 / 进行中算今日；昨日到期、昨日焦点、未来任务都不算', () => {
     const tasks = [
       t({ id: 'a', dueDate: '2026-08-04' }),
       t({ id: 'b', focus: true, focusDate: '2026-08-04', dueDate: '2026-08-10' }),
@@ -126,9 +126,16 @@ describe('isTodayScope（今日口径，历史逾期不计入）', () => {
       t({ id: 'd', focus: true, focusDate: '2026-08-03' }), // 昨日焦点
       t({ id: 'e', dueDate: '2026-08-05' }),   // 未来
       t({ id: 'f' }),                          // 无日期
+      t({ id: 'g', status: 'doing', dueDate: '2026-08-20' }), // 进行中：不论日期都要天天看到（v1.31）
     ]
     const inScope = tasks.filter(x => isTodayScope(x, '2026-08-04')).map(x => x.id)
-    expect(inScope.sort()).toEqual(['a', 'b'])
+    expect(inScope.sort()).toEqual(['a', 'b', 'g'])
+  })
+  it('进行中且日期已过 → 仍属今日口径（今日区与逾期区不会同帧双显，today-tasks 里有去重）', () => {
+    const doing = t({ id: 'h', status: 'doing', dueDate: '2026-08-01' })
+    expect(isTodayScope(doing, '2026-08-04')).toBe(true)
+    expect(todayTasks([doing], '2026-08-04').map(x => x.id)).toEqual(['h'])
+    expect(recentOverdue([doing], '2026-08-04').map(x => x.id)).toEqual(['h'])
   })
   it('done 的今日任务也在口径内（供 done/total 统计使用）', () => {
     expect(isTodayScope(t({ id: 'g', status: 'done', dueDate: '2026-08-04' }), '2026-08-04')).toBe(true)
