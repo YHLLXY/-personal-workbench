@@ -80,7 +80,7 @@ describe('DailyDigest（v1.27）', () => {
   it('没有日报时给出空态，并提示云端模式', async () => {
     renderDigest()
     await waitFor(() => expect(screen.getByText('还没有日报')).toBeTruthy())
-    expect(screen.getByText(/每天 06:00 由服务端自动抓取/)).toBeTruthy()
+    expect(screen.getByText(/每天凌晨由服务端自动抓取热点/)).toBeTruthy()
   })
 
   it('表不存在（迁移 015 未执行）时，说的是「功能还没启用」而不是「每天会自动生成」', async () => {
