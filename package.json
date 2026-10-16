@@ -1,7 +1,7 @@
 {
   "name": "personal-workbench",
   "private": true,
-  "version": "1.30.3",
+  "version": "1.31.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -47,6 +47,7 @@
     "jsdom": "^30.0.1",
     "oxlint": "^1.77.0",
     "shadcn": "^4.16.1",
+    "suncalc": "^2.1.1",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",

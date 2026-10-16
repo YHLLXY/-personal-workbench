@@ -6,6 +6,7 @@ import {
   WEATHER_LABELS, aqiLabel, hhmm, sunProgress, uvLabel, type DailyForecast, type WeatherKind, type WeatherNow,
 } from '@/lib/weather'
 import { weatherIconUrl } from '@/lib/weather-icons'
+import { CHONGQING, moonIllumination, moonPhaseName, moonProgress, moonTimes } from '@/lib/moon'
 import { useWeatherQuery } from './weather-data'
 import { cn } from '@/lib/utils'
 import './weather-dialog.css'
@@ -42,6 +43,7 @@ export function WeatherDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             <SceneHeader w={data} />
             <div className="max-h-[52dvh] space-y-5 overflow-y-auto p-4">
               <SunArc today={data.daily[0]} />
+              <MoonArc />
               <DetailChips w={data} />
               <HourlyStrip w={data} />
               <WeekList w={data} />
@@ -219,6 +221,93 @@ function SunArc({ today }: { today?: DailyForecast }) {
         <span className="text-lg font-bold tabular-nums">{hhmm(today.sunrise)}</span>
         <span className="text-lg font-bold tabular-nums text-muted-foreground/70">{hhmm(today.sunset)}</span>
       </div>
+    </section>
+  )
+}
+
+/** Date → 'HH:mm'（本地时区）。天气那边的 hhmm() 只吃 'YYYY-MM-DDTHH:mm' 串，月亮这里拿到的是 Date */
+function clock(d: Date | null): string {
+  if (!d) return '--:--'
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** 月相圆盘：按亮比例画**真实盈亏**，不是固定圆盘。
+ *  亮区 = 亮侧外半圆 + 终结线椭圆，半短轴 rx = r·|2f−1|：
+ *  f=0 新月 → rx=r（零面积）· f=0.25 上弦 → rx=0（正好半圆）· f=0.5 满月 → rx=r（满盘）。
+ *  娥眉/残月（f<0.5）终结线凸向亮侧，凸月凸向暗侧。 */
+function MoonDisc({ fraction, waxing, className }: { fraction: number; waxing: boolean; className?: string }) {
+  const r = 9.2
+  const rx = Math.max(0.01, Math.abs(2 * fraction - 1) * r)
+  const limb = waxing ? 1 : 0
+  const term = fraction < 0.5 ? limb : 1 - limb
+  const inner = term === 1 ? 0 : 1
+  return (
+    <svg viewBox="-12 -12 24 24" className={className} aria-hidden="true">
+      {/* 暗面 = 整个圆盘；亮面 = 亮侧半圆 + 终结线椭圆。
+          ⚠️ 亮面必须用**可见的亮色**，不能用 currentColor：浅色主题下 currentColor 是深灰，
+          画出来会被读成「右半边是黑的」，与真实月相正好相反（v1.31 截图自查发现，纯函数测试看不出这个）。 */}
+      <circle r={r} className="fill-muted-foreground/30" />
+      <path d={`M 0 ${-r} A ${r} ${r} 0 0 ${limb} 0 ${r} A ${rx} ${r} 0 0 ${inner} 0 ${-r} Z`} className="fill-amber-300 dark:fill-amber-200" />
+    </svg>
+  )
+}
+
+/** 月出/月落端点标记：地平线上的月牙 + 上/下箭头（与 RiseSetGlyph 同构，只把半日换成月牙） */
+function MoonRiseSetGlyph({ dir, className }: { dir: 'rise' | 'set'; className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {dir === 'rise'
+        ? <><path d="M12 2.6v4.8" /><path d="m9.6 5 2.4-2.4L14.4 5" /></>
+        : <><path d="M12 7.4V2.6" /><path d="m9.6 5 2.4 2.4L14.4 5" /></>}
+      <path d="M13.4 19.9a6 6 0 1 1-4.4-9.9 4.8 4.8 0 0 0 4.4 9.9Z" />
+    </svg>
+  )
+}
+
+/** 月出月落（v1.31）：与 SunArc 对称的一节——上排图标+标签、中排冷色轨道（已过暗 / 未到亮，
+ *  与太阳的琥珀暖色成对）、月亮按**真实月相**停在自己位置上、下排时间 + 月相名。
+ *  数据不走接口：Open-Meteo 没有任何月亮字段，由 src/lib/moon.ts 本地解算
+ *  （零依赖 + suncalc 当测试裁判，见 docs/plans/RESEARCH_月出月落.md）。 */
+function MoonArc() {
+  const now = Date.now()
+  const illum = moonIllumination(new Date(now))
+  const times = moonTimes(new Date(now), CHONGQING.lat, CHONGQING.lon)
+  const p = moonProgress(times, now)
+  const pct = p ? (p.t * 100).toFixed(2) + '%' : '0%'
+  const riseText = clock(times.rise)
+  const setText = clock(times.set)
+  const phaseText = `${moonPhaseName(illum.phase)} · 照亮 ${Math.round(illum.fraction * 100)}%`
+  const aria = times.alwaysDown ? `今夜月亮不升起，${phaseText}`
+    : times.alwaysUp ? `月亮整夜在地平线上，${phaseText}`
+    : `月出 ${riseText}，月落 ${setText}，${p?.inSky ? '此刻在天空' : '此刻在地平线下'}，${phaseText}`
+  return (
+    <section>
+      <h3 className="mb-3 text-xs font-medium text-muted-foreground">月出月落</h3>
+      <div className="flex items-start justify-between">
+        <div className="flex flex-col items-center gap-1">
+          <MoonRiseSetGlyph dir="rise" className="size-6 text-sky-600 dark:text-sky-300" />
+          <span className="text-[11px] text-muted-foreground">月出</span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <MoonRiseSetGlyph dir="set" className="size-6 text-sky-600/70 dark:text-sky-300/60" />
+          <span className="text-[11px] text-muted-foreground">月落</span>
+        </div>
+      </div>
+      <div className="mt-3 px-3">
+        <div className="relative h-1.5 rounded-full bg-muted" role="img" aria-label={aria}>
+          {/* 尚未落下的部分：冷色高亮（与太阳「尚未到来的白天暖色」同构） */}
+          {p && <div className="absolute inset-y-0 right-0 rounded-full bg-sky-400/60 dark:bg-sky-300/40" style={{ left: pct }} />}
+          {/* 在地平线下时整体压暗（月亮还在，只是看不见） */}
+          <div className={cn('absolute top-1/2 size-6 -translate-x-1/2 -translate-y-1/2', !p?.inSky && 'opacity-40')} style={{ left: pct }}>
+            <MoonDisc fraction={illum.fraction} waxing={illum.waxing} className="size-6" />
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 flex justify-between font-numeric">
+        <span className="text-lg font-bold tabular-nums">{riseText}</span>
+        <span className="text-lg font-bold tabular-nums text-muted-foreground/70">{setText}</span>
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">{times.alwaysDown ? '今夜不升起 · ' : times.alwaysUp ? '整夜在天上 · ' : ''}{phaseText}</p>
     </section>
   )
 }
