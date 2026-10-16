@@ -21,6 +21,8 @@ const ASSETS = join(DIST, 'assets')
 //   首屏 723 KB（entry 303 + 静态 import 闭包共 13 chunk）——**这是新引入的真红线**
 //   总量 1103 KB（52 chunk）——旧口径下的 1120 只剩 17 KB，收紧到无法作为门禁用，故按新基线 +4% 重定
 //   最大 chunk 303 KB（未变，沿用 340）
+// 2026-10-16 追加实测：首屏 724 / 总量 1141 / 最大 304（v1.31 月亮+提醒重构后，本轮 +12 KB，余量仅 9 KB）
+//   ⚠️ 上面那行 1103 是定基当天的数，**引用前先实测**——注释里的基线同样会过期（v1.31 就被它误导过一次）
 const BUDGET = { firstScreenJsKb: 790, totalJsKb: 1150, maxChunkKb: 340 }
 
 if (!existsSync(ASSETS)) {
