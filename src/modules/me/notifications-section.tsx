@@ -23,6 +23,8 @@ export function NotificationSection() {
   const [tgToken, setTgToken] = useState('')
   const [tgChatId, setTgChatId] = useState('')
   const [tgBusy, setTgBusy] = useState(false)
+  /** 最近一次「测试发送」的逐通道结果（v1.32）：旧版只回一个 sent 计数，Telegram 失败被静默吞掉 */
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     if (!isCloudMode) return
@@ -68,14 +70,31 @@ export function NotificationSection() {
     } catch { toast.error('退订失败，请重试') } finally { setBusy(false) }
   }
 
+  const CHANNEL_CN: Record<string, string> = { webpush: '浏览器推送', serverchan: 'Server酱', telegram: 'Telegram' }
+
   async function testSend() {
     try {
       const sb = getSupabaseClient()
       const { data: { session } } = await sb.auth.getSession()
       if (!session) { toast.error('未登录'); return }
       const r = await fetch('/api/test-notify', { method: 'POST', headers: { authorization: `Bearer ${session.access_token}` } })
-      const j = await r.json() as { sent?: number }
-      toast.success(`测试通知已发送（${j.sent ?? 0} 个通道）`)
+      const j = await r.json() as { sent?: number; results?: Array<{ channel: string; ok: boolean; error?: string }> }
+      const results = j.results ?? []
+      const bad = results.filter(x => !x.ok)
+      if (results.length === 0) {
+        setTestResult({ ok: false, text: '没有可用的通道：先订阅推送，或配置 Server酱 / Telegram' })
+        toast.error('没有可用的通道')
+        return
+      }
+      if (bad.length === 0) {
+        setTestResult({ ok: true, text: `${j.sent ?? 0} 个通道已送达` })
+        toast.success(`测试通知已发送（${j.sent ?? 0} 个通道）`)
+        return
+      }
+      // 失败原样回显服务端错误（chat not found / code 400 …），不再只给一个笼统的「发送失败」
+      const text = bad.map(b => `${CHANNEL_CN[b.channel] ?? b.channel}：${b.error ?? '失败'}`).join('；')
+      setTestResult({ ok: false, text })
+      toast.error('部分通道失败', { description: text })
     } catch { toast.error('发送失败，请重试') }
   }
 
@@ -146,6 +165,11 @@ export function NotificationSection() {
             )}
             <Button size="sm" variant="outline" onClick={testSend} disabled={busy || (!subscribed && !scKey.trim() && !tgToken.trim())}>测试发送</Button>
           </div>
+          {testResult && (
+            <p className={`pl-7 text-[10px] ${testResult.ok ? 'text-muted-foreground/70' : 'text-destructive'}`}>
+              上次测试：{testResult.text}
+            </p>
+          )}
           {isIOS && <p className="text-[10px] text-muted-foreground/70">📱 iPhone：请先分享到主屏幕（添加到主屏幕）后使用推送。</p>}
           {isAndroidChrome && <p className="text-[10px] text-muted-foreground/70">🤖 安卓 Chrome 的推送服务（FCM）在中国大陆不可用，请配置下方 Server酱通过微信接收。</p>}
         </div>

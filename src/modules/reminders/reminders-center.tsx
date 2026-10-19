@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useReminders } from './api'
+import { useReminderStore } from './store'
 import { useTaskMutations, useTasks } from '@/modules/overview/api'
 import { useExams } from '@/modules/study/api'
 import { useStudyGoals } from '@/modules/study/goals-api'
@@ -27,8 +28,15 @@ const ROW_TONE: Record<ReminderState, string> = {
   upcoming: 'border-border bg-card',
 }
 
+/** 距上次服务端扫描的分钟数（负数/坏值一律当 0） */
+function minutesSince(iso: string): number {
+  const ms = Date.now() - new Date(iso).getTime()
+  return Number.isFinite(ms) ? Math.max(0, Math.round(ms / 60000)) : 0
+}
+
 export default function RemindersCenter() {
   const { data: reminders, isLoading, isError } = useReminders()
+  const scannedAt = useReminderStore(s => s.scannedAt)
   const { data: tasks } = useTasks()
   const { data: exams } = useExams()
   const { data: goals } = useStudyGoals()
@@ -55,6 +63,12 @@ export default function RemindersCenter() {
       <div className="mb-4">
         <h1 className="text-xl font-bold">提醒中心</h1>
         <p className="text-xs text-muted-foreground mt-0.5">任务到期、考试节点与目标截止 · 到点发通知，逾期标红；把事处理掉，提醒自动消失</p>
+        {/* v1.32：把"多久没扫过"变成可见数字 —— 外部推送迟到的根因之一就是扫描间隔（实测中位 199 分钟） */}
+        {scannedAt && (
+          <p className="mt-1 text-[10px] text-muted-foreground/70">
+            上次扫描：{minutesSince(scannedAt) < 1 ? '刚刚' : `${minutesSince(scannedAt)} 分钟前`} · 迟到的提醒会在下一次扫描时补发
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap gap-1.5 mb-3 text-xs">
         <span className="rounded-full border border-destructive/30 bg-destructive/8 text-destructive px-3 py-1.5">已逾期 {overdueCount}</span>

@@ -364,4 +364,84 @@ describe('api/reminders 入口', () => {
     await handler(makeReq({ method: 'POST', query: { entry: 'telegram-test' }, headers: {} } as never), noAuth as never)
     expect(noAuth.statusCode).toBe(401)
   })
+
+  // —— v1.32：补发窗口 + 通道级记账 ——
+
+  /** 上海时区的「N 分钟前」→ { dueDate, dueTime }（服务端按 +8 固定偏移解析，与机器时区无关） */
+  function recentDue(minutesAgo: number): { dueDate: string; dueTime: string } {
+    const d = new Date(Date.now() + 8 * 3600_000 - minutesAgo * 60_000)
+    const p = (n: number) => String(n).padStart(2, '0')
+    return { dueDate: `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`, dueTime: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}` }
+  }
+
+  it('check：首次扫描晚于到期 5 分钟 → 仍然补发（v1.31 回归：这种情况会被永久静默）', async () => {
+    const { dueDate, dueTime } = recentDue(5)
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: dueDate, due_time: dueTime, user_id: 'u1' })
+    state.insert('wb_channel_configs', { user_id: 'u1', telegram_bot_token: '123:ABC', telegram_chat_id: '456' })
+    state.fetchResults.push({ status: 200, body: '{"ok":true,"result":{"message_id":1}}' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { created: number; sent: number }
+    expect(body.created).toBe(1)
+    expect(body.sent).toBe(1)
+    // 迟到超过 5 分钟 → 文案里说明这是补发，别让人以为是刚发生的
+    expect(state.fetchCalls.find(c => c.url.includes('api.telegram.org'))?.body).toContain('（补发）')
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.ref_id === 't1')?.row.sent_at).toBeTruthy()
+  })
+
+  it('check：迟到超过补发窗口（12 小时）→ 只当历史，不补发', async () => {
+    const { dueDate, dueTime } = recentDue(13 * 60)
+    state.insert('wb_tasks', { id: 't1', title: '很久以前的任务', status: 'todo', due_date: dueDate, due_time: dueTime, user_id: 'u1' })
+    state.insert('wb_channel_configs', { user_id: 'u1', telegram_bot_token: '123:ABC', telegram_chat_id: '456' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { created: number; sent: number }
+    expect(body.created).toBe(1)
+    expect(body.sent).toBe(0)
+    expect(state.fetchCalls.filter(c => c.url.includes('api.telegram.org')).length).toBe(0)
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.ref_id === 't1')?.row.sent_at).toBeTruthy()
+  })
+
+  it('check：推送成功、Telegram 失败 → sent_at 不写；下一轮只补发 Telegram（推送不重发）', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p', keys_auth: 'a', user_agent: 't', created_at: '2026-01-01T00:00:00.000Z' })
+    state.insert('wb_channel_configs', { user_id: 'u1', telegram_bot_token: '123:ABC', telegram_chat_id: '456' })
+    state.fetchResults.push({ status: 400, body: '{"ok":false,"description":"chat not found"}' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { sent: number; skipped: number }
+    expect(body.sent).toBe(1) // 只有推送送达
+    expect(body.skipped).toBe(1) // 这一行没送齐
+    const row = state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row
+    expect(row?.sent_at).toBeNull() // 旧的单一 sent_at 会在这里被推送「掩盖」掉
+    expect(row?.sent_channels).toMatchObject({ webpush: true, errors: { telegram: 'chat not found' } })
+
+    // 第二轮：Telegram 修好 → 只补发 Telegram，推送不再重发
+    state.fetchResults.push({ status: 200, body: '{"ok":true,"result":{"message_id":2}}' })
+    const res2 = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res2 as never)
+    expect(state.sent.length).toBe(1)
+    expect(state.fetchCalls.filter(c => c.url.includes('api.telegram.org')).length).toBe(2)
+    expect(state.rows.find(r => r.table === 'wb_reminders' && r.row.id === 'r1')?.row.sent_at).toBeTruthy()
+  })
+
+  it('check：返回 scannedAt（提醒中心据此显示「上次扫描 N 分钟前」）', async () => {
+    state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { scannedAt?: string }
+    expect(typeof body.scannedAt).toBe('string')
+    expect(Math.abs(Date.now() - new Date(String(body.scannedAt)).getTime())).toBeLessThan(60_000)
+  })
+
+  it('test-notify：逐通道返回结果与失败原因（旧版只回一个 sent 计数，Telegram 失败被吞）', async () => {
+    state.insert('wb_channel_configs', { user_id: 'u1', telegram_bot_token: '123:ABC', telegram_chat_id: '456' })
+    state.fetchResults.push({ status: 400, body: '{"ok":false,"description":"chat not found"}' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'POST', query: { entry: 'test' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { sent: number; results: Array<{ channel: string; ok: boolean; error?: string }> }
+    expect(body.sent).toBe(0)
+    expect(body.results).toEqual([{ channel: 'telegram', ok: false, error: 'chat not found' }])
+  })
 })

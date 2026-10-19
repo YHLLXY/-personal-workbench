@@ -14,7 +14,7 @@ import { QuickCapture } from './quick-capture'
 import { ShortcutsDialog } from './shortcuts-dialog'
 import { OnboardingOverlay } from './onboarding'
 import { useGlobalHotkeys } from './hotkeys'
-import { useReminderSync } from '@/modules/reminders/api'
+import { useReminderSync, useReminderTimer } from '@/modules/reminders/api'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { greeting } from '@/lib/greeting'
 
@@ -33,6 +33,7 @@ export function Shell() {
   const setCaptureTab = useUiStore(s => s.setCaptureTab)
   useGlobalHotkeys()
   useReminderSync() // 订阅提醒数据 → 更新 store 未读数 → Shell 重渲染 → 侧边栏角标联动
+  useReminderTimer() // 页面开着时在下一条提醒的计划时刻自动重查（cron 是小时级，靠它保证准点）
   const navigate = useNavigate()
   const location = useLocation() // 订阅路由变化，确保 active 样式刷新
   const [offline, setOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine)

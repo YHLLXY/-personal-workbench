@@ -109,7 +109,9 @@ export function planReminders(existing: ExistingReminder[], computed: ReminderSp
   for (const spec of computed) {
     const prev = prevByKey.get(`${spec.refType}:${spec.refId}:${spec.kind}`)
     if (!prev) { plan.create.push(spec); continue }
-    if (prev.scheduledAt !== spec.scheduledAt) {
+    // ⚠️ 不能比字符串：PostgREST 回来的 timestamptz 是 "…+00:00"、代码生成的是 "….000Z"，
+    // 字符串永不相等 → 每轮扫描都把每一行判成「改期」（2026-10-19 复现）。按时间戳比。
+    if (new Date(prev.scheduledAt).getTime() !== new Date(spec.scheduledAt).getTime()) {
       plan.update.push({ id: prev.id, scheduledAt: spec.scheduledAt, resetDelivery: new Date(spec.scheduledAt).getTime() > now.getTime() })
     }
   }
@@ -122,16 +124,41 @@ export function isDueNow(spec: { scheduledAt: string }, now: Date): boolean {
   return new Date(spec.scheduledAt).getTime() <= now.getTime()
 }
 
-/** 提醒文案（服务端发送用；前端有独立轻量版，不 import 本文件） */
-export function reminderText(kind: ReminderKind, title: string, date: string, time: string | null): string {
-  switch (kind) {
-    case 'due': return `任务「${title}」到点了，记得处理`
-    case 'exam-3d': return `考试「${title}」还有 3 天（${date}）`
-    case 'exam-1d': return `考试「${title}」就在明天（${date}）`
-    case 'exam-1h': return `考试「${title}」1 小时后开始（${date} ${time ?? ''}）`
-    case 'goal-3d': return `学习目标「${title}」还剩 3 天（${date}），每天推进一点`
-    case 'goal-due': return `学习目标「${title}」今天截止（${date}），记得收尾`
-  }
+/**
+ * 补发窗口（v1.32）：新建的行若「已经过期但过期不超过 12 小时」，仍然算待发（下一段 sendDue 立刻补发）；
+ * 超过 12 小时才当作历史、直接标记已发送。
+ * v1.31 是一刀切「只要过期就不补发」——于是第一次扫描晚于到期时刻的提醒**永远不会推送到手机**，
+ * 而应用内横幅照常显示（2026-10-19 复现：created=1, due=1, sent=0）。
+ */
+export const GRACE_MS = 12 * 60 * 60 * 1000
+/** 迟到超过 5 分钟才在文案里加「（补发）」，正常几秒内的调度延迟不打扰 */
+export const LATE_MS = 5 * 60 * 1000
+
+/** 单行已投递的通道状态（wb_reminders.sent_channels，迁移 018）。
+ *  v1.32 之前只有一个 sent_at：任意通道成功即整行算「已发送」，别的通道当次失败就再无补发机会
+ *  —— 2026-10-19 复现「Web Push 成功掩盖 Telegram 失败」。现在按通道记账，成功的通道不重发。 */
+interface ChannelState { webpush?: boolean; serverchan?: boolean; telegram?: boolean; errors?: Record<string, string> }
+
+/** 把各种形态的错误摊平成可读文本（PostgREST/Telegram 的错误是普通对象，不是 Error 实例） */
+function errText(err: unknown): string {
+  const e = err as { description?: string; message?: string; statusCode?: number; status?: number } | null
+  return e?.description ?? e?.message ?? (e ? String(e) : 'unknown')
+}
+
+/** 提醒文案（服务端发送用；前端有独立轻量版，不 import 本文件）。
+ *  late=true（扫描迟到超过 5 分钟）时补一句「（补发）」——不解释清楚的话，用户会以为是刚发生的。 */
+export function reminderText(kind: ReminderKind, title: string, date: string, time: string | null, late = false): string {
+  const text = (() => {
+    switch (kind) {
+      case 'due': return `任务「${title}」到点了，记得处理`
+      case 'exam-3d': return `考试「${title}」还有 3 天（${date}）`
+      case 'exam-1d': return `考试「${title}」就在明天（${date}）`
+      case 'exam-1h': return `考试「${title}」1 小时后开始（${date} ${time ?? ''}）`
+      case 'goal-3d': return `学习目标「${title}」还剩 3 天（${date}），每天推进一点`
+      case 'goal-due': return `学习目标「${title}」今天截止（${date}），记得收尾`
+    }
+  })()
+  return late ? `${text}（补发）` : text
 }
 
 /** PostgREST 行 → 前端 Reminder（camelCase） */
@@ -202,11 +229,11 @@ async function runCheck(sb: SupabaseClient, now: Date): Promise<{ created: numbe
   }
   if (plan.create.length > 0) {
     // upsert + ignoreDuplicates：并发 cron/check 同时算出相同新增时，慢的一方不再撞 unique 约束。
-    // scheduled_at 已过的节点直接写 sent_at = now：**不补发**——否则首次接云端 / 撤销完成 / 从「将来」转回来
-    // 会把几十条历史提醒一次性炸出来（提醒是给未来时刻设的，已经过期的只该以「已逾期」出现在提醒中心）。
+    // 过期多久还算「该补发」：GRACE_MS 以内留 sent_at = null（紧接着的 sendDue 立刻补发，文案带「（补发）」）；
+    // 更早的才标记为历史 —— 既不会把首次接云端/撤销完成的历史一次炸出来，也不会吞掉"扫描来晚了"的正常提醒。
     const { error } = await sb.from('wb_reminders').upsert(plan.create.map(s => ({
       id: genId(), user_id: s.userId, ref_type: s.refType, ref_id: s.refId, kind: s.kind, scheduled_at: s.scheduledAt,
-      sent_at: new Date(s.scheduledAt).getTime() <= now.getTime() ? now.toISOString() : null,
+      sent_at: now.getTime() - new Date(s.scheduledAt).getTime() > GRACE_MS ? now.toISOString() : null,
     })), { onConflict: 'user_id,ref_type,ref_id,kind', ignoreDuplicates: true })
     if (error) throw error
   }
@@ -288,6 +315,7 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
   let sent = 0
   let skipped = 0
   for (const row of dueRes.data ?? []) {
+    const id = String(row.id)
     const uid = String(row.user_id)
     const kind = row.kind as ReminderKind
     const refType = row.ref_type as 'task' | 'exam' | 'goal'
@@ -298,65 +326,112 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
     // refType 决定 ref 来自哪个 map，故按 refType 分支后安全断言具体类型
     const date = refType === 'task' ? String((ref as TaskLike).dueDate) : refType === 'goal' ? String((ref as GoalLike).deadline) : String((ref as ExamLike).examDate)
     const time = refType === 'task' ? String((ref as TaskLike).dueTime) : ''
-    const text = reminderText(kind, ref.title, date, time)
+    const late = now.getTime() - new Date(String(row.scheduled_at)).getTime()
+    const text = reminderText(kind, ref.title, date, time, late > LATE_MS)
     const payload = JSON.stringify({ title: '个人工作台提醒', body: text, url: '/reminders' })
 
-    let delivered = 0
+    // 按通道记账（迁移 018）：已成功的通道不重发，失败的通道下一轮补发。
+    // 旧的单一 sent_at 语义是「任一通道成功即整行算送达」，Telegram 当次失败就永久静默（2026-10-19 复现）。
+    const state: ChannelState = { ...((row.sent_channels as ChannelState | null) ?? {}) }
+    const errors: Record<string, string> = { ...(state.errors ?? {}) }
     const subs = (subsByUser.get(uid) ?? []).map(s => JSON.parse(s) as { endpoint: string; keys: { p256dh: string; auth: string } })
-    for (const sub of subs) {
-      try {
-        await webpush.sendNotification(sub, payload)
-        sent++
-        delivered++
-      } catch (err) {
-        const code = (err as { statusCode?: number }).statusCode
-        if (code === 410 || code === 404) {
-          // 过期订阅：删除
-          try { await sb.from('wb_push_subscriptions').delete().eq('endpoint', sub.endpoint) } catch { /* 静默 */ }
-        } else skipped++
+    const scKey = chanByUser.get(uid)
+    const tg = tgByUser.get(uid)
+    let configured = 0
+    let delivered = 0
+
+    // ① Web Push：多台设备只算一个通道，一台成功即视为该通道已送达
+    if (subs.length > 0) {
+      configured++
+      if (state.webpush) delivered++
+      else {
+        for (const sub of subs) {
+          try {
+            await webpush.sendNotification(sub, payload)
+            sent++
+            state.webpush = true
+            delivered++
+            delete errors.webpush
+            break
+          } catch (err) {
+            const code = (err as { statusCode?: number }).statusCode
+            if (code === 410 || code === 404) {
+              // 过期订阅：删除
+              try { await sb.from('wb_push_subscriptions').delete().eq('endpoint', sub.endpoint) } catch { /* 静默 */ }
+            }
+            errors.webpush = `HTTP ${code ?? '?'}`
+          }
+        }
       }
     }
-    const scKey = chanByUser.get(uid)
+    // ② Server酱
     if (scKey) {
-      try {
-        // Server酱成功返回 {"code":0}；错误为 HTTP 200 + 非 0 code，不能只看 fetch 是否 resolve
-        const r = await fetch(`https://sctapi.ftqq.com/${scKey}.send`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: `title=${encodeURIComponent('个人工作台提醒')}&desp=${encodeURIComponent(text)}`,
-          signal: AbortSignal.timeout(5000),
-        })
-        const j = (await r.json().catch(() => null)) as { code?: number } | null
-        if (r.ok && j?.code === 0) { sent++; delivered++ } else skipped++
-      } catch { skipped++ }
+      configured++
+      if (state.serverchan) delivered++
+      else {
+        try {
+          // Server酱成功返回 {"code":0}；错误为 HTTP 200 + 非 0 code，不能只看 fetch 是否 resolve
+          const r = await fetch(`https://sctapi.ftqq.com/${scKey}.send`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: `title=${encodeURIComponent('个人工作台提醒')}&desp=${encodeURIComponent(text)}`,
+            signal: AbortSignal.timeout(5000),
+          })
+          const j = (await r.json().catch(() => null)) as { code?: number } | null
+          if (r.ok && j?.code === 0) { sent++; state.serverchan = true; delivered++; delete errors.serverchan }
+          else errors.serverchan = j?.code === undefined ? `HTTP ${r.status}` : `code ${j.code}`
+        } catch (err) { errors.serverchan = errText(err) }
+      }
     }
-    const tg = tgByUser.get(uid)
+    // ③ Telegram（服务端出网，不受大陆网络限制）
     if (tg) {
-      try { await sendTelegram(tg.token, tg.chatId, text); sent++; delivered++ } catch { skipped++ }
+      configured++
+      if (state.telegram) delivered++
+      else {
+        try { await sendTelegram(tg.token, tg.chatId, text); sent++; state.telegram = true; delivered++; delete errors.telegram }
+        catch (err) { errors.telegram = errText(err) }
+      }
     }
-    // 真实送达才标记 sent_at；无通道/全部失败时保留 NULL，下次 cron/check 会补发
-    if (delivered > 0) await sb.from('wb_reminders').update({ sent_at: now.toISOString() }).eq('id', String(row.id))
+
+    if (Object.keys(errors).length > 0) state.errors = errors
+    else delete state.errors
+    // 全部「已配置」的通道都送达才算这一行送达；否则保留 sent_at = NULL，下一轮只补发失败的通道
+    const done = configured > 0 && delivered === configured
+    await sb.from('wb_reminders').update(done ? { sent_channels: state, sent_at: now.toISOString() } : { sent_channels: state }).eq('id', id)
+    if (!done) skipped++
   }
   return { sent, skipped }
 }
 
+/** 单通道测试结果：设置页据此逐行显示成功/失败与**服务端原文**（旧版把错误全吞了，只能看到 sent 计数） */
+interface ChannelResult { channel: 'webpush' | 'serverchan' | 'telegram'; ok: boolean; error?: string }
+
 /** 测试发送：向本人全部通道发送一条测试通知 */
-async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number }> {
+async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number; results: ChannelResult[] }> {
   ensureVapid()
   const { data: subs, error: subsError } = await sb.from('wb_push_subscriptions').select('*')
   const { data: configs, error: configsError } = await sb.from('wb_channel_configs').select('*')
   if (subsError) throw subsError
   if (configsError) throw configsError
   let sent = 0
+  const results: ChannelResult[] = []
   const payload = JSON.stringify({ title: '个人工作台提醒', body: '这是一条测试通知，通知功能已就绪 ✅', url: '/settings' })
-  for (const s of subs ?? []) {
-    try {
-      await webpush.sendNotification({ endpoint: String(s.endpoint), keys: { p256dh: String(s.keys_p256dh), auth: String(s.keys_auth) } }, payload)
-      sent++
-    } catch (err) {
-      const code = (err as { statusCode?: number }).statusCode
-      if (code === 410 || code === 404) { try { await sb.from('wb_push_subscriptions').delete().eq('endpoint', String(s.endpoint)) } catch { /* 静默 */ } }
+  // Web Push：多台设备聚合为一条结果
+  if ((subs ?? []).length > 0) {
+    let ok = 0
+    let lastError = ''
+    for (const s of subs ?? []) {
+      try {
+        await webpush.sendNotification({ endpoint: String(s.endpoint), keys: { p256dh: String(s.keys_p256dh), auth: String(s.keys_auth) } }, payload)
+        ok++
+      } catch (err) {
+        const code = (err as { statusCode?: number }).statusCode
+        lastError = `HTTP ${code ?? '?'}`
+        if (code === 410 || code === 404) { try { await sb.from('wb_push_subscriptions').delete().eq('endpoint', String(s.endpoint)) } catch { /* 静默 */ } }
+      }
     }
+    sent += ok
+    results.push(ok > 0 ? { channel: 'webpush', ok: true } : { channel: 'webpush', ok: false, error: lastError || '无有效订阅' })
   }
   for (const c of configs ?? []) {
     if (!c.serverchan_key) continue
@@ -369,14 +444,19 @@ async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number 
         signal: AbortSignal.timeout(5000),
       })
       const j = (await r.json().catch(() => null)) as { code?: number } | null
-      if (r.ok && j?.code === 0) sent++
-    } catch { /* 静默 */ }
+      if (r.ok && j?.code === 0) { sent++; results.push({ channel: 'serverchan', ok: true }) }
+      else results.push({ channel: 'serverchan', ok: false, error: j?.code === undefined ? `HTTP ${r.status}` : `code ${j.code}` })
+    } catch (err) { results.push({ channel: 'serverchan', ok: false, error: errText(err) }) }
   }
   for (const c of configs ?? []) {
     if (!c.telegram_bot_token || !c.telegram_chat_id) continue
-    try { await sendTelegram(String(c.telegram_bot_token), String(c.telegram_chat_id), '这是一条测试通知，通知功能已就绪 ✅'); sent++ } catch { /* 静默 */ }
+    try {
+      await sendTelegram(String(c.telegram_bot_token), String(c.telegram_chat_id), '这是一条测试通知，通知功能已就绪 ✅')
+      sent++
+      results.push({ channel: 'telegram', ok: true })
+    } catch (err) { results.push({ channel: 'telegram', ok: false, error: errText(err) }) }
   }
-  return { sent }
+  return { sent, results }
 }
 
 // ========== 函数入口 ==========
@@ -400,7 +480,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data, error } = await sb.from('wb_reminders').select('*').order('scheduled_at', { ascending: false })
       if (error) throw error // 瞬态失败不再静默返回空列表
       // 行需映射为 camelCase：前端 Reminder 形状消费（countUnread/横幅/列表均读 refType/scheduledAt/dismissedAt）
-      return res.json({ ok: true, ...result, reminders: (data ?? []).map(reminderRowToClient), vapidPublicKey: process.env.VITE_VAPID_PUBLIC_KEY ?? null })
+      // scannedAt：提醒中心据此显示「上次扫描 N 分钟前」，让"多久没扫"变成可见数字
+      return res.json({ ok: true, ...result, reminders: (data ?? []).map(reminderRowToClient), vapidPublicKey: process.env.VITE_VAPID_PUBLIC_KEY ?? null, scannedAt: new Date().toISOString() })
     }
     if (entry === 'test') {
       const sb = await authUser(req)
