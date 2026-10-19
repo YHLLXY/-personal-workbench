@@ -9,7 +9,8 @@ name: 定时提醒
 #   间隔中位 199 分钟、最长 410 分钟，没有一个 ≤ 60 分钟 —— "*/20" 只是愿望，不是现实。
 # 现在的三层触发：
 #   ① 页面开着：前端 useReminderTimer 在下一条提醒的计划时刻自动重查（准点）
-#   ② 外部 ping：cron-job.org 每 5 分钟打一次 /api/cron-notify（主触发器，见 README「外部提醒」）
+#   ② 外部定时：Supabase Cron（pg_cron + pg_net）每 5 分钟打一次 /api/cron-notify（主触发器，
+#      见 supabase/cron/reminders-5m.sql）。第三方 ping 服务注册在部分网络下不通，不作为首选
 #   ③ 这里：GitHub 兜底，页面没开、ping 也挂了的时候还能收尸
 #
 # ⚠️ 每 20 分钟一次，不是每小时：2026-10-16 实测 GitHub 会**丢弃**大部分 tick——

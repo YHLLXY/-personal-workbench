@@ -127,12 +127,14 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
    | 层 | 谁在跑 | 精度 | 说明 |
    |---|---|---|---|
    | ① 页面开着 | 前端 `useReminderTimer` | 准点 | 到「下一条提醒的计划时刻」自动重查 `/api/check-reminders`，服务端顺手生成+发送 |
-   | ② 外部 ping（**主触发器**） | cron-job.org | ~5 分钟 | 免费、无需改代码，见下方配置 |
+   | ② 外部定时（**主触发器**） | Supabase Cron（pg_cron + pg_net） | ~5 分钟 | 不用新账号，SQL 见 `supabase/cron/reminders-5m.sql` |
    | ③ GitHub Actions 兜底 | `.github/workflows/reminders.yml` | **实测中位 199 分钟、最长 410 分钟** | 2026-10-15~19 的 25 次运行，没有一个间隔 ≤ 60 分钟 |
 
-   **② 怎么配**（约 2 分钟）：到 [cron-job.org](https://cron-job.org) 建一个 job → URL 填 `https://<你的域名>/api/cron-notify` → 方法 `POST` → 请求头加 `Authorization: Bearer <CRON_SECRET>` → 间隔 5 分钟。想验证是否通：手动执行一次，HTTP 200 且响应里有 `{"ok":true,...}` 即成功（401 = CRON_SECRET 不一致）。
-
-   **为什么不用 Vercel Cron**：Hobby 只允许「每天一次」且按小时精度（±59 分钟），做不了分钟级提醒；Pro 才支持每分钟。
+   **② 怎么配**：把 `supabase/cron/reminders-5m.sql` 里的 `<CRON_SECRET>` 换成真值，在 Supabase → SQL Editor 整段跑一次。它建一个 `*/5 * * * *` 的 job，用 `net.http_post` 打 `/api/cron-notify`。
+   自检：等 1 分钟，执行 `select id, status_code, error_msg from net._http_response order by id desc limit 5;` —— 200 = 通了，401 = 密钥不对。
+   **为什么不用第三方 ping**：cron-job.org 这类服务的注册在部分网络下走不通（本项目就卡过）；Vercel Cron 的 Hobby 档只允许**每天一次**且按小时精度（±59 分钟），做不了分钟级提醒。Supabase Cron 跑在自己库里，没有这两类问题。
+   **备选（当 Supabase Cron 不可用时）**：本机 Windows 任务计划每 5 分钟调一次同一接口——
+   `schtasks /Create /SC MINUTE /MO 5 /TN wb-reminders /TR "curl -s -X POST -H \"Authorization: Bearer <CRON_SECRET>\" https://<你的域名>/api/cron-notify"`。缺点是电脑关机时这一层不工作（此时仍有 ① 和 ③）。
 
    **迟到不会丢**（v1.32）：新建提醒只有在「已过期超过 12 小时」时才标记为历史、不补发；其余一律补发，并在文案里注明「（补发）」。送达按通道记账（`wb_reminders.sent_channels`），成功的通道不重发、失败的下一轮只补它自己。
 

@@ -136,5 +136,6 @@
 ### 遗留 / 用户侧
 
 - 迁移 `018_reminder_channels.sql` **待你在 Supabase 执行**（顺序：**先 018，再部署** v1.32 —— 缺列会让 cron 500）。
-- cron-job.org 的 5 分钟 ping 需要你建一个 job（步骤见 README「定时提醒」）。
+- 主触发器改用 **Supabase Cron（pg_cron + pg_net）**：不用新账号，SQL 见 `supabase/cron/reminders-5m.sql`。
+  （教训：上一版建议的第三方 ping 服务用户根本注册不上，方案卡了一次；这次先确认「用户能不能用」再写进方案。）
 
