@@ -119,10 +119,24 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 
 ## 部署（Vercel + Supabase）
 
-1. **Supabase**：建项目，SQL Editor 按序执行 `supabase/migrations/` 全部迁移（001→016，002 编号重复系历史既成；全部幂等，可重复执行）。
+1. **Supabase**：建项目，SQL Editor 按序执行 `supabase/migrations/` 全部迁移（001→018，002 编号重复系历史既成；全部幂等，可重复执行）。**升级到 v1.32 时注意顺序：先执行 018，再部署**——新代码读写 `wb_reminders.sent_channels`，缺列会让 cron / check 直接 500。
 2. **Web Push 密钥**：`npx web-push generate-vapid-keys` 生成密钥对。
 3. **Vercel**：导入仓库（框架预设 Vite，构建命令 `npm run build`），按下表配置环境变量。
-4. **定时提醒**：**仓库里已经配好了 `.github/workflows/reminders.yml`** —— 每 20 分钟调一次 `POST /api/cron-notify`（Bearer `CRON_SECRET` 鉴权），扫描到期任务/考试/学习目标并发送 Web Push · Server酱 · Telegram。**为什么每 20 分钟**：任务到期时间由用户自设（如 14:00），低频会晚很久；而 GitHub 的计划任务本身会**丢弃大部分 tick**（2026-10-16 实测：9 个整点只触发 2 次，且晚 37~48 分钟），所以用高一点的频次换命中率——公开仓库不计分钟数。**这是兜底**：前端打开提醒相关页面时也会调一次 `/api/check-reminders` 做全量扫描并发发送，所以只要当天开过 App 提醒就一定会出去。（因为要每小时跑，特意选了 GitHub Actions——公开仓库不计分钟数。）另有 `/api/check-reminders`、`/api/test-notify` 两个辅助入口（均经 `vercel.json` rewrites 暴露）。
+4. **定时提醒**：三层触发，缺一不可。
+
+   | 层 | 谁在跑 | 精度 | 说明 |
+   |---|---|---|---|
+   | ① 页面开着 | 前端 `useReminderTimer` | 准点 | 到「下一条提醒的计划时刻」自动重查 `/api/check-reminders`，服务端顺手生成+发送 |
+   | ② 外部 ping（**主触发器**） | cron-job.org | ~5 分钟 | 免费、无需改代码，见下方配置 |
+   | ③ GitHub Actions 兜底 | `.github/workflows/reminders.yml` | **实测中位 199 分钟、最长 410 分钟** | 2026-10-15~19 的 25 次运行，没有一个间隔 ≤ 60 分钟 |
+
+   **② 怎么配**（约 2 分钟）：到 [cron-job.org](https://cron-job.org) 建一个 job → URL 填 `https://<你的域名>/api/cron-notify` → 方法 `POST` → 请求头加 `Authorization: Bearer <CRON_SECRET>` → 间隔 5 分钟。想验证是否通：手动执行一次，HTTP 200 且响应里有 `{"ok":true,...}` 即成功（401 = CRON_SECRET 不一致）。
+
+   **为什么不用 Vercel Cron**：Hobby 只允许「每天一次」且按小时精度（±59 分钟），做不了分钟级提醒；Pro 才支持每分钟。
+
+   **迟到不会丢**（v1.32）：新建提醒只有在「已过期超过 12 小时」时才标记为历史、不补发；其余一律补发，并在文案里注明「（补发）」。送达按通道记账（`wb_reminders.sent_channels`），成功的通道不重发、失败的下一轮只补它自己。
+
+   辅助入口：`/api/check-reminders`（用户 JWT，返回提醒 + `scannedAt`）、`/api/test-notify`（用户 JWT，返回**逐通道**结果 `results[]`）。
 5. **AI 日报**（v1.27，需先执行迁移 015 + 016）：外部定时器每天两次——**仓库里已经配好了 `.github/workflows/digest.yml`**：每天北京时间 **04:00** 由一个 GitHub Actions job 依次跑「抓取 → 等 30 秒 → 再抓一次 → 编排日报」。（三步放在**同一个 job**里，顺序是确定的；拆成三个独立定时任务的话，各自的调度延迟会把 build 排到 enrich 前面。）手动触发：Actions 页面选「AI 日报」→ Run workflow。两条命令分别是 `GET /api/digest-enrich`（抓取 → 落库 → 逐条 AI 摘要 → 事件聚簇）与 `GET /api/digest-build`（编排当日日报），均 Bearer `CRON_SECRET`。**为什么是 04:00 而不是 06:00**：GitHub 的计划任务不保证准时（首次实测排 06:00、实际 07:57 才跑，晚近 2 小时），提前 2 小时起跑，用户起床时才真的看得到——生成得早没有副作用，晚才有。**时间排在 DeepSeek 空闲时段**（高峰 = 北京周一至周五 9:00–12:00 / 14:00–18:00，其余半价）。详见 [docs/plans/PLAN_V127_AI日报接入.md](./docs/plans/PLAN_V127_AI日报接入.md)。
 
    **上线前先跑一次自检**：`GET /api/digest-selftest`（同样 Bearer `CRON_SECRET`）会逐项探测环境变量 / 4 张表 / 归属用户（含用户总数与来源）/ Telegram / 热榜抓取 / 模型连通，任何一项失败都不影响其余项，一次调用就能定位「到底哪儿没配好」。**只报有没有与长度，不回显任何密钥。**
@@ -158,7 +172,7 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 ├── api/                    # Vercel Serverless Functions（单文件约束）：auth / hot / projects / reminders / weather / air-quality / digest
 ├── e2e/                    # Playwright 冒烟测试
 ├── scripts/                # release.mjs 发版 · check-bundle.mjs 体积门禁
-├── supabase/migrations/    # 001–016 幂等 SQL 迁移
+├── supabase/migrations/    # 001–018 幂等 SQL 迁移
 ├── src/
 │   ├── app/                # 应用壳层：布局导航 / 首页 / 主题 / 认证 / 命令面板 / 快速捕获 / 全局状态
 │   ├── registry.ts         # 模块注册表（路由 + 侧边栏 + 底部 Tab + 首页卡片）
