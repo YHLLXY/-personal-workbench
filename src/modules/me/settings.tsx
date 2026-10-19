@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ChevronRight, Download, HardDrive, History, KeyRound, LogOut, Palette, Smartphone, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -389,7 +390,6 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
 
 /** 关于：动态版本号 + 应用内更新日志 + PWA 安装引导 */
 function AboutSection() {
-  const [logOpen, setLogOpen] = useState(false)
   const [iosHelpOpen, setIosHelpOpen] = useState(false)
   const { canInstall, installed } = usePwaInstall()
   const isIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent)
@@ -419,32 +419,13 @@ function AboutSection() {
             <div className="text-sm">更新日志</div>
             {latest && <p className="mt-0.5 text-xs text-muted-foreground">{latest.version} · {latest.title}</p>}
           </div>
-          <Button size="sm" variant="ghost" aria-label="查看更新日志" onClick={() => setLogOpen(true)}>
+          {/* v1.32：更新日志改成整页 /changelog —— 弹窗里 max-h 内部滚动在 PC 上又窄又挤 */}
+          <Link to="/changelog" aria-label="查看更新日志" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground">
             <ChevronRight className="size-4" />
-          </Button>
+          </Link>
         </div>
       </div>
       <p className="mt-2 px-1 text-[10px] text-muted-foreground/70">我的工作台 {latest?.version ?? ''} —— 待办、专注、打卡、复盘，一处安放。数据仅你本人可见；导出文件请自行妥善保管。</p>
-
-      <Dialog open={logOpen} onOpenChange={setLogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>更新日志</DialogTitle></DialogHeader>
-          <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-            {CHANGELOG.map(e => (
-              <div key={e.version}>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-sm font-semibold text-primary">{e.version}</span>
-                  <span className="text-[10px] text-muted-foreground">{e.date}</span>
-                </div>
-                <div className="mt-0.5 text-xs font-medium">{e.title}</div>
-                <ul className="mt-1 space-y-0.5">
-                  {e.items.map((it, i) => <li key={i} className="text-xs leading-relaxed text-muted-foreground">· {it}</li>)}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={iosHelpOpen} onOpenChange={setIosHelpOpen}>
         <DialogContent className="sm:max-w-sm">

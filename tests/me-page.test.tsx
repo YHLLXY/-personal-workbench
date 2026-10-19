@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 
 vi.mock('@/lib/db', () => ({
   isCloudMode: false,
@@ -29,7 +30,8 @@ import { CHANGELOG } from '../src/app/changelog'
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
 function renderPage() {
-  return render(<QueryClientProvider client={qc}><SettingsPage /></QueryClientProvider>)
+  // v1.32：「关于」里的更新日志改成 <Link to="/changelog">，必须活在 Router 里
+  return render(<QueryClientProvider client={qc}><MemoryRouter><SettingsPage /></MemoryRouter></QueryClientProvider>)
 }
 
 describe('SettingsPage（本地模式）', () => {
@@ -68,11 +70,12 @@ describe('SettingsPage（本地模式）', () => {
     expect(screen.getByLabelText('头像颜色 #7D8CA3')).toBeTruthy()
   })
 
-  it('更新日志弹窗列出各版本条目', async () => {
+  it('更新日志改成整页入口（v1.32：不再用 max-h 弹窗内部滚动）', () => {
     renderPage()
-    fireEvent.click(screen.getByRole('button', { name: '查看更新日志' }))
-    await waitFor(() => expect(screen.getByText(CHANGELOG[0].title)).toBeTruthy())
-    // 至少能翻到早期版本
-    expect(screen.getByText('v1.2')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '查看更新日志' })).toBeNull()
+    const link = screen.getByRole('link', { name: '查看更新日志' })
+    expect(link.getAttribute('href')).toBe('/changelog')
+    // 关于区仍显示最新版本号（页面里两处：更新日志行 + 页脚，故用 AllBy）
+    expect(screen.getAllByText(new RegExp(CHANGELOG[0].version)).length).toBeGreaterThan(0)
   })
 })

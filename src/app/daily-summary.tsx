@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Progress } from '@/components/ui/progress'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Button } from '@/components/ui/button'
-import { CalendarDays, ChevronDown, ChevronUp, ClipboardList, Sparkles } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowRight, CalendarDays, ClipboardList, Sparkles } from 'lucide-react'
+import { RichText } from '@/components/rich-text'
 import { useTasks, useTaskMutations, todayTasks } from '@/modules/overview/api'
 import { useExamsSoon } from '@/modules/study/api'
 import { todayStr, localDateOfISO } from '@/lib/db/types'
@@ -35,7 +36,6 @@ export default function DailySummary() {
   const { data: exams, isLoading: examsLoading } = useExamsSoon()
   const { update } = useTaskMutations()
   const [open, setOpen] = useState(false)
-  const [showAllLog, setShowAllLog] = useState(false)
   const today = todayStr()
 
   // 打开应用弹一次：数据就绪后判断，sessionStorage 标记避免刷新重复弹
@@ -121,7 +121,8 @@ export default function DailySummary() {
             </section>
           )}
 
-          {/* 更新日志 */}
+          {/* 更新日志：弹窗里只放最新一版做引子，正文去 /changelog 整页读（v1.32）。
+              旧版把全部历史塞进 max-h-[80vh] 内部滚动，PC 上又窄又挤出横向滚动条。 */}
           <section>
             <h3 className="flex items-center gap-1.5 text-sm font-semibold">
               <Sparkles className="size-4 text-primary" /> 更新日志
@@ -130,35 +131,16 @@ export default function DailySummary() {
               <p className="text-sm font-medium">
                 {latest.version} · {latest.date} · {latest.title}
               </p>
-              <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-                {latest.items.map(i => (
-                  <li key={i}>· {i}</li>
+              <ul className="mt-1 space-y-0.5 text-xs leading-relaxed text-muted-foreground">
+                {latest.items.slice(0, 2).map((i, idx) => (
+                  <li key={idx} className="line-clamp-2"><RichText text={i} /></li>
                 ))}
               </ul>
             </div>
-            {CHANGELOG.length > 1 && (
-              <Button variant="ghost" size="sm" className="mt-1 h-6 text-xs" onClick={() => setShowAllLog(v => !v)}>
-                {showAllLog ? '收起历史' : '查看全部历史'}
-                {showAllLog ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-              </Button>
-            )}
-            {showAllLog && (
-              <ul className="mt-1 space-y-2 pl-1 text-xs text-muted-foreground">
-                {CHANGELOG.slice(1).map(e => (
-                  <li key={e.version}>
-                    <span className="font-medium">
-                      {e.version} · {e.date}
-                    </span>{' '}
-                    {e.title}
-                    <ul className="pl-3">
-                      {e.items.map(i => (
-                        <li key={i}>· {i}</li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <Link to="/changelog" onClick={() => setOpen(false)}
+              className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:underline">
+              查看完整更新日志<ArrowRight className="size-3" />
+            </Link>
           </section>
         </div>
       </DialogContent>

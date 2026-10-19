@@ -161,8 +161,8 @@ test('我的页：五段式渲染 → 版本号动态展示 → 更新日志弹�
   await expect(page.getByText('💾 本地存储')).toBeVisible()
   // v1.23：关于区版本号动态读取 CHANGELOG（修复硬编码 v1.2）
   await expect(page.getByText(/我的工作台 v1\.\d+/)).toBeVisible()
-  await page.getByRole('button', { name: '查看更新日志' }).click()
-  const dialog = page.getByRole('dialog')
-  await expect(dialog).toBeVisible()
-  await expect(dialog.getByText(/v1\.\d+/).first()).toBeVisible()
+  // v1.32：更新日志从弹窗改成整页（弹窗内部滚动在 PC 上又窄又挤）
+  await page.getByRole('link', { name: '查看更新日志' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: '更新日志' })).toBeVisible()
+  await expect(page.getByText(/^v1\.\d+\.\d+$/).first()).toBeVisible()
 })

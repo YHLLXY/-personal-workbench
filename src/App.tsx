@@ -17,6 +17,8 @@ import BootAnimation from './app/boot-animation'
 const ProjectDetailPage = lazyRetry(() => import('./modules/projects/project-detail'))
 // v1.23 起「我的」页懒加载（曾静态打进入口 chunk，是全站唯一例外）
 const SettingsPage = lazyRetry(() => import('./modules/me/settings').then(m => ({ default: m.SettingsPage })))
+// 更新日志整页（v1.32）：changelog 自带 34KB 文案，懒加载避免回填进首屏 chunk
+const ChangelogPage = lazyRetry(() => import('./app/changelog-page'))
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1 } } })
 
@@ -43,6 +45,7 @@ export default function App() {
                   <Route element={<Guard><Shell /></Guard>}>
                     {allSubModules.map(s => <Route key={s.id} path={s.path} element={<s.component />} />)}
                     <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/changelog" element={<ChangelogPage />} />
                     <Route path="/projects/:name" element={<ProjectDetailPage />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Route>

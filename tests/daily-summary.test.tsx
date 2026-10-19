@@ -89,11 +89,13 @@ describe('DailySummary', () => {
     await waitFor(() => expect(repository.updateTask).toHaveBeenCalledWith('t1', { status: 'done' }))
   })
 
-  it('展开可查看全部版本历史', async () => {
+  it('弹窗里只放最新一版，完整历史走 /changelog 整页（v1.32）', async () => {
     renderSummary()
     await screen.findByText(/写实验报告/)
-    screen.getByText('查看全部历史').click()
-    await waitFor(() => expect(screen.getByText(/v1\.0\.0/)).toBeTruthy())
+    // 不再有「查看全部历史」的展开按钮（旧版把 49 个版本塞进 max-h 内部滚动）
+    expect(screen.queryByText('查看全部历史')).toBeNull()
+    const link = screen.getByRole('link', { name: /查看完整更新日志/ })
+    expect(link.getAttribute('href')).toBe('/changelog')
   })
 
   it('今日无任务且无考试时不弹窗', async () => {
