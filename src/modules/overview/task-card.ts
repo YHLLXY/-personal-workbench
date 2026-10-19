@@ -20,17 +20,17 @@ export function dueDateChip(dueDate: string | null, today: string): DueChip | nu
   }
 }
 
-/** 卡片配色（v1.31）：**底色 = 紧急程度，边框 = 焦点优先于紧急程度**。
- *  用主题令牌 + 透明度而不是硬编码色值，深浅色模式自动成立（--destructive #C96A5B / --accent #D9C9A3 本就在暖色系里）。
- *  低优先级刻意**不着色**：三档都上色等于都不突出，低优先级不该抢注意力。
- *  焦点只换边框不换底色 —— 用户明确要求「里面底色还是根据紧急程度」，金色框 + 优先级底色可以同时读出来。 */
-export interface TaskTone { card: string; border: string }
+/** 卡片标识（v1.32）：**底色一律中性，紧急度走左侧 3px 状态轨，焦点仍是金色外框**。
+ *  v1.31 用整卡淡色（destructive/8、accent/12），实测与白卡对比只有 1.18:1 / 1.13:1、深色模式 1.006:1——
+ *  等于用没人能读到的色差编码信息（用户反馈「底色太淡」）。换成有确定形状的实色轨道，深浅色模式都成立。
+ *  低优先级**不给轨道**：三档都上轨等于都不突出。
+ *  完成态轨道保留、降到 40% 不透明度：颜色是"褪到背景里"而不是"突然消失"（用户反馈的第二点）。 */
+export interface TaskTone { rail: string | null; border: string }
 
-export function taskCardTone(task: Pick<Task, 'priority' | 'focus'>): TaskTone {
-  const card = task.priority === 'high' ? 'bg-destructive/8' : task.priority === 'medium' ? 'bg-accent/12' : 'bg-card'
-  const border = task.focus ? 'border-amber-400/70'
-    : task.priority === 'high' ? 'border-destructive/30'
-    : task.priority === 'medium' ? 'border-accent/40'
-    : 'border-border'
-  return { card, border }
+export function taskCardTone(task: Pick<Task, 'priority' | 'focus'>, done = false): TaskTone {
+  // 「中」用 --priority（不是 --accent）：accent 在白卡上只有 1.64:1，3px 轨道等于没画
+  const base = task.priority === 'high' ? 'bg-destructive' : task.priority === 'medium' ? 'bg-priority' : null
+  const rail = base ? (done ? `${base} opacity-40` : base) : null
+  const border = done || !task.focus ? 'border-border' : 'border-amber-400/70'
+  return { rail, border }
 }

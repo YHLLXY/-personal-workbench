@@ -22,27 +22,27 @@ describe('dueDateChip 到期日徽章', () => {
   })
 })
 
-/** v1.31 卡片配色：底色=紧急程度、边框=焦点优先于紧急程度 */
-describe('taskCardTone 卡片配色', () => {
-  const tone = (priority: Task['priority'], focus = false) => taskCardTone({ priority, focus })
+/** v1.32 卡片标识：底色一律中性，紧急度=左侧状态轨，焦点=金边（v1.31 的整卡淡色实测 1.18:1，读不出来） */
+describe('taskCardTone 卡片标识', () => {
+  const tone = (priority: Task['priority'], focus = false, done = false) => taskCardTone({ priority, focus }, done)
 
-  it('底色按紧急程度三档：高红 / 中燕麦黄 / 低默认（低优先级刻意不着色）', () => {
-    expect(tone('high').card).toBe('bg-destructive/8')
-    expect(tone('medium').card).toBe('bg-accent/12')
-    expect(tone('low').card).toBe('bg-card')
+  it('轨道按紧急度三档：高红 / 中燕麦黄 / 低无轨道（低优先级不抢注意力）', () => {
+    expect(tone('high').rail).toBe('bg-destructive')
+    expect(tone('medium').rail).toBe('bg-priority') // --priority 而非 --accent：后者白卡上仅 1.64:1
+    expect(tone('low').rail).toBeNull()
   })
 
-  it('边框按紧急程度', () => {
-    expect(tone('high').border).toBe('border-destructive/30')
-    expect(tone('medium').border).toBe('border-accent/40')
+  it('边框：焦点金黄，其余中性（底色不再承担紧急度）', () => {
+    expect(tone('high').border).toBe('border-border')
     expect(tone('low').border).toBe('border-border')
+    expect(tone('medium', true).border).toBe('border-amber-400/70')
+    expect(tone('high', true).border).toBe('border-amber-400/70')
   })
 
-  it('焦点只把边框换成金黄，底色仍由紧急程度决定', () => {
-    for (const p of ['high', 'medium', 'low'] as const) {
-      const focused = tone(p, true)
-      expect(focused.border).toBe('border-amber-400/70')
-      expect(focused.card).toBe(tone(p, false).card)
-    }
+  it('完成态：轨道保留并降到 40%（颜色褪色而不是消失）', () => {
+    expect(tone('high', false, true).rail).toBe('bg-destructive opacity-40')
+    expect(tone('medium', false, true).rail).toBe('bg-priority opacity-40')
+    expect(tone('low', false, true).rail).toBeNull()
+    expect(tone('high', true, true).border).toBe('border-border')
   })
 })

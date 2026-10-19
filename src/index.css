@@ -21,6 +21,9 @@
   --accent-foreground: #5A4E33;
   --destructive: #C96A5B;
   --destructive-foreground: #FFFFFF;
+  /* v1.32 任务卡状态轨的「中」档：--accent(#D9C9A3) 在白卡上只有 1.64:1，3px 轨道看不见；
+     #A98F55 是 3.11:1（WCAG 1.4.11 非文本对比下限 3:1）。深色模式另配（下方 .dark）。 */
+  --priority: #A98F55;
   --border: #EFEAE0;
   --input: #E4DFD4;
   --ring: #5B8A72;
@@ -45,6 +48,7 @@
   --accent-foreground: #1E2B23;
   --destructive: #D98A7D;
   --destructive-foreground: #1E2B23;
+  --priority: #B3A47F; /* 深色卡 #2E3430 上 5.17:1 */
   --border: #3D453F;
   --input: #434C45;
   --ring: #8FBCA2;
@@ -67,6 +71,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-priority: var(--priority);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

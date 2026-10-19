@@ -7,7 +7,8 @@ import { dueDateChip, taskCardTone } from './task-card'
 import type { DragHandleProps } from '@/lib/drag-sort'
 import { cn } from '@/lib/utils'
 
-const PRIORITY_DOT: Record<Task['priority'], string> = { high: 'bg-destructive', medium: 'bg-accent', low: 'bg-muted-foreground/40' }
+const PRIORITY_DOT: Record<Task['priority'], string> = { high: 'bg-destructive', medium: 'bg-priority', low: 'bg-muted-foreground/40' }
+const PRIORITY_CN: Record<Task['priority'], string> = { high: '高', medium: '中', low: '低' }
 
 export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, onDelete, onPostpone, onToggleDoing, onChecklist, onReschedule, onSkip, drag }: {
   task: Task; done?: boolean; onToggle: () => void; onFocus?: () => void; onEdit: () => void; onDelete: () => void; onPostpone?: () => void
@@ -29,8 +30,9 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
   const checklistEditable = Boolean(onChecklist) && !done
   const note = task.note?.trim()
   const chip = dueDateChip(task.dueDate, todayStr())
-  // 底色 = 紧急程度，边框 = 焦点优先（v1.31，见 task-card.ts）。完成态一律走灰底，不再叠优先级色
-  const tone = taskCardTone(task)
+  // 标识 = 左侧状态轨（v1.32，见 task-card.ts）：底色一律中性，紧急度交给 3px 实色轨道，焦点仍是金边。
+  // 完成态轨道保留并降透明度 —— 颜色褪色而不是消失
+  const tone = taskCardTone(task, done)
   function addChecklistItem() {
     const text = newItem.trim()
     if (!text || !onChecklist) return
@@ -46,7 +48,10 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
     // data-flip-id：FLIP 布局动画锚点（src/lib/flip.ts）——同列表重排平滑（补加星标滑顶，不再瞬跳闪没），
     // 今日↔已完成跨区块连续滑移（坠落/飞回）。一条任务同一时刻只挂载在一个区块，task.id 全局唯一
     <div data-flip-id={task.id} data-drag-id={drag?.id}
-      className={cn('group border rounded-xl px-3 py-2.5 transition-colors', done ? 'opacity-60 bg-muted/40 border-border' : cn(tone.card, tone.border))}>
+      className={cn('group relative overflow-hidden border rounded-xl px-3 py-2.5 transition-colors', done ? 'bg-muted/40 border-border' : cn('bg-card', tone.border))}>
+      {/* 左侧状态轨（v1.32）：整卡淡色与白卡只差 1.18:1，读不出来；改成 3px 实色轨道。
+          完成态由 taskCardTone(task, true) 追加 opacity-40，轨道仍在（不"突然消失"） */}
+      {tone.rail && <span aria-hidden data-rail className={cn('absolute inset-y-0 left-0 w-[3px] transition-opacity duration-200', tone.rail)} />}
       {/* v1.25 卡片信息升级（RESEARCH_TASK_CARD.md）：items-start 让标题完整换行时控件顶对齐；
           焦点/进行中/清单徽章从标题行挪到元信息行，标题不再与徽章/元数据抢同一行宽度 */}
       <div className="flex items-start gap-2">
@@ -74,6 +79,8 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
             {/* 焦点：金黄色实心星（v1.31 用户要求「加上金黄色的星星 + 边框也变金黄」） */}
             {task.focus && !done && <Star className="size-3.5 shrink-0 mt-[3px] text-amber-500 fill-amber-400" strokeWidth={1.7} aria-label="今日焦点" />}
             <span className={cn('size-2 rounded-full shrink-0 mt-[6px]', PRIORITY_DOT[task.priority])} title={`优先级 ${task.priority}`} />
+            {/* 颜色不是唯一载体（WCAG 1.4.1）：读屏与色觉障碍用户靠这行文字拿到优先级 */}
+            <span className="sr-only">优先级 {PRIORITY_CN[task.priority]}。</span>
             <button onClick={onEdit} className="flex-1 min-w-0 text-left">
               {/* v1.25：去掉 truncate 完整换行（TickTick/Reminders 截断标题是头号用户抱怨，个人工具无密度压力） */}
               <span className={cn('block text-sm leading-snug break-words transition-all duration-300', done && 'line-through text-muted-foreground')}>{task.title}</span>
