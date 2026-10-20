@@ -166,3 +166,26 @@ test('我的页：五段式渲染 → 版本号动态展示 → 更新日志弹�
   await expect(page.getByRole('heading', { level: 1, name: '更新日志' })).toBeVisible()
   await expect(page.getByText(/^v1\.\d+\.\d+$/).first()).toBeVisible()
 })
+
+test('今日概览：桌面双栏 820，长标题不会撑出横向滚动条（v1.33）', async ({ page }) => {
+  await goto(page, '/tasks')
+  await page.getByRole('button', { name: '新建' }).click()
+  await page.getByPlaceholder('任务内容').fill('把这一周所有实验数据按样本重新对齐，并逐条核对异常值与缺失值'.repeat(2))
+  await page.getByRole('button', { name: '添加', exact: true }).click()
+  await goto(page, '/')
+  const dlg = page.locator('[data-slot="dialog-content"]').first()
+  await expect(dlg).toBeVisible()
+  // 量的是真实布局，不是 class：宽度 820、两栏、无横向溢出
+  const m = await dlg.evaluate(el => {
+    const grid = el.querySelector('.grid')
+    return {
+      width: Math.round(el.getBoundingClientRect().width),
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      columns: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0,
+    }
+  })
+  expect(m.width).toBeGreaterThan(700) // 旧版是 448 单栏；这里只防「又退回窄弹窗」
+  expect(m.columns).toBe(2)
+  expect(m.scrollWidth).toBeLessThanOrEqual(m.clientWidth + 1)
+})

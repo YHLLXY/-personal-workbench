@@ -62,68 +62,75 @@ export default function DailySummary() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-md">
+      {/* 桌面双栏（v1.33）：左「今天要做的」右「更新日志」，820px 宽一屏放下。
+          旧版是 448px 单栏 + max-h-[80vh] 内部滚动，PC 上又窄又挤出横向滚动条。
+          横向滚动的根因不在宽度，而在下面两处 truncate 少了 min-w-0：
+          flex 子项的 min-width:auto 等于「不换行文本的宽度」，把内容顶宽后 overflow-y-auto 顺手把 x 轴也变成 auto。
+          手机上内容确实放不下，纵向滚动保留（max-h-[85dvh] 沿袭 DialogContent 默认）。 */}
+      <DialogContent className="max-h-[85dvh] overflow-y-auto overflow-x-hidden sm:max-w-[820px]">
         <DialogHeader>
           <DialogTitle>
             {greeting(new Date())}，今天是 {fmtDate(today)}
           </DialogTitle>
           <DialogDescription>今天的安排与最新动态</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          {/* 今日待办 */}
-          <section>
-            <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-              <ClipboardList className="size-4 text-primary" /> 今日待办
-            </h3>
-            {totalToday === 0 ? (
-              <p className="mt-1.5 text-sm text-muted-foreground">今天没有安排任务</p>
-            ) : (
-              <>
-                <div className="mt-2 flex items-center gap-2">
-                  <Progress value={percent} className="h-2 flex-1" />
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    已完成 {doneToday}/{totalToday}
-                  </span>
-                </div>
-                {pendingList.length > 0 && (
-                  <ul className="mt-2 space-y-1">
-                    {pendingList.map(t => (
-                      <li key={t.id} className="flex items-center gap-2 py-0.5 text-sm">
-                        <Checkbox onCheckedChange={() => update.mutate({ id: t.id, patch: { status: 'done' } })} />
-                        <span className="truncate">{t.title}</span>
-                        {t.dueTime && (
-                          <span className="ml-auto shrink-0 text-xs text-muted-foreground">{t.dueTime}</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-          </section>
-
-          {/* 考试倒计时 */}
-          {upcoming.length > 0 && (
+        <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] sm:gap-6">
+          <div className="min-w-0 space-y-4">
+            {/* 今日待办 */}
             <section>
               <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-                <CalendarDays className="size-4 text-primary" /> 考试倒计时
+                <ClipboardList className="size-4 text-primary" /> 今日待办
               </h3>
-              <ul className="mt-1.5 space-y-1">
-                {upcoming.map(e => (
-                  <li key={e.id} className="flex items-center justify-between gap-3 py-0.5 text-sm">
-                    <span className="truncate">{e.title}</span>
+              {totalToday === 0 ? (
+                <p className="mt-1.5 text-sm text-muted-foreground">今天没有安排任务</p>
+              ) : (
+                <>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Progress value={percent} className="h-2 flex-1" />
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {fmtDate(e.examDate)} · {daysLabel(daysBetween(e.examDate, today))}
+                      已完成 {doneToday}/{totalToday}
                     </span>
-                  </li>
-                ))}
-              </ul>
+                  </div>
+                  {pendingList.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {pendingList.map(t => (
+                        <li key={t.id} className="flex items-center gap-2 py-0.5 text-sm">
+                          <Checkbox onCheckedChange={() => update.mutate({ id: t.id, patch: { status: 'done' } })} />
+                          {/* min-w-0 不能省：少了它，不换行标题会把整个弹窗顶宽（v1.32 的横向滚动条） */}
+                          <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                          {t.dueTime && (
+                            <span className="ml-auto shrink-0 text-xs text-muted-foreground">{t.dueTime}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
             </section>
-          )}
 
-          {/* 更新日志：弹窗里只放最新一版做引子，正文去 /changelog 整页读（v1.32）。
-              旧版把全部历史塞进 max-h-[80vh] 内部滚动，PC 上又窄又挤出横向滚动条。 */}
-          <section>
+            {/* 考试倒计时 */}
+            {upcoming.length > 0 && (
+              <section>
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                  <CalendarDays className="size-4 text-primary" /> 考试倒计时
+                </h3>
+                <ul className="mt-1.5 space-y-1">
+                  {upcoming.map(e => (
+                    <li key={e.id} className="flex items-center justify-between gap-3 py-0.5 text-sm">
+                      <span className="min-w-0 truncate">{e.title}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {fmtDate(e.examDate)} · {daysLabel(daysBetween(e.examDate, today))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+
+          {/* 更新日志：弹窗里给最新一版的 3 条做引子，正文去 /changelog 整页读 */}
+          <section className="min-w-0 sm:border-l sm:border-border sm:pl-6">
             <h3 className="flex items-center gap-1.5 text-sm font-semibold">
               <Sparkles className="size-4 text-primary" /> 更新日志
             </h3>
@@ -132,7 +139,7 @@ export default function DailySummary() {
                 {latest.version} · {latest.date} · {latest.title}
               </p>
               <ul className="mt-1 space-y-0.5 text-xs leading-relaxed text-muted-foreground">
-                {latest.items.slice(0, 2).map((i, idx) => (
+                {latest.items.slice(0, 3).map((i, idx) => (
                   <li key={idx} className="line-clamp-2"><RichText text={i} /></li>
                 ))}
               </ul>
