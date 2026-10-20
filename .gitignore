@@ -45,3 +45,6 @@ playwright-report/
 
 # UI 走查截图证据（本地分析产物，不入库）
 gui-test-screenshots/
+
+# 一次性布局原型（给用户选型用，不参与构建与发布）
+prototype/

@@ -10,7 +10,7 @@ export function HeatmapCard() {
   const { data: stats } = useHabitStats()
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><Flame className="size-4 text-primary" strokeWidth={1.7} />习惯打卡</CardTitle>
         <span className="text-[10px] text-muted-foreground">连续 {stats?.streak ?? 0} 天</span>
       </CardHeader>

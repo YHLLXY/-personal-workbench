@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { cn } from '@/lib/utils'
 import { homeCards } from '@/registry'
+import { SPAN_CLASS } from '@/lib/bento'
 import OverviewHome from '@/modules/overview/overview-home'
 import { OverviewSummary } from '@/modules/overview/overview-summary'
 import { WeatherCard } from '@/modules/overview/weather-card'
@@ -25,13 +27,13 @@ const CARD_LINK: Record<string, string> = {
   'home-notes': '/notes',
 }
 
-/** 整卡 Link 统一外壳：border 基础透明 + hover 高亮边框 + 按压缩放 */
-function CardLinkShell({ to, children, delay }: { to: string; children: ReactNode; delay: number }) {
+/** 整卡 Link 统一外壳：border 基础透明 + hover 高亮边框 + 按压缩放。
+ *  高度由父级 .home-cell 撑满（见 index.css 的 Bento 三行），这里只管视觉。 */
+function CardLinkShell({ to, children }: { to: string; children: ReactNode }) {
   return (
     <Link
       to={to}
-      className="card-enter block rounded-xl border border-transparent transition-all hover:border-primary/40 hover:shadow-sm active:scale-[0.98]"
-      style={{ animationDelay: `${delay}ms` }}
+      className="block h-full rounded-xl border border-transparent transition-all hover:border-primary/40 hover:shadow-sm active:scale-[0.98]"
     >
       {children}
     </Link>
@@ -52,30 +54,26 @@ export default function Home() {
       <div className="mb-4 hidden md:block">
         <OverviewSummary />
       </div>
-      {/* 桌面端卡片墙：CSS 多列瀑布流（v1.32）
-          —— 以前是 grid-cols-12 按行排：一行的高度由最高的那张卡决定，矮卡下面必然留下一大片空洞
-          （2026-10-19 实测：最近考试下方 250px、今日专注下方 200px、今日待办下方 80px）。
-          多列布局里每列独立堆叠，列内不会再出现空洞；只有当某一列比别的短时，列尾才会自然收短。 */}
-      <div className="hidden gap-x-3 md:block md:columns-2 md:gap-x-4 xl:columns-3">
-        {/* 天气卡：公共数据（/api/weather），无路由跳转，故不走 registry homeCard（那要求挂在子模块下） */}
-        <div className="mb-3 break-inside-avoid card-enter md:mb-4">
+      {/* 桌面端卡片墙：12 列 Bento（v1.33）
+          —— v1.32 用的 CSS 多列堆叠只解决「列内没有洞」，三列各自收尾，左列下方仍空 153px。
+          现在按行排 12 列：同一行的卡被 items-stretch 拉成等高，矮卡多出的高度落进卡片内部
+          （index.css 里 .home-cell 三行把 Card 撑满、CardContent 变 flex:1），卡与卡之间只剩设计间距。
+          每行跨度之和必须 = 12（如 4+8 / 4+4+4），否则行尾留洞——tests/home-bento.test.ts 守着。 */}
+      <div className="hidden grid-cols-12 items-stretch gap-3 md:grid xl:gap-4">
+        <div className="home-cell card-enter min-w-0 md:col-span-6 xl:col-span-4">
           <WeatherCard />
         </div>
-        {cards.map((c, i) => {
-          const to = CARD_LINK[c.id]
-          return (
-            <div key={c.id} className="mb-3 break-inside-avoid md:mb-4">
-              {to
-                ? <CardLinkShell to={to} delay={i * 40}><c.component /></CardLinkShell>
-                : <div className="card-enter" style={{ animationDelay: `${i * 40}ms` }}><c.component /></div>}
-            </div>
-          )
-        })}
-        {cards.length === 0 && (
-          <p className="text-sm text-muted-foreground py-10 text-center">
-            首页卡片将在各模块完成注册后自动出现
-          </p>
-        )}
+        {cards.map((c, i) => (
+          <div
+            key={c.id}
+            className={cn('home-cell card-enter min-w-0', SPAN_CLASS[c.span])}
+            style={{ animationDelay: `${(i + 1) * 40}ms` }}
+          >
+            {CARD_LINK[c.id]
+              ? <CardLinkShell to={CARD_LINK[c.id]}><c.component /></CardLinkShell>
+              : <c.component />}
+          </div>
+        ))}
       </div>
     </div>
   )

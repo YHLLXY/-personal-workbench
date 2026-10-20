@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { homeCards } from '../src/registry'
 
-/** 首页卡片注册表约束（v1.32）。
- *  布局已改成 CSS 多列瀑布流，不再有「列跨度」这种东西——但 desktopOrder 仍然是排序依据，
- *  重复会让卡片顺序随机漂移；编号不连续则说明有人删卡没重排。 */
+/** 首页卡片注册表约束。
+ *  v1.33 起布局是 12 列 Bento：desktopOrder 决定行流顺序，span 决定占几列（见 tests/home-bento.test.ts）。
+ *  这里只管两件事——顺序唯一、编号连续（删卡不重排会让网格错位）。 */
 describe('首页卡片注册表', () => {
   it('每张卡片只注册一次，桌面顺序唯一', () => {
     const cards = homeCards()

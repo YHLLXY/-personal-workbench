@@ -13,7 +13,7 @@ export function ProjectsCard() {
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <FolderKanban className="size-4 text-primary" strokeWidth={1.7} />我的项目
           {!isLoading && <span className="text-[10px] font-normal text-muted-foreground">共 {projects.length} 个</span>}

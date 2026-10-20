@@ -13,7 +13,7 @@ export function HotCard() {
   const report = reports?.[0]
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><Newspaper className="size-4 text-primary" strokeWidth={1.7} />今日热点</CardTitle>
         <Link to="/hot" className="text-xs text-muted-foreground hover:text-primary"><ArrowRight className="size-3.5" /></Link>
       </CardHeader>
@@ -41,7 +41,7 @@ export function NotesCard() {
   const recent = (notes ?? []).slice(0, 3)
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><Sparkles className="size-4 text-primary" strokeWidth={1.7} />灵感速记</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">

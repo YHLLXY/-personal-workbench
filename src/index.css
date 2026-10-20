@@ -100,6 +100,14 @@
   .page-enter, .card-enter { animation: none; }
 }
 
+/* 首页 12 列 Bento（v1.33）：网格单元撑满行高，卡片内容区吸收多余高度。
+   没有这三行，同一行里矮卡的卡框会比高卡矮一截，卡与卡之间立刻出现空洞——
+   v1.32 的「三列各自收尾、左列下方空 153px」就是同一类问题。
+   ⚠️ 依赖 shadcn Card 的 data-slot 结构（components/ui/card.tsx）；升级 shadcn 后回来核对这 3 条选择器。 */
+.home-cell > * { height: 100%; }
+.home-cell [data-slot='card'] { height: 100%; }
+.home-cell [data-slot='card'] > [data-slot='card-content'] { flex: 1 1 auto; }
+
 /* 项目详情门户口正文（GitHub Markdown API 渲染的 HTML） */
 .md-body { font-size: 0.875rem; line-height: 1.75; color: var(--foreground); overflow-wrap: break-word; }
 .md-body h1 { font-size: 1.25rem; font-weight: 700; margin: 1.25rem 0 0.75rem; }

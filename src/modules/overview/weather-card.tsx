@@ -20,7 +20,7 @@ export function WeatherCard() {
         onClick={() => setOpen(true)}
         className="cursor-pointer transition-all hover:border-primary/40 hover:shadow-sm active:scale-[0.99]"
       >
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+        <CardHeader className="flex items-center justify-between space-y-0 pb-2">
           <CardTitle className="flex items-center gap-2 text-sm"><CloudSun className="size-4 text-primary" strokeWidth={1.7} />重庆天气</CardTitle>
           <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><MapPin className="size-3" />重庆</span>
         </CardHeader>

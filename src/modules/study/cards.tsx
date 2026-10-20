@@ -8,7 +8,7 @@ export function ExamsCard() {
   const sorted = [...(exams ?? [])].sort((a, b) => a.examDate.localeCompare(b.examDate)).slice(0, 3)
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><CalendarClock className="size-4 text-primary" strokeWidth={1.7} />最近考试</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -32,10 +32,11 @@ export function FocusCard() {
   const m = data?.minutes ?? 0
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><Timer className="size-4 text-primary" strokeWidth={1.7} />今日专注</CardTitle>
       </CardHeader>
-      <CardContent>
+      {/* Bento 里这张卡常被拉得比内容高（v1.33），垂直居中比把空白全堆在底部自然 */}
+      <CardContent className="flex flex-1 flex-col justify-center">
         {isLoading ? <Skeleton className="h-10 w-full" /> : (
           <>
             <div className="text-3xl font-extrabold font-numeric">{Math.floor(m / 60)}<span className="text-sm font-normal text-muted-foreground ml-1">小时</span> {m % 60}<span className="text-sm font-normal text-muted-foreground ml-1">分</span></div>

@@ -10,7 +10,7 @@ export function TodayTasksCard() {
   const list = todayTasks(tasks ?? [], todayStr()).slice(0, 5)
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><CheckCircle2 className="size-4 text-primary" strokeWidth={1.7} />今日待办</CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
@@ -34,7 +34,7 @@ export function TodayFocusCard() {
   const focus = (tasks ?? []).filter(t => t.focus && t.focusDate === today && t.status !== 'done').slice(0, 3)
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><Star className="size-4 text-primary" strokeWidth={1.7} />今日焦点</CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">

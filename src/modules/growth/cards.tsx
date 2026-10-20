@@ -22,7 +22,7 @@ export function GrowthCard() {
   if (active.length === 0) {
     return (
       <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+        <CardHeader className="flex items-center justify-between space-y-0 pb-2">
           <CardTitle className="flex items-center gap-2 text-sm"><TrendingUp className="size-4 text-primary" strokeWidth={1.7} />自我提升</CardTitle>
         </CardHeader>
         <CardContent>
@@ -56,7 +56,7 @@ export function GrowthCard() {
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><TrendingUp className="size-4 text-primary" strokeWidth={1.7} />自我提升</CardTitle>
         <span className="text-[10px] text-muted-foreground">今日 {todayDone}/{active.length} · 本周 {weekDone}/{active.length * 7}</span>
       </CardHeader>
