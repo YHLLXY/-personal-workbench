@@ -151,3 +151,17 @@
 - 主触发器改用 **Supabase Cron（pg_cron + pg_net）**：不用新账号，SQL 见 `supabase/cron/reminders-5m.sql`。
   （教训：上一版建议的第三方 ping 服务用户根本注册不上，方案卡了一次；这次先确认「用户能不能用」再写进方案。）
 
+### D. 「行高」修完了，「列高」还是洞（2026-10-20）
+
+- v1.32 修的是**行内高度**（一行里矮卡不被拉高），可三列各自独立堆叠之后，**列与列之间的高度差**没人管：
+  实测 707 / 860 / 860，左列下方 153px 空白。用户一句「还是有很大的空隙」把问题指回原点。
+- 结论：瀑布流只保证「列内没有洞」；**页面级空洞要靠「分列配平」或「按行对齐」来消灭**。
+  最终选 12 列 Bento：同行等高（`items-stretch`），多出来的高度落进卡片内部（`CardContent` 设 `flex:1`）。
+  实测行内高度差 0px、垂直间距处处 16px（1440 / 1920 / 1280 / 768）。
+- **`grid` 容器里的 `flex-row` 是个哑巴**：`CardHeader` 是 grid，各处写的 `flex-row items-center justify-between`
+  只改 `flex-direction`、不改 `display`，第二项（定位 / 条目数 / 箭头）一直被排到下一行，卡片凭空高 20px。
+  改成 `flex items-center justify-between` 才真是一行。**改布局类之前先看 computed display。**
+- **`truncate` 必须配 `min-w-0`**：flex 子项默认 `min-width:auto` = 不换行文本的宽度，它会顶宽父容器；
+  而 `overflow-y:auto` 会把 `overflow-x` 一起变成 auto —— 于是「省略号」变成「被切掉 + 横向滚动条」。
+- 量尺寸要用脚本，不靠肉眼：一次跑完 1440/1920/1280/768/390 + 浅色深色 + 弹窗宽度，输出每行卡片高度与垂直间距。
+
