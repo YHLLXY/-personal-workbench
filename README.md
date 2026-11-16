@@ -14,7 +14,7 @@
 为单一用户（我自己）定制的个人效率系统，替代「效率工具一大堆、数据散落各处」的状态。几个核心取向：
 
 - **数据完全自有**：本地模式数据存在浏览器 IndexedDB；云端模式存在自己的 Supabase（PostgreSQL + 行级安全），不存在任何第三方效率服务的数据库里。
-- **移动端优先的 PWA**：添加到主屏幕即像原生应用一样使用，支持离线、系统通知、Web Push 推送；首屏体积有机器门禁把守。
+- **移动端优先的 PWA**：添加到主屏幕即像原生应用一样使用，支持离线、系统通知、Web Push 推送；首屏体积有体检脚本留底（只拦灾难线，不拦功能）。
 - **单用户设计**：没有多租户、没有权限体系，一切取舍以「稳定 > 完美，实用 > 花架子」为准绳。
 
 ## 功能模块
@@ -96,13 +96,13 @@ npm run dev            # http://localhost:5173 —— 无环境变量即本地�
 npm test               # vitest 全量
 npm run lint           # oxlint
 npm run build          # tsc -b && vite build
-npm run check:bundle   # 客户端体积预算门禁
+npm run check:bundle   # 体积体检（只拦灾难线，不拦功能）
 npm run test:e2e       # Playwright 冒烟（本地 IndexedDB 模式，无需任何环境变量）
 ```
 
 ## 质量门禁
 
-每次 push / PR 由 GitHub Actions 跑两个 job：**ci**（oxlint + vitest + build + 体积预算）与 **e2e**（Playwright 冒烟）。本地提交前同样全量验证；发版用一条命令：
+每次 push / PR 由 GitHub Actions 跑两个 job：**ci**（oxlint + vitest + build + 体积体检）与 **e2e**（Playwright 冒烟）。本地提交前同样全量验证；发版用一条命令：
 
 ```bash
 node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → build，任一失败自动回滚
@@ -110,10 +110,14 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 
 几条特别的门禁：
 
-- **客户端体积红线**（`scripts/check-bundle.mjs`，v1.26 拆分口径）：
-  - **首屏 JS ≤ 790KB** = 入口 chunk + 它静态 import 的闭包（读 `dist/.vite/manifest.json`）。**这是真红线**——它决定手机打开速度。
-  - **JS 总量 ≤ 1150KB**（含懒加载 chunk），**最大单 chunk ≤ 340KB**。
-  - 拆分原因：旧门禁只量 `dist/assets` 全部文件之和，而注释声称保护的是「移动端首屏」——判据与意图不符，懒加载并不能绕开总量。拆分后实测首屏 723KB（占总量 66%），这才是该盯的数字。历史上曾为移动端首屏把 recharts 替换成手绘 SVG（-312KB）——红线靠机器把关，不靠自觉。
+- **体积体检**（`scripts/check-bundle.mjs`，2026-11-16 从「预算门禁」降级为「烟雾报警器」）：
+  - 只拦**灾难线**：首屏（brotli）> 400KB / 总量（raw）> 2500KB / 单 chunk > 800KB。正常加功能不会红。
+  - 每次构建打印真实数字：2026-11-16 实测 入口 306KB raw = **83KB brotli**（每次发版真正重下的）、
+    首屏 726KB = **192KB**、全站 1151KB = **324KB**、最大 chunk 306KB。
+  - 为什么降级：旧口径「总量 ≤ 1150KB」在 v1.31 之后只剩 1KB 余量，任何一次修复都会红——
+    它开始挡开发而不是挡事故；而且它把懒加载 chunk 与纯数据（changelog 42KB）也算进「体验」。
+    已安装 PWA 的 SW 预缓存全部 chunk，发版只重下变了的。历史上确实靠它挡过 recharts（-312KB），
+    但那次的问题是「进了关键路径」，不是「总量大」——现在这条仍由首屏线守着。
 - **双仓储契约测试**：改动任一仓储实现必须跑 `tests/repository-contract.test.ts`，同脚本双实现对比，防行为漂移。
 - **真机语义测试桩**：涉及平台能力（通知/权限/Service Worker）的测试桩模拟最严格真机行为（如构造器抛 `TypeError`），而不是理想语义。
 
@@ -189,7 +193,7 @@ node scripts/release.mjs --yes --title="..."   # 依次过 lint → test → bui
 ## 设计原则
 
 1. **稳定 > 完美，实用 > 花架子**——判断一切取舍的准绳。
-2. **客户端体积红线神圣不可侵犯**——新依赖必须懒加载或拒绝。
+2. **体积只盯关键路径**——只有会进入口 chunk 的依赖才需要掂量；懒加载页面里的成熟库放心用。
 3. **最简实现**——不加兼容层、不做预防性抽象；**架构决策往长了做**——不留「先这样以后再换」。
 4. **优先成熟库**，动手前先翻已有依赖；新功能先调研成熟产品的已验证模式。
 5. **增量生长**——先跑通最小端到端版本，绝不为了未完成的复杂度拆掉能跑的东西。

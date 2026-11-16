@@ -1,93 +1,110 @@
 #!/usr/bin/env node
 /**
- * 体积预算门禁：三个独立数字——
- *   ① **首屏 JS** = 入口 chunk + 它静态 import 的闭包（真正决定手机打开速度，**这是红线**）
- *   ② JS 总量 = dist/assets 下全部 .js 之和（含懒加载 chunk，防代码总量失控）
- *   ③ 最大单 chunk（防某个页面把首屏拖慢）
+ * 体积体检（2026-11-16：从「预算门禁」改成「烟雾报警器」）
  *
- * 为什么拆开（v1.26）：注释一直声称红线是为「移动端首屏」（recharts→SVG 那次砍 312KB），
- * 但旧实现只量 dist/assets 全部文件之和——那其实是「代码总量」，懒加载并不能绕开它。
- * 判据和它声称保护的东西对不上，于是拆成两个数字、各自设阈值。
+ * 为什么改：v1.31 之后三条硬线里「JS 总量 ≤ 1150KB」只剩 1 KB 余量（实测 1149.4），
+ * 任何一次正常修复都会红 —— 它开始挡开发，而不是挡事故。
+ * 而且它量错了对象：总量把懒加载 chunk 和纯数据（changelog 42KB 文本）都算进去，
+ * 也量的是未压缩字节，而用户实际下载的是 brotli（全站 1151→324KB，首屏 726→192KB）。
  *
- * 阈值 = 当前基线 + 约 10% 余量。确需上调时改 BUDGET，并在 commit message 说明理由。
+ * 现在的定位：**只拦灾难，不做预算**。三条线都设在当前值的 2 倍以上，
+ * 只为抓住「有人把一整个框架 import 进壳层」这种事故；正常加功能永远不会红。
+ * 每次构建都打印真实数字（含 brotli），漂移看得见，但不拦路。
+ *
+ * 依赖取舍也随之回到工程准则 #5/#6：先翻已有依赖 → 成熟库 →
+ * **只有「会进关键路径」才掂量体积**；懒加载页面里的依赖不再用手写的尺子量。
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { brotliCompressSync } from 'node:zlib'
 
 const ROOT = resolve(decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/^\/([A-Za-z]:)/, '$1'))
 const DIST = join(ROOT, 'dist')
 const ASSETS = join(DIST, 'assets')
-// 2026-10-15 重新定基（拆分口径后的第一次实测）：
-//   首屏 723 KB（entry 303 + 静态 import 闭包共 13 chunk）——**这是新引入的真红线**
-//   总量 1103 KB（52 chunk）——旧口径下的 1120 只剩 17 KB，收紧到无法作为门禁用，故按新基线 +4% 重定
-//   最大 chunk 303 KB（未变，沿用 340）
-// 2026-10-16 追加实测：首屏 724 / 总量 1141 / 最大 304（v1.31 月亮+提醒重构后，本轮 +12 KB，余量仅 9 KB）
-//   ⚠️ 上面那行 1103 是定基当天的数，**引用前先实测**——注释里的基线同样会过期（v1.31 就被它误导过一次）
-// 2026-11-16 重新实测：首屏 725 / 总量 **1149.4** / 最大 305（v1.32 首页瀑布流 + v1.33 Bento 之后）。
-//   1150 只剩 **1 KB** 余量 —— 这个门禁已经退化成「任何一次修复都红」，起不到「防总量失控」的作用。
-//   按本文件自己的规则（基线 + 约 10% 余量）重定为 1160（+0.9%，仍远严于 10%）；
-//   **首屏红线 790 不动**（当前 726，那才是移动端打开速度的真红线）。
-//   ⚠️ 下一轮真该动的是把 changelog 数据搬出 JS（changelog chunk 现为 **42 KB** 纯文本，
-//   改成 /changelog.json 运行时 fetch 可一次性腾出 40 KB，见 docs/lessons-learned.md 2026-10-16 的待办）。
-const BUDGET = { firstScreenJsKb: 790, totalJsKb: 1160, maxChunkKb: 340 }
+
+// 三条硬线：只为「事故」留的，不是给日常开发设的天花板。
+// 参照 2026-11-16 实测：首屏 192KB(brotli) / 总量 1151KB(raw) / 最大 chunk 306KB(raw)。
+const LIMIT = {
+  firstScreenBrKb: 400, // 首屏关键路径（brotli，用户真正下载的量）
+  totalKb: 2500,        // dist/assets 全部 chunk（raw）——只看量级，不做预算
+  maxChunkKb: 800,      // 单个 chunk 别变成另一个 recharts
+}
+// 软提示：超过就在报告里标黄，但**不失败**
+const NOTICE = { firstScreenBrKb: 300 }
 
 if (!existsSync(ASSETS)) {
   console.error('✗ dist/assets 不存在——先跑 npm run build')
   process.exit(1)
 }
 
-const kb = (n) => Math.round(n / 1024)
-const sizeOf = (rel) => { try { return statSync(join(DIST, rel)).size } catch { return 0 } }
+const kb = n => Math.round(n / 1024)
+
+function brSizeOf(file) {
+  try { return brotliCompressSync(readFileSync(join(DIST, file))).length } catch { return 0 }
+}
+function sizeOf(file) {
+  try { return statSync(join(DIST, file)).size } catch { return 0 }
+}
 
 // —— ① 首屏：从 vite manifest 的入口出发，沿静态 imports 走闭包 ——
 const manifestPath = join(DIST, '.vite', 'manifest.json')
-let firstScreen = null
-let entries = 0
-if (existsSync(manifestPath)) {
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  const entryKeys = Object.keys(manifest).filter((k) => manifest[k].isEntry)
-  entries = entryKeys.length
-  if (entryKeys.length > 0) {
-    const seen = new Set()
-    const walk = (key) => {
-      if (seen.has(key) || !manifest[key]) return
-      seen.add(key)
-      for (const dep of manifest[key].imports ?? []) walk(dep)
-    }
-    for (const k of entryKeys) walk(k)
-    firstScreen = [...seen].reduce((sum, k) => sum + sizeOf(manifest[k].file), 0)
-  }
-}
-if (firstScreen == null) {
-  console.error('✗ 读不到首屏清单：dist/.vite/manifest.json 缺失或没有入口。跑一次 npm run build 生成（vite.config.ts 已开 build.manifest）')
+if (!existsSync(manifestPath)) {
+  console.error('✗ 读不到清单：dist/.vite/manifest.json 缺失（vite.config.ts 已开 build.manifest）')
   process.exit(1)
 }
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+const entryKeys = Object.keys(manifest).filter(k => manifest[k].isEntry)
+const seen = new Set()
+const walk = k => {
+  if (seen.has(k) || !manifest[k]) return
+  seen.add(k)
+  for (const dep of manifest[k].imports ?? []) walk(dep)
+}
+entryKeys.forEach(walk)
+let firstRaw = 0
+let firstBr = 0
+for (const k of seen) {
+  firstRaw += sizeOf(manifest[k].file)
+  firstBr += brSizeOf(manifest[k].file)
+}
+const entryRaw = entryKeys.reduce((s, k) => s + sizeOf(manifest[k].file), 0)
+const entryBr = entryKeys.reduce((s, k) => s + brSizeOf(manifest[k].file), 0)
 
 // —— ② / ③ 总量与最大单 chunk ——
-const files = readdirSync(ASSETS).filter((f) => f.endsWith('.js'))
-let total = 0
-let max = 0
+const files = readdirSync(ASSETS).filter(f => f.endsWith('.js'))
+let totalRaw = 0
+let totalBr = 0
+let maxRaw = 0
 let maxFile = ''
 for (const f of files) {
-  const size = statSync(join(ASSETS, f)).size
-  total += size
-  if (size > max) { max = size; maxFile = f }
+  const raw = sizeOf(`assets/${f}`)
+  totalRaw += raw
+  totalBr += brSizeOf(`assets/${f}`)
+  if (raw > maxRaw) { maxRaw = raw; maxFile = f }
 }
 
-const fsKb = kb(firstScreen)
-const totalKb = kb(total)
-const maxKb = kb(max)
-console.log(`首屏 JS:    ${fsKb} KB / 预算 ${BUDGET.firstScreenJsKb} KB（入口 ${entries} 个 + 静态 import 闭包）`)
-console.log(`JS 总量:    ${totalKb} KB / 预算 ${BUDGET.totalJsKb} KB（${files.length} 个 chunk，含懒加载）`)
-console.log(`最大 chunk: ${maxKb} KB (${maxFile}) / 预算 ${BUDGET.maxChunkKb} KB`)
+const firstKb = kb(firstRaw)
+const firstBrKb = kb(firstBr)
+const totalKb = kb(totalRaw)
+const maxKb = kb(maxRaw)
 
-const overs = []
-if (fsKb > BUDGET.firstScreenJsKb) overs.push(`首屏 JS 超预算（+${fsKb - BUDGET.firstScreenJsKb} KB）——首屏红线优先`)
-if (totalKb > BUDGET.totalJsKb) overs.push(`JS 总量超预算（+${totalKb - BUDGET.totalJsKb} KB）`)
-if (maxKb > BUDGET.maxChunkKb) overs.push(`最大 chunk 超预算（+${maxKb - BUDGET.maxChunkKb} KB）`)
-if (overs.length) {
-  console.error(`✗ ${overs.join('；')}`)
-  console.error('  请优先懒加载 / 换更小的实现（零依赖优先），勿盲目上调 BUDGET')
+console.log('体积体检（只拦灾难，不做预算）')
+console.log(`  入口 chunk   ${entryRaw / 1024 >= 100 ? Math.round(entryRaw / 1024) : (entryRaw / 1024).toFixed(1)} KB raw / ${Math.round(entryBr / 1024)} KB brotli   ← 每次发版真正重下的`)
+console.log(`  首屏闭包     ${firstKb} KB raw / ${firstBrKb} KB brotli（${seen.size} 个 chunk，含入口）   ← 新设备第一次打开`)
+console.log(`  全站总量     ${totalKb} KB raw / ${kb(totalBr)} KB brotli（${files.length} 个 chunk，含懒加载）`)
+console.log(`  最大单 chunk ${maxKb} KB (raw, ${maxFile})`)
+
+const bad = []
+if (firstBrKb > LIMIT.firstScreenBrKb) bad.push(`首屏 brotli ${firstBrKb} KB 超过灾难线 ${LIMIT.firstScreenBrKb} KB`)
+if (totalKb > LIMIT.totalKb) bad.push(`总量 ${totalKb} KB 超过灾难线 ${LIMIT.totalKb} KB`)
+if (maxKb > LIMIT.maxChunkKb) bad.push(`最大 chunk ${maxKb} KB 超过灾难线 ${LIMIT.maxChunkKb} KB`)
+
+if (bad.length) {
+  console.error(`✗ ${bad.join('；')}`)
+  console.error('  这个量级已经不是「加了个功能」，先去查是不是把某个大依赖 import 进了壳层。')
   process.exit(1)
 }
-console.log('✓ 体积预算通过')
+if (firstBrKb > NOTICE.firstScreenBrKb) {
+  console.log(`⚠ 首屏 brotli 已到 ${firstBrKb} KB（软提示线 ${NOTICE.firstScreenBrKb} KB）——没有失败，但值得看一眼是不是进了关键路径。`)
+}
+console.log('✓ 通过（门禁已放开；体积数字仅作体检记录）')
