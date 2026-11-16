@@ -95,6 +95,7 @@ describe('ReminderBanner 前台通知去重', () => {
     MockNotification.permission = 'granted'
     vi.stubGlobal('Notification', MockNotification)
     stubServiceWorker({ ready: Promise.resolve({ showNotification }) })
+    localStorage.clear() // v1.33.1：去重账本落在 localStorage，用例之间要互不影响
     qc.clear()
     vi.clearAllMocks()
   })
@@ -116,6 +117,16 @@ describe('ReminderBanner 前台通知去重', () => {
     expect(showNotification).toHaveBeenCalledTimes(1)
   })
 
+  it('重新挂载（离开首页再回来）不再弹同一条 —— v1.33.1 回归：旧版 useRef 只在当前挂载有效', async () => {
+    const first = renderBanner()
+    await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
+    first.unmount()
+    renderBanner()
+    await waitFor(() => expect(screen.getByText(/交报告/)).toBeTruthy())
+    await act(async () => { await new Promise(r => setTimeout(r, 0)) })
+    expect(showNotification).toHaveBeenCalledTimes(1)
+  })
+
   it('未授权 → 不弹', async () => {
     MockNotification.permission = 'denied'
     renderBanner()
@@ -128,6 +139,7 @@ describe('ReminderBanner 通知通道防崩回归（v1.23 全站崩溃根因）'
   beforeEach(() => {
     MockNotification.permission = 'granted'
     vi.stubGlobal('Notification', MockNotification)
+    localStorage.clear()
     qc.clear()
     vi.clearAllMocks()
   })

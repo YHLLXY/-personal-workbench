@@ -77,7 +77,7 @@ export function QuickCapture() {
                 className={cn('px-3 py-1.5 text-xs rounded-md', tab === t.id ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground')}>{t.label}</button>
             ))}
           </div>
-          <button onClick={() => setOpen(false)} className="ml-auto p-1.5 text-muted-foreground hover:bg-muted rounded-lg"><X className="size-4" /></button>
+          <button onClick={() => setOpen(false)} aria-label="关闭快速捕获" className="ml-auto p-1.5 text-muted-foreground hover:bg-muted rounded-lg"><X className="size-4" /></button>
         </div>
         {tab === 'task' && (
           <form onSubmit={e => { e.preventDefault(); if (title.trim()) addTask.mutate() }} className="space-y-3">

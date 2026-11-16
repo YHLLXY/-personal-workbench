@@ -167,6 +167,48 @@ test('我的页：五段式渲染 → 版本号动态展示 → 更新日志弹�
   await expect(page.getByText(/^v1\.\d+\.\d+$/).first()).toBeVisible()
 })
 
+test('返回键先关浮层：命令面板不把背后的页面翻走（v1.33.1）', async ({ page }) => {
+  await goto(page, '/')
+  // 制造一条应用内历史记录（react-router pushState，不整页重载）
+  await page.getByRole('link', { name: '今日待办' }).click()
+  await expect(page).toHaveURL(/\/tasks$/)
+  await page.keyboard.press('Control+K')
+  const input = page.getByPlaceholder('输入命令或搜索…')
+  await expect(input).toBeVisible()
+  await page.goBack()
+  await expect(input).toBeHidden()
+  // 没进浮层历史的话，返回键会把 URL 退回 / —— 这正是手机上「页面反复横跳、浮层退不出来」
+  await expect(page).toHaveURL(/\/tasks$/)
+})
+
+test.describe('移动端浮层 & 返回键', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+
+  test('快速捕获：X 能关；返回键也能关且不翻走背后的页面（v1.33.1）', async ({ page }) => {
+    // 移动端没有侧边栏（md 以下隐藏），不能复用 goto() 的「我的工作台」就绪判断
+    await page.goto('/')
+    // 首页同时有「宫格入口」和右下角 FAB，两个同名按钮 —— FAB 在 DOM 里靠后
+    const fab = page.getByRole('button', { name: '快速捕获' }).last()
+    await fab.waitFor({ state: 'visible', timeout: 20_000 })
+    await page.getByRole('button', { name: '学习管理' }).tap()
+    await expect(page).toHaveURL(/\/study$/)
+    await page.getByRole('button', { name: '工作台总览' }).tap()
+    await expect(page).toHaveURL(/\/$/)
+
+    const sheet = page.getByPlaceholder('要做什么？今天到期')
+    await fab.tap()
+    await expect(sheet).toBeVisible()
+    await page.getByRole('button', { name: '关闭快速捕获' }).tap()
+    await expect(sheet).toBeHidden()
+
+    await fab.tap()
+    await expect(sheet).toBeVisible()
+    await page.goBack()
+    await expect(sheet).toBeHidden()
+    await expect(page).toHaveURL(/\/$/)
+  })
+})
+
 test('今日概览：桌面双栏 820，长标题不会撑出横向滚动条（v1.33）', async ({ page }) => {
   await goto(page, '/tasks')
   await page.getByRole('button', { name: '新建' }).click()

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Bell } from 'lucide-react'
 import { useReminders } from './api'
@@ -6,6 +6,7 @@ import { useTasks } from '@/modules/overview/api'
 import { useExams } from '@/modules/study/api'
 import { useStudyGoals } from '@/modules/study/goals-api'
 import { countDue, reminderFacts, type ReminderRefs } from './format'
+import { claimNotifications, reminderKey } from './notify-log'
 import type { Reminder } from '@/lib/db/types'
 
 /**
@@ -19,7 +20,6 @@ export default function ReminderBanner() {
   const { data: tasks } = useTasks()
   const { data: exams } = useExams()
   const { data: goals } = useStudyGoals()
-  const notifiedRef = useRef(new Set<string>())
   const now = Date.now()
   const taskById = new Map((tasks ?? []).map(t => [t.id, t]))
   const examById = new Map((exams ?? []).map(e => [e.id, e]))
@@ -35,15 +35,17 @@ export default function ReminderBanner() {
     .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))
   const unread = countDue(reminders ?? [], now)
 
-  // 前台系统通知：到期但服务端没发出去的（本地模式 sentAt 恒 null）弹一条，每 id 每次会话仅一次。
+  // 前台系统通知：到期但服务端没发出去的（本地模式 sentAt 恒 null）弹一条。
+  // v1.33.1：去重账本从「组件内 useRef」换成 localStorage（见 notify-log.ts）——
+  // 旧版 ref 只在当前挂载有效，离开首页再回来就是新的一次，同一条提醒会反复弹。
   // 通知是增强能力：任何失败静默，绝不冒泡到 ErrorBoundary（v1.23 全站崩溃根因）。
   useEffect(() => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return
     const pending = (reminders ?? []).filter(r => !r.sentAt && new Date(r.scheduledAt).getTime() <= Date.now())
-    for (const id of notifiedRef.current) if (!pending.some(r => r.id === id)) notifiedRef.current.delete(id)
-    const fresh = pending.filter(r => !notifiedRef.current.has(r.id))
-    if (fresh.length === 0) return
-    for (const r of fresh) notifiedRef.current.add(r.id)
+    const freshKeys = claimNotifications(pending.map(r => reminderKey(r.id, r.scheduledAt)))
+    if (freshKeys.length === 0) return
+    const wanted = new Set(freshKeys)
+    const fresh = pending.filter(r => wanted.has(reminderKey(r.id, r.scheduledAt)))
     // 单条 → 直接给正文；多条 → 报总数并带上最紧急那条，不再是一句没有信息量的「N 条待处理」
     const first = fresh.slice().sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))[0]
     const firstText = first ? reminderFacts(first, refsOf(first)).text : ''

@@ -23,7 +23,13 @@ const ASSETS = join(DIST, 'assets')
 //   最大 chunk 303 KB（未变，沿用 340）
 // 2026-10-16 追加实测：首屏 724 / 总量 1141 / 最大 304（v1.31 月亮+提醒重构后，本轮 +12 KB，余量仅 9 KB）
 //   ⚠️ 上面那行 1103 是定基当天的数，**引用前先实测**——注释里的基线同样会过期（v1.31 就被它误导过一次）
-const BUDGET = { firstScreenJsKb: 790, totalJsKb: 1150, maxChunkKb: 340 }
+// 2026-11-16 重新实测：首屏 725 / 总量 **1149.4** / 最大 305（v1.32 首页瀑布流 + v1.33 Bento 之后）。
+//   1150 只剩 **1 KB** 余量 —— 这个门禁已经退化成「任何一次修复都红」，起不到「防总量失控」的作用。
+//   按本文件自己的规则（基线 + 约 10% 余量）重定为 1160（+0.9%，仍远严于 10%）；
+//   **首屏红线 790 不动**（当前 726，那才是移动端打开速度的真红线）。
+//   ⚠️ 下一轮真该动的是把 changelog 数据搬出 JS（changelog chunk 现为 **42 KB** 纯文本，
+//   改成 /changelog.json 运行时 fetch 可一次性腾出 40 KB，见 docs/lessons-learned.md 2026-10-16 的待办）。
+const BUDGET = { firstScreenJsKb: 790, totalJsKb: 1160, maxChunkKb: 340 }
 
 if (!existsSync(ASSETS)) {
   console.error('✗ dist/assets 不存在——先跑 npm run build')

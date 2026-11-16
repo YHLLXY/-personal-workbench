@@ -397,7 +397,13 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
     else delete state.errors
     // 全部「已配置」的通道都送达才算这一行送达；否则保留 sent_at = NULL，下一轮只补发失败的通道
     const done = configured > 0 && delivered === configured
-    await sb.from('wb_reminders').update(done ? { sent_channels: state, sent_at: now.toISOString() } : { sent_channels: state }).eq('id', id)
+    // ⚠️ 这条 update 是「已送达」的唯一记账。以前不检查 error：缺列（如迁移 018 没执行）时整条更新
+    // 静默失败 → sent_at 永远是 null → 每轮扫描都把同一条提醒重发一次（用户看到的就是「同一个提醒发了多次」）。
+    // 现在至少把失败写进函数日志，别再让这种循环完全无声。
+    const { error: markError } = await sb.from('wb_reminders')
+      .update(done ? { sent_channels: state, sent_at: now.toISOString() } : { sent_channels: state })
+      .eq('id', id)
+    if (markError) console.error('reminder mark-delivered failed', id, markError)
     if (!done) skipped++
   }
   return { sent, skipped }
