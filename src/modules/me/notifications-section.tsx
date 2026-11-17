@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { isCloudMode, repository } from '@/lib/db'
 import { getSupabaseClient } from '@/lib/db/supabase-client'
 import { urlBase64ToUint8Array } from '@/lib/push-utils'
+import { isSc3Key } from '@/lib/sc3'
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
 const isIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent)
@@ -70,7 +71,7 @@ export function NotificationSection() {
     } catch { toast.error('退订失败，请重试') } finally { setBusy(false) }
   }
 
-  const CHANNEL_CN: Record<string, string> = { webpush: '浏览器推送', serverchan: 'Server酱', telegram: 'Telegram' }
+  const CHANNEL_CN: Record<string, string> = { webpush: '浏览器推送', serverchan: 'Server酱³', telegram: 'Telegram' }
 
   async function testSend() {
     try {
@@ -100,9 +101,14 @@ export function NotificationSection() {
 
   // ⚠️ saveChannelConfigs 是整行覆盖：三个字段必须一起传，否则会把另一个通道的配置清掉
   async function saveScKey() {
+    const key = scKey.trim()
+    if (key && !isSc3Key(key)) {
+      toast.error('SendKey 格式不对', { description: 'Server酱³ 的 SendKey 以 sctp 开头；旧 Turbo 的 SCT… key 已不支持（服务端只接 SC3）' })
+      return
+    }
     setSaving(true)
     try {
-      await repository.saveChannelConfigs({ serverchanKey: scKey.trim() || null, telegramBotToken: tgToken.trim() || null, telegramChatId: tgChatId.trim() || null })
+      await repository.saveChannelConfigs({ serverchanKey: key || null, telegramBotToken: tgToken.trim() || null, telegramChatId: tgChatId.trim() || null })
       toast.success('已保存')
     } catch { toast.error('保存失败') } finally { setSaving(false) }
   }
@@ -153,7 +159,7 @@ export function NotificationSection() {
             <BellRing className="size-4 shrink-0 text-primary" strokeWidth={1.7} />
             <div className="min-w-0 flex-1">
               <div className="text-sm">浏览器推送（Web Push）</div>
-              <p className="mt-0.5 text-xs text-muted-foreground">iOS Safari 需先添加到主屏幕；安卓 Chrome 因 FCM 被墙不可用，建议使用下方 Server酱</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">iOS Safari 需先添加到主屏幕；**安卓大陆不可用**（Chrome 的推送走 FCM，被墙），请用下方 Server酱³</p>
             </div>
             <Badge variant={subscribed ? 'default' : 'outline'} className="shrink-0">{subscribed ? '已开启' : '未开启'}</Badge>
           </div>
@@ -171,20 +177,25 @@ export function NotificationSection() {
             </p>
           )}
           {isIOS && <p className="text-[10px] text-muted-foreground/70">📱 iPhone：请先分享到主屏幕（添加到主屏幕）后使用推送。</p>}
-          {isAndroidChrome && <p className="text-[10px] text-muted-foreground/70">🤖 安卓 Chrome 的推送服务（FCM）在中国大陆不可用，请配置下方 Server酱通过微信接收。</p>}
+          {isAndroidChrome && <p className="text-[10px] text-muted-foreground/70">🤖 安卓 Chrome 的推送服务（FCM）在中国大陆不可用，请配置下方 Server酱³（厂商通道，App 被杀也能收到）。</p>}
         </div>
 
         <div className="space-y-2 px-4 py-3">
           <div className="flex items-center gap-3">
             <Send className="size-4 shrink-0 text-primary" strokeWidth={1.7} />
-            <div className="min-w-0 flex-1 text-sm">Server酱（微信通知，安卓/桌面通用）</div>
+            <div className="min-w-0 flex-1 text-sm">Server酱³（安卓/桌面通用，走厂商通道）</div>
             <Badge variant={scKey.trim() ? 'default' : 'outline'} className="shrink-0">{scKey.trim() ? '已配置' : '未配置'}</Badge>
           </div>
           <div className="flex gap-2 pl-7">
-            <Input aria-label="Server酱 SendKey" placeholder="sctp…" value={scKey} onChange={e => setScKey(e.target.value)} className="h-9 flex-1 font-mono text-xs" />
+            <Input aria-label="Server酱³ SendKey" placeholder="sctp…（Server酱³ 的 SendKey）" value={scKey} onChange={e => setScKey(e.target.value)} className="h-9 flex-1 font-mono text-xs" />
             <Button size="sm" variant="outline" onClick={saveScKey} disabled={saving}>保存</Button>
           </div>
-          <p className="text-[10px] text-muted-foreground/70">在 sct.ftqq.com 获取 SendKey 后粘贴保存；保存后可点「测试发送」验证微信接收。</p>
+          <p className="text-[10px] text-muted-foreground/70">
+            在{' '}
+            <a href="https://sc3.ft07.com" target="_blank" rel="noreferrer" className="text-primary hover:underline">sc3.ft07.com</a>
+            {' '}扫码登录 → 手机装「Server酱³」App 并登录一次 → 复制以 <span className="font-mono">sctp</span> 开头的 SendKey 粘贴保存；
+            保存后点「测试发送」验证。<span className="text-muted-foreground/60">（App 被杀也能收到，PWA 本身不用挂后台）</span>
+          </p>
         </div>
 
         <div className="space-y-2 px-4 py-3">

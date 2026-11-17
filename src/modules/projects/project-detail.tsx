@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, ExternalLink, FileText, Pencil, RefreshCcw } from 'lucide-react'
+import { ArrowLeft, ArrowUp, ExternalLink, FileText, Pencil, RefreshCcw } from 'lucide-react'
 import { useProjects, useProjectDetail } from './api'
 import { PHASE_STYLE, fmtDate, kbTreeUrl, kbEditUrl, kbBlobUrl } from './shared'
 import { Badge } from '@/components/ui/badge'
@@ -19,8 +20,27 @@ export default function ProjectDetailPage() {
   // 头部信息优先取列表缓存（秒开）；直链进入且列表未含时用 dir 兜底
   const info = (data?.projects ?? []).find(p => (p.dir ?? p.name) === dir)
 
+  // v1.34：正文很长时给「回到顶部」。滚动容器是 layout 里的 <main>（不是 window），
+  // 所以从本文根节点往上找，而不是 document.documentElement。
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [showTop, setShowTop] = useState(false)
+  useEffect(() => {
+    const main = rootRef.current?.closest('main')
+    if (!main) return
+    const onScroll = () => setShowTop(main.scrollTop > 480)
+    onScroll()
+    main.addEventListener('scroll', onScroll, { passive: true })
+    return () => main.removeEventListener('scroll', onScroll)
+  }, [])
+  const backToTop = () => {
+    const main = rootRef.current?.closest('main')
+    // 尊重系统「减少动态效果」：否则 smooth 滚动反而成了新的眩晕源
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    main?.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
+  }
+
   return (
-    <div className="mx-auto max-w-3xl">
+    <div ref={rootRef} className="mx-auto max-w-3xl">
       <Link to="/projects" className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
         <ArrowLeft className="size-3.5" />返回项目列表
       </Link>
@@ -98,6 +118,13 @@ export default function ProjectDetailPage() {
         </a>
       </div>
       <p className="mt-2 text-[10px] text-muted-foreground">修改在知识库完成，保存后最多 10 分钟同步到此处</p>
+
+      {showTop && (
+        <button onClick={backToTop} aria-label="回到顶部"
+          className="fixed bottom-36 right-4 z-20 flex items-center gap-1 rounded-full border border-border bg-card/95 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-primary md:bottom-8 md:right-8">
+          <ArrowUp className="size-3.5" />回到顶部
+        </button>
+      )}
     </div>
   )
 }

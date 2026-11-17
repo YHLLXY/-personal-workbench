@@ -69,7 +69,8 @@ export function QuickCapture() {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={() => setOpen(false)}>
-      <div className="w-full sm:max-w-md bg-card rounded-t-2xl sm:rounded-2xl border border-border shadow-xl p-4 pb-[max(env(safe-area-inset-bottom),1.5rem)]" onClick={e => e.stopPropagation()}>
+      {/* v1.34：浮层自下而上 180ms（.sheet-enter），reduced-motion 下自动降级为无动画 */}
+      <div className="sheet-enter w-full sm:max-w-md bg-card rounded-t-2xl sm:rounded-2xl border border-border shadow-xl p-4 pb-[max(env(safe-area-inset-bottom),1.5rem)]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center mb-4">
           <div className="flex gap-1 bg-muted rounded-lg p-1">
             {TABS.map(t => (

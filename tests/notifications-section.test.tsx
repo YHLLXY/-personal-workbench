@@ -59,17 +59,32 @@ describe('NotificationSection', () => {
     await waitFor(() => expect(repository.savePushSubscription).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'https://push.example/1', keysP256dh: 'AQIDBA==', keysAuth: 'CQgH' })))
   })
 
-  it('Server酱：输入 SendKey 保存 → saveChannelConfigs（三字段一起写，避免清掉 Telegram）', async () => {
+  it('Server酱³：输入 SendKey 保存 → saveChannelConfigs（三字段一起写，避免清掉 Telegram）', async () => {
     render(
       <QueryClientProvider client={qc}>
         <NotificationSection />
       </QueryClientProvider>,
     )
-    await waitFor(() => expect(screen.getByLabelText(/Server酱 SendKey/)).toBeTruthy())
-    fireEvent.change(screen.getByLabelText(/Server酱 SendKey/), { target: { value: 'SCU123' } })
+    await waitFor(() => expect(screen.getByLabelText(/SendKey/)).toBeTruthy())
+    fireEvent.change(screen.getByLabelText(/SendKey/), { target: { value: 'sctp123tAbCdEf' } })
     // 精确匹配「保存」——加 Telegram 后 /保存/ 会同时命中「保存并测试」（v1.26）
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    await waitFor(() => expect(repository.saveChannelConfigs).toHaveBeenCalledWith({ serverchanKey: 'SCU123', telegramBotToken: null, telegramChatId: null }))
+    await waitFor(() => expect(repository.saveChannelConfigs).toHaveBeenCalledWith({ serverchanKey: 'sctp123tAbCdEf', telegramBotToken: null, telegramChatId: null }))
+  })
+
+  it('Server酱³：旧 Turbo 的 SCT… key 在保存前就被拦下，不写库（v1.34 统一 SC3）', async () => {
+    render(
+      <QueryClientProvider client={qc}>
+        <NotificationSection />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByLabelText(/SendKey/)).toBeTruthy())
+    fireEvent.change(screen.getByLabelText(/SendKey/), { target: { value: 'SCT123456Tabcdef' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    // 校验在落库之前（提示语走 toast，测试环境没挂 Toaster，这里断言「没写库」这个结果）
+    await new Promise(res => setTimeout(res, 20))
+    expect(repository.saveChannelConfigs).not.toHaveBeenCalled()
+    expect((screen.getByLabelText(/SendKey/) as HTMLInputElement).value).toBe('SCT123456Tabcdef')
   })
 
   it('Telegram：校验通过才落库（v1.26）', async () => {

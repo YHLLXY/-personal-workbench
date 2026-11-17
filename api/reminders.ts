@@ -291,6 +291,38 @@ async function telegramGetMe(botToken: string): Promise<string> {
   return j.result?.username ?? 'bot'
 }
 
+/**
+ * Server酱³（SC3）端点：SendKey 形如 `sctp<uid>t<rest>` → `https://<uid>.push.ft07.com/send/<key>.send`。
+ * key **原样**拼进 URL（区分大小写）；不匹配（如 Turbo 的 `SCT…`）返回 null —— 调用方按「通道没配好」处理。
+ * 为什么不再退回 sctapi.ftqq.com：SCT 只是转发、会加广告，且官方声明最多保留三年
+ * （见 docs/plans/RESEARCH_2026-11-17_通知推送.md），按「只做 SC3」的决策直接接厂商通道。
+ */
+export function sc3Endpoint(sendKey: string | null | undefined): string | null {
+  const key = (sendKey ?? '').trim()
+  const m = /^sctp(\d+)t/i.exec(key)
+  if (!m) return null
+  return `https://${m[1]}.push.ft07.com/send/${key}.send`
+}
+
+/**
+ * 发一条 SC3 通知；失败抛出**可读原因**（HTTP 码/非 0 code + 服务端原文片段），供 sent_channels 记账与设置页回显。
+ * SC3 成功返回 `{ code: 0 }`——HTTP 200 但 code 非 0 也算失败，所以不能只看 fetch 是否 resolve。
+ * 服务端原文必须带出来：响应形状变了而没有原文时，线上只能看到一句「失败」，无从判断。
+ */
+async function sendSc3(endpoint: string, title: string, desp: string): Promise<void> {
+  const r = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: `title=${encodeURIComponent(title)}&desp=${encodeURIComponent(desp)}`,
+    signal: AbortSignal.timeout(5000),
+  })
+  const raw = await r.text().catch(() => '')
+  let code: number | undefined
+  try { code = (JSON.parse(raw) as { code?: number }).code } catch { /* 非 JSON 响应：按原文报错 */ }
+  if (r.ok && code === 0) return
+  throw new Error(code === undefined ? `HTTP ${r.status} · ${raw.slice(0, 120)}` : `code ${code} · ${raw.slice(0, 120)}`)
+}
+
 async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[], goals: GoalLike[], now: Date): Promise<{ sent: number; skipped: number }> {
   ensureVapid()
   const [dueRes, subsRes, configsRes] = await Promise.all([
@@ -371,23 +403,19 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
         }
       }
     }
-    // ② Server酱
+    // ② Server酱³（记账键仍是 serverchan：换端点不换通道 id，否则同一行会按两个通道各发一次）
     if (scKey) {
       configured++
       if (state.serverchan) delivered++
       else {
-        try {
-          // Server酱成功返回 {"code":0}；错误为 HTTP 200 + 非 0 code，不能只看 fetch 是否 resolve
-          const r = await fetch(`https://sctapi.ftqq.com/${scKey}.send`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/x-www-form-urlencoded' },
-            body: `title=${encodeURIComponent('个人工作台提醒')}&desp=${encodeURIComponent(text)}`,
-            signal: AbortSignal.timeout(5000),
-          })
-          const j = (await r.json().catch(() => null)) as { code?: number } | null
-          if (r.ok && j?.code === 0) { sent++; state.serverchan = true; delivered++; delete errors.serverchan }
-          else errors.serverchan = j?.code === undefined ? `HTTP ${r.status}` : `code ${j.code}`
-        } catch (err) { errors.serverchan = errText(err) }
+        const endpoint = sc3Endpoint(scKey)
+        if (!endpoint) {
+          // 旧 Turbo 的 SendKey：明确报错，别静默失败到用户猜
+          errors.serverchan = 'SendKey 不是 Server酱³ 格式（应以 sctp 开头），请在设置里改用 SC3 的 SendKey'
+        } else {
+          try { await sendSc3(endpoint, '个人工作台提醒', text); sent++; state.serverchan = true; delivered++; delete errors.serverchan }
+          catch (err) { errors.serverchan = errText(err) }
+        }
       }
     }
     // ③ Telegram（服务端出网，不受大陆网络限制）
@@ -448,17 +476,15 @@ async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number;
   }
   for (const c of configs ?? []) {
     if (!c.serverchan_key) continue
+    const endpoint = sc3Endpoint(String(c.serverchan_key))
+    if (!endpoint) {
+      results.push({ channel: 'serverchan', ok: false, error: 'SendKey 不是 Server酱³ 格式（应以 sctp 开头），请改用 Server酱³ 的 SendKey' })
+      continue
+    }
     try {
-      // 与 sendDue 相同：仅 HTTP ok 且 code===0 才算送达
-      const r = await fetch(`https://sctapi.ftqq.com/${String(c.serverchan_key)}.send`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: `title=${encodeURIComponent('个人工作台提醒')}&desp=${encodeURIComponent('这是一条测试通知，通知功能已就绪 ✅')}`,
-        signal: AbortSignal.timeout(5000),
-      })
-      const j = (await r.json().catch(() => null)) as { code?: number } | null
-      if (r.ok && j?.code === 0) { sent++; results.push({ channel: 'serverchan', ok: true }) }
-      else results.push({ channel: 'serverchan', ok: false, error: j?.code === undefined ? `HTTP ${r.status}` : `code ${j.code}` })
+      await sendSc3(endpoint, '个人工作台提醒', '这是一条测试通知，通知功能已就绪 ✅')
+      sent++
+      results.push({ channel: 'serverchan', ok: true })
     } catch (err) { results.push({ channel: 'serverchan', ok: false, error: errText(err) }) }
   }
   for (const c of configs ?? []) {

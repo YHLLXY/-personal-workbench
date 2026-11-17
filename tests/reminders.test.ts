@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeReminders, isDueNow, liveRefKeys, planReminders, reminderText, shanghaiMs, todayShanghai, type ExistingReminder, type ReminderSpec } from '../api/reminders'
+import { computeReminders, isDueNow, liveRefKeys, planReminders, reminderText, sc3Endpoint, shanghaiMs, todayShanghai, type ExistingReminder, type ReminderSpec } from '../api/reminders'
 
 // 固定时刻：2026-08-08 12:00 上海 = 2026-08-08T04:00:00.000Z
 const NOW = new Date('2026-08-08T04:00:00.000Z')
@@ -167,6 +167,23 @@ describe('planReminders（增 / 改 / 删 三向对齐）', () => {
     const plan = planReminders(existing, [], new Set(['exam:e1']), NOW2)
     expect(plan.remove).toHaveLength(0)
     expect(plan.update).toHaveLength(0)
+  })
+})
+
+describe('sc3Endpoint（Server酱³ 端点，v1.34 F）', () => {
+  it('sctp<uid>t… → https://<uid>.push.ft07.com/send/<key>.send（key 原样、区分大小写）', () => {
+    expect(sc3Endpoint('sctp123tAbCdEf')).toBe('https://123.push.ft07.com/send/sctp123tAbCdEf.send')
+  })
+  it('大写 SCTP 也识别，uid 照样取出（key 本身不被改写）', () => {
+    expect(sc3Endpoint('SCTP456TXyZ')).toBe('https://456.push.ft07.com/send/SCTP456TXyZ.send')
+  })
+  it('旧 Turbo 的 SCT… key → null（服务端据此报「请改用 SC3」，不再退回 sctapi）', () => {
+    expect(sc3Endpoint('SCT123456Tabcdef')).toBeNull()
+  })
+  it('空值 / 空白 → null', () => {
+    expect(sc3Endpoint('')).toBeNull()
+    expect(sc3Endpoint('   ')).toBeNull()
+    expect(sc3Endpoint(null)).toBeNull()
   })
 })
 

@@ -259,7 +259,7 @@ describe('api/reminders 入口', () => {
   it('check：Server酱 返回非 0 code → skipped，sent_at 不标记', async () => {
     state.insert('wb_tasks', { id: 't1', title: '交报告', status: 'todo', due_date: '2026-01-01', due_time: '09:30', user_id: 'u1' })
     state.insert('wb_reminders', { id: 'r1', user_id: 'u1', ref_type: 'task', ref_id: 't1', kind: 'due', scheduled_at: '2026-01-01T01:30:00.000Z', sent_at: null, dismissed_at: null, created_at: '2026-01-01T00:00:00.000Z' })
-    state.insert('wb_channel_configs', { user_id: 'u1', serverchan_key: 'SCU123' })
+    state.insert('wb_channel_configs', { user_id: 'u1', serverchan_key: 'sctp123tAbCdEf' })
     state.fetchResults.push({ status: 200, body: '{"code":400}' }) // HTTP 200 但 code 非 0 → 失败
     const res = makeRes()
     await handler(makeReq({ method: 'GET', query: { entry: 'check' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
@@ -296,13 +296,14 @@ describe('api/reminders 入口', () => {
 
   it('test-notify：向本人通道发送测试通知', async () => {
     state.insert('wb_push_subscriptions', { id: 's1', user_id: 'u1', endpoint: 'https://push.example/1', keys_p256dh: 'p256', keys_auth: 'auth', user_agent: 't', created_at: '2026-08-08T00:00:00.000Z' })
-    state.insert('wb_channel_configs', { user_id: 'u1', serverchan_key: 'SCU123' })
-    state.fetchResults.push({ status: 200, body: '{"code":0}' }) // Server酱
+    state.insert('wb_channel_configs', { user_id: 'u1', serverchan_key: 'sctp123tAbCdEf' })
+    state.fetchResults.push({ status: 200, body: '{"code":0}' }) // Server酱³
     const res = makeRes()
     await handler(makeReq({ method: 'POST', query: { entry: 'test' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
     expect(res.statusCode).toBe(200)
     expect((res.body as { sent: number }).sent).toBe(2) // web push 1 + serverchan 1
-    expect(state.fetchCalls.some(c => c.url.includes('SCU123'))).toBe(true)
+    // 端点由 key 形态推出：uid 123 → 123.push.ft07.com，key 原样拼进 URL（v1.34 统一 SC3）
+    expect(state.fetchCalls.some(c => c.url === 'https://123.push.ft07.com/send/sctp123tAbCdEf.send')).toBe(true)
   })
 
   // —— v1.26 Telegram 通道 ——

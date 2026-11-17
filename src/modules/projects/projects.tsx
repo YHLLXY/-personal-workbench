@@ -85,7 +85,8 @@ export default function Projects() {
       ) : projects.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">知识库中还没有项目门户口</p>
       ) : (
-        <div className="space-y-5">
+        // 骨架 → 内容只淡入（.fade-rise）：整页已有 page-enter，这里避免「加载完成」时content硬切一下
+        <div className="fade-rise space-y-5">
           {PHASE_ORDER.map(phase => {
             const list = projects.filter(p => p.phase === phase)
             if (list.length === 0) return null

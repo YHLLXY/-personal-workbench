@@ -261,6 +261,38 @@ test.describe('移动端浮层 & 返回键', () => {
   })
 })
 
+test.describe('动效（v1.34 C：克制档 + reduced-motion 全量降级）', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+
+  test('reduced-motion 下页面入场与浮层动画都为 none', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('/')
+    const fab = page.getByRole('button', { name: '快速捕获' }).last()
+    await fab.waitFor({ state: 'visible', timeout: 20_000 })
+    const pageAnim = await page.locator('.page-enter').first().evaluate(el => getComputedStyle(el).animationName)
+    expect(pageAnim).toBe('none')
+    await fab.tap()
+    await expect(page.getByPlaceholder('要做什么？今天到期')).toBeVisible()
+    const sheetAnim = await page.locator('.sheet-enter').evaluate(el => getComputedStyle(el).animationName)
+    expect(sheetAnim).toBe('none')
+  })
+
+  test('默认（不减少动效）时浮层有入场动画，时长在 140–200ms 克制档内', async ({ page }) => {
+    await page.goto('/')
+    const fab = page.getByRole('button', { name: '快速捕获' }).last()
+    await fab.waitFor({ state: 'visible', timeout: 20_000 })
+    await fab.tap()
+    await expect(page.getByPlaceholder('要做什么？今天到期')).toBeVisible()
+    const anim = await page.locator('.sheet-enter').evaluate(el => {
+      const s = getComputedStyle(el)
+      return { name: s.animationName, ms: parseFloat(s.animationDuration) * 1000 }
+    })
+    expect(anim.name).toBe('sheet-in')
+    expect(anim.ms).toBeGreaterThanOrEqual(140)
+    expect(anim.ms).toBeLessThanOrEqual(200)
+  })
+})
+
 test('今日概览：桌面双栏 820，长标题不会撑出横向滚动条（v1.33）', async ({ page }) => {
   await goto(page, '/tasks')
   await page.getByRole('button', { name: '新建' }).click()
