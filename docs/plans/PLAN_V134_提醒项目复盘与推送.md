@@ -33,10 +33,10 @@
 ### 改动
 | 文件 | 改动 |
 |---|---|
-| `src/modules/reminders/format.ts` | 新增 `taskReminderAt(dueDate, dueTime): string \| null`（按 +08:00 推出该任务的提醒时刻，与 server `shanghaiMs` 同口径；无 dueDate/dueTime → null）与 `effectiveRows(reminders, refs, now)`：① task 行用推导时刻覆盖 `scheduledAt`（任务改期立刻生效）；② task 已完成（**用 `isDoneForToday`，重复任务 status 仍是 todo**）、任务不存在、无 dueTime → 该行不出现；③ **exam/goal 行原样透传**（保留 `missing` 降级文案，`tests/reminders-format.test.ts:79` 已钉住）；④ `tasks === undefined`（还在加载）时**不过滤**，避免首帧闪空 |
+| `src/modules/reminders/format.ts` | 新增 `taskReminderAt(dueDate, dueTime): string \| null`（按 +08:00 推出该任务的提醒时刻，与 server `shanghaiMs` 同口径；无 dueDate/dueTime → null）与 `effectiveRows(reminders, refs, { now, today, tasksLoaded })`：① task 行用推导时刻覆盖 `scheduledAt`（任务改期立刻生效）；② task 已完成（**用 `isDoneForToday`，重复任务 status 仍是 todo**）、任务不存在、无 dueTime → 该行不出现；③ **exam/goal 行原样透传**（保留 `missing` 降级文案，`tests/reminders-format.test.ts:79` 已钉住）；④ `tasks === undefined`（还在加载）时**不过滤**，避免首帧闪空 |
 | `src/modules/reminders/api.ts` | 新增 `useReminderView()`：`useReminders() + useTasks() + useExams() + useStudyGoals()` → 返回 `effectiveRows` 与 `countDue` 的结果；**侧边栏角标（`useReminderSync`）改用它**，否则角标与列表各算各的（v1.31 修过的「两个数对不上」原样复发） |
-| `src/lib/task-rules.ts`（新） | 把 `isDoneForToday` 从 `modules/overview/api.ts` 挪进来（纯函数，三处引用跟着改），并新增 `completionPatch(t, today)`：把 `today-tasks.tsx:40-66` 里「重复任务滚动 / 普通任务 done」的分支抽成纯函数，返回 `{ patch, nextDue? }`。**两处完成入口从此共用同一条规则** |
-| `src/modules/reminders/reminders-center.tsx` | ① 胶囊改筛选按钮（全部/已逾期/待处理/即将到来），`aria-pressed`，再点一次取消；② 完成走 `completionPatch` + toast（重复任务滚动、普通任务 done）——**不能写死 `status:'done'`**，否则从提醒中心完成一个每日任务会**终结整条序列**；③ 排序/计数/行内时刻全部改用 `effectiveRows` 的产物；④ 按钮 pending 时禁用 |
+| `src/lib/task-rules.ts`（新） | 把 `isDoneForToday` 从 `modules/overview/api.ts` 挪进来（纯函数，三处引用跟着改），并新增 `completionPatch(t, today)`：把 `today-tasks.tsx:40-66` 里「重复任务滚动 / 普通任务 done」的分支抽成纯函数，返回 `{ patch, undo, nextDue? }`（`undo` 给 toast 撤销用）。**两处完成入口从此共用同一条规则** |
+| `src/modules/reminders/reminders-center.tsx` | ① 胶囊改筛选按钮（全部/已逾期/待处理/即将到来），`aria-pressed`，再点一次取消；② 完成走 `completionPatch` + 带「撤销」的 toast（5 秒）——**不能写死 `status:'done'`**，否则从提醒中心完成一个每日任务会**终结整条序列**；③ 排序/计数/行内时刻全部改用 `effectiveRows` 的产物；④ 按钮 pending 时禁用；⑤ 顺延同样带撤销（还原原 dueDate） |
 | `api/reminders.ts` | **服务端同步修**：`liveRefKeys` 对 task 增加 `&& t.dueDate && t.dueTime`（与 `computeReminders` 同条件），让「清空提醒时间」真的删行；exam/goal 不动（考试节点发完就不在 computed 里，不能一律删——`tests/reminders.test.ts:148-155` 是保护） |
 | `tests/reminders.test.ts` / `tests/reminders-format.test.ts` | 补：清空 dueTime → 行被删；effectiveRows 的四种输入（done / repeat 当天已完成 / 无 dueTime / 任务未加载） |
 
@@ -79,7 +79,7 @@
 ### 改动（全部 CSS/组件级，不引库）
 | 位置 | 改动 |
 |---|---|
-| `src/index.css` | 新增 duration/easing token（`--ease-out-soft` 等）；`.sheet-enter`（快速捕获自下而上 220ms）；`.fade-rise`（骨架→内容 150ms 淡入）；全部包在 `prefers-reduced-motion` 保护里 |
+| `src/index.css` | 新增 duration/easing token（`--ease-out-soft` 等）；`.sheet-enter`（快速捕获自下而上 180ms，克制档）；`.fade-rise`（骨架→内容 150ms 淡入）；全部包在 `prefers-reduced-motion` 保护里 |
 | `src/app/quick-capture.tsx` | 浮层套 `.sheet-enter` |
 | `src/modules/projects/projects.tsx`、首页卡片 | 骨架容器加淡出 |
 
@@ -140,18 +140,49 @@ SCT→SC3 的转发存在但**会加广告、声明最多三年**，因此直接
 ### 改动
 | 文件 | 改动 |
 |---|---|
-| `api/reminders.ts` | 新增 `serverchanEndpoint(key)`：前缀 **忽略大小写** 匹配 `/^sctp(\d+)t/i` → `https://<uid>.push.ft07.com/send/<key>.send`（**URL 里的 key 保持原样，区分大小写**），否则沿用 SCT；`sendDue` 与 `sendTest` 共用。**绝对不能新增 channel id**——`sent_channels` 的记账键是 `serverchan`（`:140,346,399`），新增一个 id 会让同一行按两个通道各发一次。 |
-| `src/modules/me/notifications-section.tsx` | 真正要改的是**文案与入口**：`:180` 标题、`:187` 的 `sct.ftqq.com` 链接指向 SC3、`:73` 的 `CHANNEL_CN`。安卓 FCM 不可用的提示**已存在**（`:156,174`），别重复加；placeholder 已经是 `sctp…`（`:184`） |
+| `api/reminders.ts` | 新增 `sc3Endpoint(sendKey)`：匹配 `/^sctp(\d+)t/i` → `https://<uid>.push.ft07.com/send/<原样 key>.send`（**URL 里的 key 保持原样，区分大小写**），**不匹配即视为未配置**（旧 SCT key 直接拒绝，并在错误文本里说明「这是 Turbo 的 SendKey，请改用 Server酱³」）。**不做双端点兼容**（准则 #1）；`sendDue` 与 `sendTest` 共用。**绝对不能新增 channel id**——`sent_channels` 的记账键是 `serverchan`（`:140,346,399`），新增一个 id 会让同一行按两个通道各发一次。 |
+| `src/modules/me/notifications-section.tsx` | 真正要改的是**文案、入口与校验**：`:180` 标题、`:187` 的 `sct.ftqq.com` 链接指向 `sc3.ft07.com`、`:73` 的 `CHANNEL_CN`；**保存前校验 key 形态**（`/^sctp(\d+)t/i`），旧 Turbo key 直接提示「请改用 Server酱³ 的 SendKey」而不是存进去等失败。安卓 FCM 不可用的提示**已存在**（`:156,174`），别重复加；placeholder 已经是 `sctp…`（`:184`） |
 | 无迁移 | `wb_channel_configs.serverchan_key` 复用，key 形态决定端点 |
 
 ### 验收
-- 单测：`serverchanEndpoint` 覆盖 `sctp123txxx` / `SCTP123Txxx`（大写也识别）/ `SCTxxx` / 空值 / 含特殊字符。
+- 单测：`sc3Endpoint` 覆盖 `sctp123txxx` / `SCTP123Txxx`（大写也识别，uid 仍取出 123）/ `SCTxxx`（旧 Turbo key → null）/ 空值。
 - **响应契约**：现在只认 `j.code === 0`（`:381`），SC3 若返回不同形状会静默判失败 → 「测试发送」必须回显服务端原文（`:382` 已有错误文本），真机验证时以它为准。
 - 真机：SC3 SendKey 点「测试发送」→ 手机（App 可被杀）收到；杀后台 5 分钟再发仍收到。
 
 ---
 
-## 实施顺序与提交
+## 7. 已拍板（2026-11-17，用户确认）
+
+| # | 决定 | 落到实现上的约束 |
+|---|---|---|
+| 1 | **统一用 Server酱³（SC3）** | F 段只做 SC3 + 保留 Telegram 备用；Web Push 保留代码但**在设置页明确标注「安卓大陆不可用」**，不再作为推荐路径。手机端需要装 SC3 App 登录一次，PWA 本身不用挂后台 |
+| 2 | **明日待办按计划**：生成到「明天」 | 结果卡片就地列出条目 + 「去待办查看」入口；不改成生成到今天 |
+| 3 | **动效克制** | 时长 140–200ms、只做 opacity/transform、不加弹簧/不加弹跳、不做路由级 View Transition；`prefers-reduced-motion` 全量降级 |
+| 4 | **提醒完成加撤销** | toast 带「撤销」，5 秒内可回退（重复任务要还原 dueDate，普通任务还原 status）。`completionPatch` 因此返回 `{ patch, undo }`，两个入口共用同一组补丁 |
+
+### 撤销的具体设计（A 段补充）
+
+`completionPatch(t, today)` 返回：
+
+```ts
+// 普通任务
+{ patch: { status: 'done' },        undo: { status: 'todo' } }
+// 重复任务（滚动到下一期）
+{ patch: { completedAt, dueDate: next }, undo: { completedAt: null, dueDate: t.dueDate } }
+```
+
+调用方（今日待办 / 提醒中心）在 `mutate` 前拿到 `undo` 快照，成功 toast：
+
+```
+已完成 · 「标题」下次 2026-11-18    [撤销]
+```
+
+撤销 = 用 `undo` 再 `mutate` 一次。**5 秒后 toast 消失即视为确认**（与今日待办的既有交互一致）。
+提醒行会随任务缓存一起回到列表（`effectiveRows` 是投影，不需要额外恢复逻辑）。
+
+---
+
+## 8. 实施顺序与提交
 
 1. `fix(reminders)`：A（含服务端 liveRefKeys + 前端唯一投影 + 筛选 + 完成逻辑复用）。
 2. `fix(projects,review)`：B + E 的缺陷部分 + D 的 stripFrontmatter（含单测）。
@@ -159,23 +190,14 @@ SCT→SC3 的转发存在但**会加广告、声明最多三年**，因此直接
 
 每步都跑：`npm test` + `npm run build` + `npm run lint` + 相关 E2E；最后统一 `npx playwright test`。
 
-## 不在本次范围
+## 9. 不在本次范围
 
 - 路由级 View Transition（调研评估过：风险大收益小）。
-- 自建 ntfy（需要一台常开机器，等用户决定）。
+- 自建 ntfy / Gotify（用户已定用 SC3；将来若要不依赖第三方再单独立项）。
 - 提醒中心的「未送达原因」展开（要服务端回传 per-channel 状态，属于另一轮）。
 - 项目详情的目录/TOC（先看排版效果）。
 
-## 需要你拍板的四件事
-
-1. **推送**：接受「手机装 Server酱³ App 并登录一次」（免费额度约 200 条/天）吗？还是宁愿自建 ntfy（需要一台常开机器）？
-2. **明日待办**：生成到「明天」按现状保留（结果卡片给「去待办查看」入口），可以吗？
-3. **动效强度**：克制（150–220ms、只做必要进出场）还是更明显？
-4. **提醒完成**：要不要加「撤销」（toast 上一颗按钮，5 秒内可回退）？
-
----
-
-## 9. 修订记录（第二轮独立审阅后）
+## 10. 修订记录（两轮审阅后）
 
 第一版计划有 8 处会在实现时变成真问题，已全部改掉：
 
