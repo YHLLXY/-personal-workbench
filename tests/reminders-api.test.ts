@@ -306,6 +306,29 @@ describe('api/reminders 入口', () => {
     expect(state.fetchCalls.some(c => c.url === 'https://123.push.ft07.com/send/sctp123tAbCdEf.send')).toBe(true)
   })
 
+  it('test-notify：SC3 成功时回传原始响应（code 0 只代表受理，手机没收到时要靠它判断）', async () => {
+    state.insert('wb_channel_configs', { user_id: 'u1', serverchan_key: 'sctp123tAbCdEf' })
+    state.fetchResults.push({ status: 200, body: '{"code":0,"message":"","data":{"pushid":"p-1","readkey":"k-1","error":"SUCCESS"}}' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'POST', query: { entry: 'test' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { results: Array<{ channel: string; ok: boolean; detail?: string }> }
+    const sc = body.results.find(x => x.channel === 'serverchan')!
+    expect(sc.ok).toBe(true)
+    expect(sc.detail).toContain('pushid')
+    expect(sc.detail).toContain('SUCCESS')
+  })
+
+  it('test-notify：SC3 返回 code 0 但响应体不是 JSON → 明确报错，不当成送达', async () => {
+    state.insert('wb_channel_configs', { user_id: 'u1', serverchan_key: 'sctp123tAbCdEf' })
+    state.fetchResults.push({ status: 200, body: 'ok' })
+    const res = makeRes()
+    await handler(makeReq({ method: 'POST', query: { entry: 'test' }, headers: { authorization: 'Bearer jwt-1' } }), res as never)
+    const body = res.body as { results: Array<{ channel: string; ok: boolean; error?: string }> }
+    const sc = body.results.find(x => x.channel === 'serverchan')!
+    expect(sc.ok).toBe(false)
+    expect(sc.error).toContain('非 JSON')
+  })
+
   // —— v1.26 Telegram 通道 ——
 
   it('check：配置了 Telegram 时同时推送，成功才标记 sent_at', async () => {

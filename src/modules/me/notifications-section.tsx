@@ -79,7 +79,7 @@ export function NotificationSection() {
       const { data: { session } } = await sb.auth.getSession()
       if (!session) { toast.error('未登录'); return }
       const r = await fetch('/api/test-notify', { method: 'POST', headers: { authorization: `Bearer ${session.access_token}` } })
-      const j = await r.json() as { sent?: number; results?: Array<{ channel: string; ok: boolean; error?: string }> }
+      const j = await r.json() as { sent?: number; results?: Array<{ channel: string; ok: boolean; error?: string; detail?: string }> }
       const results = j.results ?? []
       const bad = results.filter(x => !x.ok)
       if (results.length === 0) {
@@ -87,13 +87,16 @@ export function NotificationSection() {
         toast.error('没有可用的通道')
         return
       }
+      // 成功也把 SC3 的原始响应摊开：「code 0 但手机没收到」时，pushid 能对上 SC3 后台记录、data.error 能说明原因
+      const sc3Detail = results.find(x => x.channel === 'serverchan' && x.detail)?.detail
       if (bad.length === 0) {
-        setTestResult({ ok: true, text: `${j.sent ?? 0} 个通道已送达` })
+        setTestResult({ ok: true, text: `${j.sent ?? 0} 个通道已送达${sc3Detail ? `｜SC3 响应：${sc3Detail}` : ''}` })
         toast.success(`测试通知已发送（${j.sent ?? 0} 个通道）`)
         return
       }
       // 失败原样回显服务端错误（chat not found / code 400 …），不再只给一个笼统的「发送失败」
       const text = bad.map(b => `${CHANNEL_CN[b.channel] ?? b.channel}：${b.error ?? '失败'}`).join('；')
+        + (sc3Detail ? `｜SC3 响应：${sc3Detail}` : '')
       setTestResult({ ok: false, text })
       toast.error('部分通道失败', { description: text })
     } catch { toast.error('发送失败，请重试') }

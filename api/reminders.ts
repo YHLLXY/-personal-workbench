@@ -304,12 +304,16 @@ export function sc3Endpoint(sendKey: string | null | undefined): string | null {
   return `https://${m[1]}.push.ft07.com/send/${key}.send`
 }
 
+/** SC3 响应体（只取用得上的字段；形状变了也不会崩） */
+interface Sc3Body { code?: number; message?: string; data?: { pushid?: string; readkey?: string; error?: string } }
+
 /**
- * 发一条 SC3 通知；失败抛出**可读原因**（HTTP 码/非 0 code + 服务端原文片段），供 sent_channels 记账与设置页回显。
- * SC3 成功返回 `{ code: 0 }`——HTTP 200 但 code 非 0 也算失败，所以不能只看 fetch 是否 resolve。
- * 服务端原文必须带出来：响应形状变了而没有原文时，线上只能看到一句「失败」，无从判断。
+ * 发一条 SC3 通知；失败抛**可读原因**（HTTP 码/非 0 code + 服务端原文片段）。
+ * **成功也把原始响应带回来**：SC3 的 code=0 只代表「请求被受理」，真正有没有投到手机上要看 data.error
+ * 与后台记录。v1.34.0 只回一个「已送达」，于是「code 0 但手机没收到」在 UI 上完全无从判断
+ * （2026-11-17 真机实测：三通道都 true、手机没响）。
  */
-async function sendSc3(endpoint: string, title: string, desp: string): Promise<void> {
+async function sendSc3(endpoint: string, title: string, desp: string): Promise<{ raw: string; data?: Sc3Body['data'] }> {
   const r = await fetch(endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -317,10 +321,11 @@ async function sendSc3(endpoint: string, title: string, desp: string): Promise<v
     signal: AbortSignal.timeout(5000),
   })
   const raw = await r.text().catch(() => '')
-  let code: number | undefined
-  try { code = (JSON.parse(raw) as { code?: number }).code } catch { /* 非 JSON 响应：按原文报错 */ }
-  if (r.ok && code === 0) return
-  throw new Error(code === undefined ? `HTTP ${r.status} · ${raw.slice(0, 120)}` : `code ${code} · ${raw.slice(0, 120)}`)
+  let body: Sc3Body | null = null
+  try { body = JSON.parse(raw) as Sc3Body } catch { /* 非 JSON 响应：按原文报错 */ }
+  if (!r.ok) throw new Error(`HTTP ${r.status} · ${raw.slice(0, 120)}`)
+  if (body?.code !== 0) throw new Error(body?.code === undefined ? `HTTP ${r.status} · 非 JSON 响应 · ${raw.slice(0, 120)}` : `code ${body.code} · ${raw.slice(0, 120)}`)
+  return { raw, data: body.data }
 }
 
 async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[], goals: GoalLike[], now: Date): Promise<{ sent: number; skipped: number }> {
@@ -413,8 +418,13 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
           // 旧 Turbo 的 SendKey：明确报错，别静默失败到用户猜
           errors.serverchan = 'SendKey 不是 Server酱³ 格式（应以 sctp 开头），请在设置里改用 SC3 的 SendKey'
         } else {
-          try { await sendSc3(endpoint, '个人工作台提醒', text); sent++; state.serverchan = true; delivered++; delete errors.serverchan }
-          catch (err) { errors.serverchan = errText(err) }
+          try {
+            const { data } = await sendSc3(endpoint, '个人工作台提醒', text)
+            // code=0 只代表受理：data.error 非 SUCCESS 时留一行日志，「手机没收到」时至少有迹可循
+            const sc3Error = data?.error
+            if (sc3Error && !/^success$/i.test(sc3Error)) console.warn('[reminders] sc3 已受理但报告 error:', sc3Error)
+            sent++; state.serverchan = true; delivered++; delete errors.serverchan
+          } catch (err) { errors.serverchan = errText(err) }
         }
       }
     }
@@ -445,7 +455,7 @@ async function sendDue(sb: SupabaseClient, tasks: TaskLike[], exams: ExamLike[],
 }
 
 /** 单通道测试结果：设置页据此逐行显示成功/失败与**服务端原文**（旧版把错误全吞了，只能看到 sent 计数） */
-interface ChannelResult { channel: 'webpush' | 'serverchan' | 'telegram'; ok: boolean; error?: string }
+interface ChannelResult { channel: 'webpush' | 'serverchan' | 'telegram'; ok: boolean; error?: string; /** 成功时的服务端原始响应（SC3 排查「code 0 但没收到」用） */ detail?: string }
 
 /** 测试发送：向本人全部通道发送一条测试通知 */
 async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number; results: ChannelResult[] }> {
@@ -482,9 +492,10 @@ async function sendTest(sb: SupabaseClient, _now: Date): Promise<{ sent: number;
       continue
     }
     try {
-      await sendSc3(endpoint, '个人工作台提醒', '这是一条测试通知，通知功能已就绪 ✅')
+      const { raw } = await sendSc3(endpoint, '个人工作台提醒', '这是一条测试通知，通知功能已就绪 ✅')
       sent++
-      results.push({ channel: 'serverchan', ok: true })
+      // 成功也回传原文：pushid/readkey 能对上「SC3 后台的推送记录」，data.error 能说明投递是否被拒
+      results.push({ channel: 'serverchan', ok: true, detail: raw.slice(0, 200) })
     } catch (err) { results.push({ channel: 'serverchan', ok: false, error: errText(err) }) }
   }
   for (const c of configs ?? []) {
