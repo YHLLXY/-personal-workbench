@@ -211,3 +211,27 @@ SCT→SC3 的转发存在但**会加广告、声明最多三年**，因此直接
 | 6 | 新正则剥 frontmatter | 要求尾换行，文件以 `---` 结尾时失效；降级分支漏剥 | 复用 `parseGateway` 的正则，两条分支都剥 |
 | 7 | 想加 `serverchan3` 通道 | 按通道记账会把同一行发两次 | 保持 key=serverchan，只换端点 |
 | 8 | 「已是最新」toast | 服务端 10 分钟缓存 + 静默回退快照 → 文案说谎 | 用 `data.updatedAt`/`source` 三条可达文案 |
+
+---
+
+## 11. 实施记录（2026-11-17，与本文的偏差）
+
+四处与计划文本不同，都是实现时才发现"按原文做反而更差"，已就地决定并记录：
+
+| # | 位置 | 计划写法 | 实际实现 | 原因 |
+|---|---|---|---|---|
+| 1 | E 段 review-utils | parsePlan「增加去重」 | **parsePlan 不去重**（批内重复保留） | 与同节决定 ③「批内保留，一天两次『背单词』是合法用法」直接冲突；③ 是用户拍板的行为，按 ③ 执行。误重复由**可编辑预览**兜底（用户能看见、能取消勾选）。表格那句是笔误 |
+| 2 | B 段验收 | 点刷新「出现 toast」 | 常驻状态行（`role=status` + `aria-live`） | toast 几秒就消失，「生成于 HH:mm」这种要读的信息留不住；三条文案与验收要求完全一致 |
+| 3 | A 段 | `effectiveRows(reminders, refs, { now, today, tasksLoaded })` | `effectiveRows(reminders, { tasks, exams, goals }, { today })` | 投影**不做时间过滤**（未到点的行仍要出现在「即将到来」），`now` 用不上；「任务未加载」用 `tasks === undefined` 表达，比布尔标志更难写错 |
+| 4 | A 段 | 角标改用投影 | 同计划（`useReminderSync` → `useReminderView`） | 代价是 layout 会顺带拉 tasks/exams/goals 三个查询；这是"单一投影"的必付成本，比角标与列表两个数字对不上便宜 |
+
+落地提交（按 §8 的顺序）：
+
+- `f7e8e570a3` `fix(reminders)`：A（唯一投影 + 服务端 liveRefKeys + 筛选 + 完成规则复用）
+- `93c732eaca` `fix(projects,review)`：B + E + D 的 stripFrontmatter
+- `b3a45455a0` `feat(ui,notify)`：C 动效 + D 排版 + F SC3
+- `bff620cd26` `docs: bump v1.34.0 changelog` + tag `v1.34.0`
+
+门禁实测：单测 702 绿（`review-real-gateways` 为环境性红）· build 通过 · lint 11/12 ·
+`check:bundle` 入口 84KB brotli / 全站 328KB · E2E 21 项通过（「今日概览 820」在 4 worker 并发下偶发
+teardown 超时，单跑 6s 稳定 —— 负载抖动）。
