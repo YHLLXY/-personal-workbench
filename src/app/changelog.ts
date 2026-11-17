@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.34.1',
+    date: '2026-11-17',
+    title: '「测试发送」摊开 Server酱³ 的原始响应',
+    items: [
+      '修复：SC3 的 code=0 只代表**请求被受理**，真正的投递结果在响应的 data.error 里；上一版把成功时的响应体丢掉了，于是真机实测出现「三个通道都显示已送达、手机一条没收到」时完全无从判断。现在「测试发送」会把 SC3 的原始响应（含 pushid / readkey / data.error）摊在结果行里，服务端遇到 data.error 非 SUCCESS 也会写一行日志（Vercel Logs 搜 sc3 已受理）',
+      '修复：SC3 返回 HTTP 200 但响应体不是 JSON（网关页、错误页）时以前会被当成已送达，现在明确报「非 JSON 响应」并带上原文片段',
+    ],
+  },
+  {
     version: 'v1.34.0',
     date: '2026-11-17',
     title: '提醒不再是另一份状态 · 明日待办看得见 · 安卓推送换 Server酱³',
