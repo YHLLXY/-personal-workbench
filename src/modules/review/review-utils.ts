@@ -3,9 +3,41 @@ import { localDateOfISO, type Task, type FocusSession, type HabitLog } from '../
 
 // 复盘视图的纯函数（独立文件避免触发 fast-refresh 规则）
 
-/** 明日计划文本 → 待办条目：按换行/中文分号/英文分号/中文逗号拆分，trim 后过滤空串与长度≤1 的行 */
+/** 行首列表符号：`- ` `* ` `1. ` `1) ` `1、`（都要求有分隔，避免把 1.5 小时这种数字开头误剥） */
+const LIST_MARKER = /^(?:[-*+•]\s+|\d+[.)]\s+|\d+、\s*)/
+
+/**
+ * 明日计划文本 → 待办条目：按换行/中文分号/英文分号/中文逗号拆分，
+ * 再去掉行首列表符号（`- `/`1. `/`#`）、过滤空串、长度≤1 与纯标点行。
+ * **这里不做跨条目去重**：批内真的写了两遍就生成两条（一天里两次「背单词」是合法用法），
+ * 误重复由「可编辑预览」兜（用户能看见、能取消勾选）；与「已存在任务」去重是另一件事，见 existingTitles。
+ */
 export function parsePlan(text: string): string[] {
-  return text.split(/[\n；;，]/).map(s => s.trim()).filter(s => s.length > 1)
+  const out: string[] = []
+  for (const raw of text.split(/[\n；;，]/)) {
+    const s = raw.trim().replace(LIST_MARKER, '').replace(/^#+\s*/, '').trim()
+    if (s.length <= 1) continue
+    if (!/[\p{L}\p{N}]/u.test(s)) continue // 纯标点（、、——）不是条目
+    out.push(s)
+  }
+  return out
+}
+
+/** 某个到期日已存在的任务标题（明日待办去重：同标题同日期不再重复创建） */
+export function existingTitles(tasks: Task[], due: string): Set<string> {
+  return new Set(tasks.filter(t => t.dueDate === due).map(t => t.title.trim()))
+}
+
+/** 复盘折叠区的手动开合状态按「日期 + 分区」存 localStorage（换日期不串味，刷新后保持） */
+const OPEN_PREFIX = 'wb-review-open:'
+export function readSectionOpen(reviewDate: string, id: string): boolean | null {
+  try {
+    const v = localStorage.getItem(`${OPEN_PREFIX}${reviewDate}:${id}`)
+    return v === '1' ? true : v === '0' ? false : null
+  } catch { return null }
+}
+export function saveSectionOpen(reviewDate: string, id: string, open: boolean): void {
+  try { localStorage.setItem(`${OPEN_PREFIX}${reviewDate}:${id}`, open ? '1' : '0') } catch { /* 隐私模式等场景忽略 */ }
 }
 
 /** 明天 = 本地日期 + 1 天（写法参考 todayStr） */

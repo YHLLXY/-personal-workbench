@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseGateway, FALLBACK_PROJECTS } from '../api/projects'
+import { parseGateway, stripFrontmatter, FALLBACK_PROJECTS } from '../api/projects'
 
 const GATEWAY = `---
 date: 2026-08-12
@@ -29,6 +29,38 @@ stack:
 
 - 开发中
 `
+
+describe('stripFrontmatter（v1.34：详情页顶部不再出现 date:/tags: 那串 YAML）', () => {
+  it('剥掉 frontmatter，正文不含 YAML 键', () => {
+    const out = stripFrontmatter(`---
+date: 2026-08-12
+tags:
+  - 项目
+project: "个人工作台"
+---
+
+# 🚪 个人工作台
+
+## 项目简介
+
+正文
+`)
+    expect(out.startsWith('# 🚪 个人工作台')).toBe(true)
+    expect(out).not.toContain('tags:')
+  })
+  it('无 frontmatter 原样返回', () => {
+    expect(stripFrontmatter('# 标题\n\n正文')).toBe('# 标题\n\n正文')
+  })
+  it('CRLF 换行同样剥掉', () => {
+    expect(stripFrontmatter('---\r\ndate: 2026-08-12\r\n---\r\n\r\n# 标题')).toBe('# 标题')
+  })
+  it('文件正好以 --- 结尾（无尾换行）也能剥', () => {
+    expect(stripFrontmatter('---\ndate: 2026-08-12\n---')).toBe('')
+  })
+  it('带 BOM 也能剥（否则 ^--- 匹配不上，整段 YAML 会进正文）', () => {
+    expect(stripFrontmatter('\uFEFF---\ndate: 2026-08-12\n---\n\n# 标题')).toBe('# 标题')
+  })
+})
 
 describe('parseGateway', () => {
   it('解析标准门户口：project/phase/aliases/stack/简介/emoji/日期', () => {

@@ -172,6 +172,32 @@ test('复盘：展开成就分区 → 填写保存 → 成功反馈', async ({ p
   await expect(page.getByText('今日复盘已保存')).toBeVisible()
 })
 
+test('项目：刷新有回音（离线快照要说清），不只是图标转圈（v1.34 图三）', async ({ page }) => {
+  await goto(page, '/projects')
+  await expect(page.getByRole('heading', { level: 1, name: '我的项目' })).toBeVisible()
+  await page.getByRole('button', { name: '刷新' }).click()
+  // E2E 拦断了 /api/**，所以这里走的是 public/projects-status.json 快照 → 文案必须说清
+  await expect(page.getByRole('status')).toHaveText('网络不可用，当前为离线快照')
+})
+
+test('复盘：明日计划两段式（预览 → 结果卡片 → 已存在跳过 → 去待办查看）', async ({ page }) => {
+  await goto(page, '/review')
+  await page.getByPlaceholder('明天最重要的 1-3 件事…').fill('E2E 复盘任务 A\nE2E 复盘任务 B')
+  await page.getByRole('button', { name: /生成明日待办/ }).click()
+  // 预览：每条一个勾选框，默认全选
+  await expect(page.getByRole('checkbox')).toHaveCount(2)
+  await page.getByRole('button', { name: '确认生成 2 条' }).click()
+  const card = page.getByRole('status')
+  await expect(card).toContainText('已生成 2 条明日待办')
+  await expect(card).toContainText('E2E 复盘任务 A')
+  // 再生成同一批 → 全部命中「已存在」，且明说跳过了几条
+  await page.getByRole('button', { name: /生成明日待办/ }).click()
+  await page.getByRole('button', { name: '确认生成 2 条' }).click()
+  await expect(card).toContainText('跳过 2 条（已存在）')
+  await card.getByRole('link', { name: /去待办查看/ }).click()
+  await expect(page.getByRole('heading', { level: 1, name: '今日待办' })).toBeVisible()
+})
+
 test('今日热点：日报不可用时默认落热榜，日报 Tab 说清原因（v1.27.1）', async ({ page }) => {
   await goto(page, '/hot')
   // 默认 Tab 由日报是否可用决定：本地模式没有服务端生成链路 → 落热榜，而不是打开一个空页面

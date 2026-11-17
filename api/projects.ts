@@ -108,6 +108,19 @@ export function parseGateway(md: string, fallbackName: string, dir: string = fal
   }
 }
 
+/**
+ * 剥掉 YAML frontmatter。GitHub Markdown API 会把 `---` 与缩进后的 YAML 渲染成正文顶部的一串列表项
+ * （v1.34 图四：详情页开头出现 date:/tags: 那种东西）。
+ * 复用 parseGateway 的正则形态（不要求尾部有换行：文件正好以 `---` 结尾时也能剥），
+ * 并先去掉 UTF-8 BOM（带 BOM 时 `^---` 匹配不上，正文会带上整段 YAML）。
+ */
+export function stripFrontmatter(md: string): string {
+  const body = md.replace(/^\uFEFF/, '')
+  const m = body.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+  if (!m) return body
+  return body.slice(m[0].length).replace(/^(?:\r?\n)+/, '')
+}
+
 // ========== GitHub Contents API ==========
 
 interface GhEntry { name: string; path: string; type: 'file' | 'dir'; content?: string }
@@ -219,7 +232,8 @@ async function fetchDetail(dir: string, token: string): Promise<ProjectDetail> {
       ?? entries.find(e => e.type === 'file' && e.name.endsWith('- 门户口.md'))
     if (!gateway) throw Object.assign(new Error('no_gateway'), { code: 'no_gateway' })
     const file = await ghFile(`${dirPath}/${encodeURIComponent(gateway.name)}`, token, ctrl.signal)
-    const md = file.content ? Buffer.from(file.content, 'base64').toString('utf-8') : ''
+    // 渲染与降级两条分支都用剥好的 md：markdown: html == null ? md : null 看到的是同一个字符串
+    const md = stripFrontmatter(file.content ? Buffer.from(file.content, 'base64').toString('utf-8') : '')
     let html: string | null = null
     try {
       const r = await fetch('https://api.github.com/markdown', {
