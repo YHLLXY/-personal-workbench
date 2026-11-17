@@ -82,13 +82,20 @@ export function computeReminders(tasks: TaskLike[], exams: ExamLike[], goals: Go
  * 引用对象是否「活着」——决定提醒行该不该继续存在。
  * 提醒是**派生数据**（v1.31 重构）：任务完成/删除、考试已过、目标归档/删除 → 行必须消失，
  * 而不是像旧实现那样只 skipped 不发送、永久滞留在列表里等人点「忽略」。
- * 与 computeReminders 的差别：这里只看「对象活不活」，不看「节点时刻过没过」——
+ * 与 computeReminders 的差别：这里只看「该对象还该不该有提醒」，不看「节点时刻过没过」——
  * 考试当天 3 天前/1 天前的节点虽然不再生成，但那条已发出的通知记录要留到考试结束。
+ * **task 例外（v1.34）**：任务的提醒时刻就是 dueDate+dueTime，用户把时间清空后这条任务连节点都不存在，
+ * 只判 status 会让行永远滞留、到点仍然推送（用户看到的是「卡片没了、手机照响」或「卡片赖着不走」）。
+ * 所以 task 的存活条件与 computeReminders 的生成条件**完全一致**。
  */
 export function liveRefKeys(tasks: TaskLike[], exams: ExamLike[], goals: GoalLike[], now: Date): Set<string> {
   const today = todayShanghai(now)
   const live = new Set<string>()
-  for (const t of tasks) if (t.status !== 'done') live.add(`task:${t.id}`)
+  for (const t of tasks) {
+    if (t.status === 'done' || !t.dueDate || !t.dueTime) continue
+    if (!Number.isFinite(shanghaiMs(t.dueDate, t.dueTime))) continue
+    live.add(`task:${t.id}`)
+  }
   for (const e of exams) if (e.examDate >= today) live.add(`exam:${e.id}`)
   for (const g of goals) if (g.status !== 'done' && g.deadline) live.add(`goal:${g.id}`)
   return live

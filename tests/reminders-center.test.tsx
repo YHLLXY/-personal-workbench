@@ -17,7 +17,9 @@ const ROWS = [
 ]
 const TASKS = [
   { id: 't1', title: '拖了两天的报告', focus: false, priority: 'high', status: 'todo', dueDate: ymd(NOW - 2 * DAY), dueTime: '09:30', tags: [], sort: 1, completedAt: null, createdAt: iso(NOW - 3 * DAY) },
-  { id: 't2', title: '今天要交的表', focus: false, priority: 'medium', status: 'todo', dueDate: ymd(NOW), dueTime: '21:00', tags: [], sort: 2, completedAt: null, createdAt: iso(NOW - DAY) },
+  // v1.34 起行内时刻由任务自己的 dueDate+dueTime 推出（投影覆盖 scheduledAt），
+  // 所以「待处理」那条必须用**已经过去的**时刻，不能写 21:00（否则半夜前跑测试就会变成「即将到来」）
+  { id: 't2', title: '今天要交的表', focus: false, priority: 'medium', status: 'todo', dueDate: ymd(NOW), dueTime: '00:01', tags: [], sort: 2, completedAt: null, createdAt: iso(NOW - DAY) },
 ]
 const EXAMS = [
   { id: 'e1', title: '四级', examDate: ymd(NOW + 4 * DAY), examTime: '09:00', subject: null, note: null, createdAt: iso(NOW) },
@@ -85,6 +87,27 @@ describe('RemindersCenter', () => {
     await waitFor(() => expect(screen.getByText(/拖了两天的报告/)).toBeTruthy())
     fireEvent.click(screen.getAllByRole('button', { name: '完成' })[0])
     await waitFor(() => expect(repository.updateTask).toHaveBeenCalledWith('t1', { status: 'done' }))
+  })
+
+  it('顶部胶囊是筛选按钮（v1.34）：点「已逾期」只剩逾期行，再点一次取消', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByText(/拖了两天的报告/)).toBeTruthy())
+    const chip = screen.getByRole('button', { name: /已逾期 1/ })
+    expect(chip).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(chip)
+    expect(chip).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText(/今天要交的表/)).toBeNull()
+    expect(screen.queryByText(/四级/)).toBeNull()
+    fireEvent.click(chip) // 再点一次 = 取消筛选
+    expect(screen.getByText(/今天要交的表/)).toBeTruthy()
+    expect(screen.getByText(/四级/)).toBeTruthy()
+  })
+
+  it('任务已完成 → 该提醒行不渲染（v1.34 投影：提醒行只是任务的投影）', async () => {
+    vi.mocked(repository.listTasks).mockResolvedValueOnce([TASKS[0], { ...TASKS[1], status: 'done' }] as never)
+    renderPage()
+    await waitFor(() => expect(screen.getByText(/拖了两天的报告/)).toBeTruthy())
+    expect(screen.queryByText(/今天要交的表/)).toBeNull()
   })
 
   it('逾期任务给「顺延」→ dueDate 改成今天；未逾期的不给', async () => {

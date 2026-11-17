@@ -7,8 +7,10 @@ import { MemoryRouter } from 'react-router-dom'
 const PAST = '2026-08-01T01:30:00.000Z'
 const FUTURE = '2099-01-01T00:00:00.000Z'
 
-const task = (id: string, title: string) => ({
-  id, title, focus: false, priority: 'medium', status: 'todo', dueDate: '2026-08-01', dueTime: '09:30',
+// v1.34 起提醒时刻由任务自己的 dueDate+dueTime 推出（reminders/format.ts 的 taskReminderAt），
+// 所以用例里「任务什么时候到期」必须和「提醒行 scheduledAt」一致，否则投影会给出行内时刻以任务为准的那一条
+const task = (id: string, title: string, dueDate = '2026-08-01') => ({
+  id, title, focus: false, priority: 'medium', status: 'todo', dueDate, dueTime: '09:30',
   tags: [], sort: 1, completedAt: null, createdAt: '2026-07-01T00:00:00.000Z',
 })
 
@@ -52,6 +54,7 @@ describe('ReminderBanner', () => {
   })
 
   it('没有到期提醒时不渲染（全部未到期）', async () => {
+    vi.mocked(repository.listTasks).mockResolvedValueOnce([task('t1', '交报告', '2099-01-01')] as never)
     vi.mocked(repository.listReminders).mockResolvedValueOnce([
       { id: 'r2', refType: 'task', refId: 't1', kind: 'due', scheduledAt: FUTURE, sentAt: null, createdAt: PAST } as never,
     ])
@@ -63,7 +66,7 @@ describe('ReminderBanner', () => {
 
   it('正文取**最早到期**的那条，未到期的不参与（v1.31 回归：旧版取 scheduledAt 倒序第一条 = 最不紧急）', async () => {
     vi.mocked(repository.listTasks).mockResolvedValueOnce([
-      task('t1', '拖最久的'), task('t2', '刚过期的'), task('t3', '下周才到'),
+      task('t1', '拖最久的', '2026-08-01'), task('t2', '刚过期的', '2026-08-05'), task('t3', '下周才到', '2099-01-01'),
     ] as never)
     vi.mocked(repository.listReminders).mockResolvedValueOnce([
       { id: 'rFuture', refType: 'task', refId: 't3', kind: 'due', scheduledAt: FUTURE, sentAt: null, createdAt: PAST },

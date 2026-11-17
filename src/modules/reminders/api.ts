@@ -1,9 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { isCloudMode, repository } from '@/lib/db'
 import { getSupabaseClient } from '@/lib/db/supabase-client'
-import type { Reminder } from '@/lib/db/types'
-import { countDue } from './format'
+import { todayStr, type Reminder } from '@/lib/db/types'
+import { useTasks } from '@/modules/overview/api'
+import { useExams } from '@/modules/study/api'
+import { useStudyGoals } from '@/modules/study/goals-api'
+import { countDue, effectiveRows, type EffectiveRow } from './format'
 import { useReminderStore } from './store'
 
 export const reminderKeys = { all: ['reminders'] as const }
@@ -58,11 +61,40 @@ export function useReminderTimer() {
   }, [data, qc])
 }
 
+export interface ReminderView {
+  /** 投影后的行（已过滤掉「任务已完成 / 已删除 / 提醒时间被清空」的 task 行） */
+  rows: EffectiveRow[]
+  /** 已到点的条数（角标与「待处理」计数同源） */
+  dueCount: number
+  isLoading: boolean
+  isError: boolean
+}
+
+/**
+ * 提醒的**唯一投影**（v1.34）：提醒中心、侧边栏角标、首页横幅都读它。
+ * 为什么必须合并：角标若继续读原始 reminders，就会和列表的数字对不上——
+ * 这正是 v1.31 修过一次的缺陷（同一份派生数据在两处各算一套）。
+ * rows 用 useMemo 缓存引用：横幅的「前台通知」effect 依赖它，引用每帧变会让 effect 每帧重跑。
+ */
+export function useReminderView(): ReminderView {
+  const { data: reminders, isLoading, isError } = useReminders()
+  const { data: tasks } = useTasks()
+  const { data: exams } = useExams()
+  const { data: goals } = useStudyGoals()
+  const today = todayStr()
+  const rows = useMemo(
+    () => effectiveRows(reminders ?? [], { tasks, exams, goals }, { today }),
+    [reminders, tasks, exams, goals, today],
+  )
+  const dueCount = useMemo(() => countDue(rows.map(x => x.reminder)), [rows])
+  return { rows, dueCount, isLoading, isError }
+}
+
 /** 订阅提醒数据并同步角标（在 layout 调用一次即可；useEffect 内更新 store 避免渲染期副作用） */
 export function useReminderSync() {
-  const { data } = useReminders()
+  const { dueCount } = useReminderView()
   const setUnread = useReminderStore(s => s.setUnread)
   const unread = useReminderStore(s => s.unread)
-  useEffect(() => { setUnread(countDue(data ?? [])) }, [data, setUnread])
+  useEffect(() => { setUnread(dueCount) }, [dueCount, setUnread])
   return unread
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countDue, kindLabel, refDate, reminderFacts, reminderState, reminderText, type ReminderLike, type ReminderRefs } from '../src/modules/reminders/format'
+import { countDue, effectiveRows, kindLabel, refDate, reminderFacts, reminderState, reminderText, taskReminderAt, type ReminderLike, type ReminderRefs } from '../src/modules/reminders/format'
 import type { Exam, StudyGoal, Task } from '../src/lib/db/types'
 
 const r = (over: Partial<ReminderLike>): ReminderLike => ({
@@ -77,5 +77,62 @@ describe('reminders/format', () => {
     expect(g).toMatchObject({ title: '刷题', missing: false, time: null })
     const gone = reminderFacts(r({ refId: 'gone' }), {}, now)
     expect(gone).toMatchObject({ title: '（任务已删除）', missing: true, state: 'due' })
+  })
+})
+
+/** v1.34：提醒行 = 引用对象的唯一投影（列表 / 角标 / 横幅 / 排序都读它） */
+describe('reminders/format 投影（taskReminderAt / effectiveRows）', () => {
+  const TODAY = '2026-08-08'
+  const repeatDaily = { freq: 'daily' as const, interval: 1, anchor: 'due' as const }
+
+  it('taskReminderAt：按 +08:00 折算（与服务端 shanghaiMs 同口径）；缺字段 / 坏格式 → null', () => {
+    expect(taskReminderAt('2026-08-08', '09:30')).toBe('2026-08-08T01:30:00.000Z')
+    expect(taskReminderAt('2026-08-08', null)).toBeNull()
+    expect(taskReminderAt(null, '09:30')).toBeNull()
+    expect(taskReminderAt('2026/08/08', '09:30')).toBeNull()
+    expect(taskReminderAt('2026-08-08', '9:30')).toBeNull()
+  })
+
+  it('task 行：scheduledAt 用任务现算的时刻覆盖（改期立刻生效，不必等服务端下一轮扫描）', () => {
+    const rows = effectiveRows(
+      [r({ scheduledAt: '2026-08-01T00:00:00.000Z' })],
+      { tasks: [task({ dueDate: '2026-08-09', dueTime: '18:00' })] },
+      { today: TODAY })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].reminder.scheduledAt).toBe('2026-08-09T10:00:00.000Z')
+  })
+
+  it('task 行：已完成 / 当天已完成的重复任务 / 任务已删除 / 提醒时间被清空 → 都不出现', () => {
+    const rows = effectiveRows(
+      [r({ id: 'r1', refId: 'done' }), r({ id: 'r2', refId: 'rep' }), r({ id: 'r3', refId: 'gone' }), r({ id: 'r4', refId: 'noTime' })],
+      {
+        tasks: [
+          task({ id: 'done', status: 'done' }),
+          task({ id: 'rep', status: 'todo', repeat: repeatDaily, completedAt: '2026-08-08T02:00:00.000Z' }),
+          task({ id: 'noTime', status: 'todo', dueTime: null }),
+        ],
+      },
+      { today: TODAY })
+    expect(rows).toHaveLength(0)
+  })
+
+  it('任务查询还没回来（tasks === undefined）→ 不过滤也不覆盖，避免首帧闪空', () => {
+    const rows = effectiveRows([r({ scheduledAt: '2026-08-01T00:00:00.000Z' })], {}, { today: TODAY })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].reminder.scheduledAt).toBe('2026-08-01T00:00:00.000Z')
+    expect(rows[0].refs.task).toBeUndefined()
+  })
+
+  it('exam / goal 行原样透传（节点该不该存在由服务端定）；引用对象已删也保留降级行', () => {
+    const rows = effectiveRows(
+      [r({ id: 're', refType: 'exam', refId: 'e1', kind: 'exam-1d', scheduledAt: '2026-08-09T00:00:00.000Z' }),
+       r({ id: 'rg', refType: 'goal', refId: 'g1', kind: 'goal-due', scheduledAt: '2026-08-12T00:00:00.000Z' }),
+       r({ id: 'rm', refType: 'exam', refId: 'gone', kind: 'exam-1d' })],
+      { tasks: [], exams: [exam()], goals: [goal()] },
+      { today: TODAY })
+    expect(rows.map(x => x.reminder.id)).toEqual(['re', 'rg', 'rm'])
+    expect(rows[0].refs.exam?.id).toBe('e1')
+    expect(rows[1].refs.goal?.id).toBe('g1')
+    expect(rows[2].refs.exam).toBeUndefined()
   })
 })

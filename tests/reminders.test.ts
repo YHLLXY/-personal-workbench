@@ -87,8 +87,8 @@ describe('liveRefKeys（引用对象存活判定——提醒行该不该继续�
   const NOW2 = new Date('2026-08-08T04:00:00.000Z') // 上海 08-08 12:00
   it('任务未完成=活；考试今天及以后=活；目标未归档且有截止日=活', () => {
     const live = liveRefKeys(
-      [{ id: 't1', userId: 'u1', title: 'a', status: 'todo', dueDate: null, dueTime: null },
-       { id: 't2', userId: 'u1', title: 'b', status: 'done', dueDate: null, dueTime: null }],
+      [{ id: 't1', userId: 'u1', title: 'a', status: 'todo', dueDate: '2026-08-08', dueTime: '09:30' },
+       { id: 't2', userId: 'u1', title: 'b', status: 'done', dueDate: '2026-08-08', dueTime: '09:30' }],
       [{ id: 'e1', userId: 'u1', title: 'c', examDate: '2026-08-08', examTime: null },
        { id: 'e2', userId: 'u1', title: 'd', examDate: '2026-08-07', examTime: null }],
       [{ id: 'g1', userId: 'u1', title: 'e', status: 'active', deadline: '2026-08-12' },
@@ -96,6 +96,21 @@ describe('liveRefKeys（引用对象存活判定——提醒行该不该继续�
        { id: 'g3', userId: 'u1', title: 'g', status: 'active', deadline: null }],
       NOW2)
     expect([...live].sort()).toEqual(['exam:e1', 'goal:g1', 'task:t1'])
+  })
+
+  it('任务清空提醒时间（dueTime=null）→ 不再存活；对应的行被删（v1.34：否则卡片赖着不走、到点照推）', () => {
+    // 只判 status 的旧实现会把它当活对象 → plan.remove 永不含这一行 → 「卡片没了、手机照响」
+    const live = liveRefKeys([{ id: 't1', userId: 'u1', title: 'a', status: 'todo', dueDate: '2026-08-08', dueTime: null }], [], [], NOW2)
+    expect(live.has('task:t1')).toBe(false)
+    const plan = planReminders(
+      [{ id: 'r1', refType: 'task', refId: 't1', kind: 'due', scheduledAt: '2026-08-08T01:30:00.000Z' }],
+      [], live, NOW2)
+    expect(plan.remove).toEqual(['r1'])
+  })
+
+  it('任务 dueDate 是坏格式 → 不存活（computeReminders 不会为它生成节点，留行只会变成永久僵尸）', () => {
+    const live = liveRefKeys([{ id: 't1', userId: 'u1', title: 'a', status: 'todo', dueDate: '2026/08/08', dueTime: '09:30' }], [], [], NOW2)
+    expect(live.has('task:t1')).toBe(false)
   })
 })
 

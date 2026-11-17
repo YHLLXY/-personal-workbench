@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { repository } from '../../lib/db'
 import { applyTaskPatch, localDateOfISO, type Task, type TaskInput } from '../../lib/db/types'
+import { isDoneForToday } from '../../lib/task-rules'
 
 export const taskKeys = { all: ['tasks'] as const }
 
@@ -48,12 +49,6 @@ export function useTaskMutations() {
  *  「正在推进、要天天看到」，因此必须出现在今日区。 */
 export function isTodayScope(t: Task, today: string): boolean {
   return t.dueDate === today || (t.focus && t.focusDate === today) || t.status === 'doing'
-}
-
-/** v1.24 重复任务的「已完成」判定：普通完成（status done）或 repeat 任务当天已滚动完成。
- *  repeat 完成不走 status='done'（同一行滚到下一期，completedAt 记完成时刻），完成判定单独覆盖 */
-export function isDoneForToday(t: Task, today: string): boolean {
-  return t.status === 'done' || (t.repeat != null && t.completedAt !== null && localDateOfISO(t.completedAt) === today)
 }
 
 /** 今日任务（今日到期 + 今日焦点 + 已过期未完成，不含已完成）。

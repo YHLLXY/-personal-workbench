@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { isDoneForToday, todayTasks, todayDone } from '../src/modules/overview/api'
+import { todayTasks, todayDone } from '../src/modules/overview/api'
+import { isDoneForToday } from '../src/lib/task-rules'
 import { midpointSort } from '../src/lib/drag-sort'
 import type { Task } from '../src/lib/db/types'
 

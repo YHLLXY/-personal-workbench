@@ -72,6 +72,32 @@ test('重复任务：新建每天 → 完成滚动进已完成区（含徽章）
   await expect(repeatBadge).toBeVisible()
 })
 
+test('提醒中心：完成 → 该行立刻消失（提醒是任务的投影）→ toast 撤销后回来', async ({ page }) => {
+  // 本地模式没有服务端扫描，提醒行只能自己种：任务（今天 00:01 提醒）+ 对应的 wb:reminders 行
+  await page.addInitScript(() => {
+    const d = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    localStorage.setItem('wb:tasks', JSON.stringify([{
+      id: 'e2e-reminder-task', title: 'E2E 提醒任务', focus: false, priority: 'medium', status: 'todo',
+      dueDate: today, dueTime: '00:01', focusDate: null, tags: [], sort: 1e13 + Date.now(), completedAt: null, createdAt: d.toISOString(),
+    }]))
+    localStorage.setItem('wb:reminders', JSON.stringify([{
+      id: 'e2e-reminder-row', refType: 'task', refId: 'e2e-reminder-task', kind: 'due',
+      scheduledAt: new Date(Date.now() - 3600_000).toISOString(), sentAt: null, createdAt: d.toISOString(),
+    }]))
+  })
+  await goto(page, '/reminders')
+  const row = page.getByText('任务「E2E 提醒任务」到点了，记得处理')
+  await expect(row).toBeVisible()
+  // 完成：投影立即生效（乐观更新 + effectiveRows 过滤），不必等下一轮服务端扫描
+  await page.getByRole('button', { name: '完成', exact: true }).click()
+  await expect(page.getByText('暂无提醒')).toBeVisible({ timeout: 1500 })
+  // 撤销：任务回到未完成 → 提醒行跟着回来（投影是唯一的真相，不需要额外恢复逻辑）
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(row).toBeVisible()
+})
+
 test('任务备注（v1.25）：新建填备注 → 卡片标题下方显示备注', async ({ page }) => {
   await goto(page, '/tasks')
   await page.getByRole('button', { name: '新建' }).click()
