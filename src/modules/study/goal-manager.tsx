@@ -15,12 +15,18 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { localDateOfISO, type StudyGoal } from '@/lib/db/types'
+import { usePlanItems } from '@/modules/overview/day-plan-api'
+import { calibrateBase, displayProgress } from '@/lib/study-progress'
 
 /** 学习目标管理：进度步进（±1/+5/+10/精确设置）+ 截止速率倒推 + 里程碑庆祝 + 完成归档 + 删除 */
 export default function GoalManager() {
   const { data: goals, isLoading } = useStudyGoals()
   const { update, remove } = useStudyGoalMutations()
   const { create: createTask } = useTaskMutations()
+  // 账本式进度（v1.36）：展示值由「基准 + 已完成计划项之和」派生，见 lib/study-progress.ts
+  const { data: planItems } = usePlanItems()
+  const items = planItems ?? []
+  const view = (g: StudyGoal) => displayProgress(g, items)
   const [dialogOpen, setDialogOpen] = useState(false)
   // 拆解防重复：每目标每次会话只允许生成一条今日任务
   const brokenRef = useRef(new Set<string>())
@@ -29,13 +35,14 @@ export default function GoalManager() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
 
-  /** 目标拆解到今日待办：按合理步长生成一条今日任务（目标量≥10 步长 5，否则 1），只推进剩余量 */
+  /** 目标拆解到今日待办：按合理步长生成一条今日任务（目标量≥10 步长 5，否则 1），只推进剩余量。
+   *  v1.36：任务带上 goalId + progressAmount，完成它时计划项会把这笔量记进目标进度（不再靠"猜标题"）。 */
   function breakDown(g: StudyGoal) {
     if (brokenRef.current.has(g.id) || createTask.isPending) return
-    const remain = Math.max(g.target - g.progress, 0)
+    const remain = Math.max(g.target - view(g).value, 0)
     if (remain === 0) return
     const step = Math.min(g.target >= 10 ? 5 : 1, remain)
-    createTask.mutate({ title: `【目标】${g.title} · 推进 ${step}`, dueDate: todayStr() }, {
+    createTask.mutate({ title: `【目标】${g.title} · 推进 ${step}`, dueDate: todayStr(), goalId: g.id, progressAmount: step }, {
       onSuccess: () => { brokenRef.current.add(g.id); toast.success('已加入今日待办') },
       onError: () => toast.error('添加失败'),
     })
@@ -46,14 +53,16 @@ export default function GoalManager() {
     const num = Math.floor(Number(draft))
     setEditingId(null)
     if (!Number.isFinite(num) || draft.trim() === '') return
-    advance(g, num - g.progress)
+    advance(g, num - view(g).value)
   }
 
-  /** 推进进度（delta 可负）：clamp 到 [0, target]，跨越 25/50/75 里程碑与达成 100 时给庆祝反馈 */
+  /** 推进进度（delta 可负）：clamp 到 [0, target]，跨越 25/50/75 里程碑与达成 100 时给庆祝反馈。
+   *  v1.36：写回的是**基准**（calibrateBase），不是展示值——否则自动那部分会被双算一次。 */
   function advance(g: StudyGoal, delta: number) {
-    const before = Math.min(Math.round((g.progress / Math.max(g.target, 1)) * 100), 100)
-    const next = Math.min(Math.max(g.progress + delta, 0), g.target)
-    update.mutate({ id: g.id, patch: { progress: next } })
+    const current = view(g)
+    const before = Math.min(Math.round((current.value / Math.max(g.target, 1)) * 100), 100)
+    const next = Math.min(Math.max(current.value + delta, 0), g.target)
+    update.mutate({ id: g.id, patch: { progress: calibrateBase(g, items, next) } })
     const after = Math.min(Math.round((next / Math.max(g.target, 1)) * 100), 100)
     if (after >= 100 && before < 100) {
       void celebrate(null, 'grand')
@@ -70,7 +79,7 @@ export default function GoalManager() {
   const sorted = [...(goals ?? [])].sort((a, b) => {
     // 进行中在前（未归档优先），同状态按目标进度高的在前
     if (a.status !== b.status) return a.status === 'active' ? -1 : 1
-    return (b.progress / Math.max(b.target, 1)) - (a.progress / Math.max(a.target, 1))
+    return (view(b).value / Math.max(b.target, 1)) - (view(a).value / Math.max(a.target, 1))
   })
 
   return (
@@ -86,7 +95,8 @@ export default function GoalManager() {
       ) : (
         <div className="space-y-2">
           {sorted.map(g => {
-            const pct = Math.min(100, Math.round((g.progress / Math.max(g.target, 1)) * 100))
+            const shown = view(g)
+            const pct = Math.min(100, Math.round((shown.value / Math.max(g.target, 1)) * 100))
             const done = g.status === 'done'
             return (
               <div key={g.id} className={cn('bg-card border border-border rounded-2xl p-4', done && 'opacity-60')}>
@@ -110,16 +120,16 @@ export default function GoalManager() {
                           <button onClick={() => commitEdit(g)} aria-label="确认进度" className="size-6 rounded-lg border border-primary/40 text-primary flex items-center justify-center"><Check className="size-3.5" /></button>
                         </span>
                       ) : (
-                        <button onClick={() => { setEditingId(g.id); setDraft(String(g.progress)) }} title="点击精确设置进度"
+                        <button onClick={() => { setEditingId(g.id); setDraft(String(shown.value)) }} title="点击精确设置进度"
                           className="shrink-0 text-xs font-numeric text-muted-foreground hover:text-primary underline decoration-dotted underline-offset-2">
-                          {g.progress} / {g.target}
+                          {shown.value} / {g.target}
                         </button>
                       )}
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
                       {g.deadline && !done && (() => {
                         const d = daysUntil(g.deadline)
-                        const remain = Math.max(g.target - g.progress, 0)
+                        const remain = Math.max(g.target - shown.value, 0)
                         if (d < 0) return <span className="text-destructive font-medium">已逾期 {Math.abs(d)} 天</span>
                         if (remain === 0) return <span>进度已满 · 截止 {g.deadline}</span>
                         if (d === 0) return <span className="text-amber-600 dark:text-amber-400 font-medium">今天截止 · 还差 {remain}</span>
@@ -128,7 +138,9 @@ export default function GoalManager() {
                       {g.deadline && done && <span>截止 {g.deadline}</span>}
                       {done && g.completedAt && <span>完成于 {localDateOfISO(g.completedAt)}</span>}
                       {g.note && <span className="truncate max-w-[16rem]">备注：{g.note}</span>}
-                      {!done && g.progress < g.target && (
+                      {/* 自动那部分要明示来源，否则用户会觉得"数字自己会动"（v1.36 学习联动） */}
+                      {shown.auto > 0 && <span className="text-primary/80">自动 +{shown.auto}</span>}
+                      {!done && shown.value < g.target && (
                         <button onClick={() => breakDown(g)} disabled={createTask.isPending}
                           className="text-primary hover:underline underline-offset-2 disabled:opacity-50">
                           + 拆解到今日待办

@@ -70,7 +70,12 @@ export function statsForDate(items: PlanItem[], date: string): DayPlanStats {
 
 /** 完成一条任务的计划项补丁：planDate 取**完成前**的 dueDate（逾期补完成落在原来的计划日，进「今日补完成」而不是今日分母） */
 export function completePlanInput(t: Task, today: string, now = new Date()): PlanItemInput {
-  return { planDate: t.dueDate ?? today, taskId: t.id, title: t.title, doneAt: now.toISOString() }
+  // goalId / amount 一起带上：用户可能一进页面就勾完成（此时还没物化过），
+  // 少了这两列，目标进度账本就收不到这笔量（v1.36 学习联动）
+  return {
+    planDate: t.dueDate ?? today, taskId: t.id, title: t.title,
+    goalId: t.goalId ?? null, amount: t.progressAmount ?? null, doneAt: now.toISOString(),
+  }
 }
 /** 撤销完成：只清 done_at（行保留，标题/来源日不变） */
 export function reopenPlanInput(t: Task, today: string): PlanItemInput {

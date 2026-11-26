@@ -27,8 +27,9 @@ function read(f: string): string {
 }
 
 describe('迁移幂等性（019 起）', () => {
-  it('存在新的迁移文件（否则这条守卫形同虚设）', () => {
+  it('存在新的迁移文件，且至少有一个真的创建了策略（否则这条守卫形同虚设）', () => {
     expect(migrationFiles().length).toBeGreaterThan(0)
+    expect(migrationFiles().filter(f => /create\s+policy/i.test(read(f))).length).toBeGreaterThan(0)
   })
 
   for (const file of migrationFiles()) {
@@ -51,7 +52,7 @@ describe('迁移幂等性（019 起）', () => {
     it(`${file}: 每个 create policy 前都有对应的 drop policy if exists`, () => {
       const created = [...sql.matchAll(/create\s+policy\s+(\w+)/gi)].map(m => m[1])
       const dropped = new Set([...sql.matchAll(/drop\s+policy\s+if\s+exists\s+(\w+)/gi)].map(m => m[1]))
-      expect(created.length).toBeGreaterThan(0)
+      // 只加列的迁移不创建策略，天然通过；创建了策略的必须配 drop（否则重跑报 already exists）
       expect(created.filter(p => !dropped.has(p))).toEqual([])
     })
   }

@@ -224,7 +224,7 @@ describe('SupabaseRepository', () => {
 
       setRows('wb_study_goals', [{ id: 'g1', title: '背单词', target: 50, progress: 20, deadline: '2026-08-20', status: 'done', note: null, created_at: '2026-08-01T00:00:00.000Z' }])
       const [row] = await repo.listStudyGoals()
-      expect(row).toEqual({ id: 'g1', title: '背单词', target: 50, progress: 20, deadline: '2026-08-20', status: 'done', note: null, completedAt: null })
+      expect(row).toEqual({ id: 'g1', title: '背单词', target: 50, progress: 20, deadline: '2026-08-20', status: 'done', note: null, completedAt: null, examId: null })
 
       await repo.updateStudyGoal('g1', { progress: 21 })
       expect(updateCalls[0].payload).toHaveProperty('progress', 21)

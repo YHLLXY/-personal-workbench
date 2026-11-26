@@ -14,7 +14,7 @@ function taskFromRow(r: Row): Task {
 }
 function habitFromRow(r: Row): Habit { return { id: String(r.id), name: String(r.name), icon: String(r.icon), color: String(r.color), targetPerDay: Number(r.target_per_day), active: Boolean(r.active), createdAt: String(r.created_at) } }
 function logFromRow(r: Row): HabitLog { return { id: String(r.id), habitId: String(r.habit_id), logDate: String(r.log_date), count: Number(r.count) } }
-function focusFromRow(r: Row): FocusSession { return { id: String(r.id), startAt: String(r.start_at), minutes: Number(r.minutes), note: r.note as string | null } }
+function focusFromRow(r: Row): FocusSession { return { id: String(r.id), startAt: String(r.start_at), minutes: Number(r.minutes), note: r.note as string | null, taskId: (r.task_id as string | null) ?? null } }
 function examFromRow(r: Row): Exam { return { id: String(r.id), title: String(r.title), examDate: String(r.exam_date), examTime: r.exam_time as string | null, subject: r.subject as string | null, note: r.note as string | null, createdAt: String(r.created_at) } }
 function noteFromRow(r: Row): Note {
   // tags 兼容旧行（迁移 010 之前的 tag 单标签列）：有 tags 数组用之，否则从 tag 升格
@@ -39,7 +39,7 @@ function paperFromRow(r: Row): Paper {
   }
 }
 function goalFromRow(r: Row): StudyGoal {
-  return { id: String(r.id), title: String(r.title), target: Number(r.target ?? 100), progress: Number(r.progress ?? 0), deadline: r.deadline as string | null, status: r.status as StudyGoal['status'] ?? 'active', note: r.note as string | null, completedAt: r.completed_at ? new Date(String(r.completed_at)).toISOString() : null }
+  return { id: String(r.id), title: String(r.title), target: Number(r.target ?? 100), progress: Number(r.progress ?? 0), deadline: r.deadline as string | null, status: r.status as StudyGoal['status'] ?? 'active', note: r.note as string | null, completedAt: r.completed_at ? new Date(String(r.completed_at)).toISOString() : null, examId: (r.exam_id as string | null) ?? null }
 }
 function folderFromRow(r: Row): Folder {
   return { id: String(r.id), name: String(r.name), parentId: r.parent_id as string | null, sort: Number(r.sort ?? 0) }
@@ -106,11 +106,11 @@ function pushSubFromRow(r: Row): PushSubscriptionRow {
 function taskToRow(t: Task) { return { id: t.id, title: t.title, focus: t.focus, priority: t.priority, status: t.status, due_date: t.dueDate, due_time: t.dueTime, focus_date: t.focusDate, tags: t.tags, sort: t.sort, completed_at: t.completedAt, created_at: t.createdAt, repeat: t.repeat ?? null, checklist: t.checklist ?? null, note: t.note ?? null } }
 function habitToRow(h: Habit) { return { id: h.id, name: h.name, icon: h.icon, color: h.color, target_per_day: h.targetPerDay, active: h.active, created_at: h.createdAt } }
 function logToRow(l: HabitLog) { return { id: l.id, habit_id: l.habitId, log_date: l.logDate, count: l.count } }
-function focusToRow(s: FocusSession) { return { id: s.id, start_at: s.startAt, minutes: s.minutes, note: s.note } }
+function focusToRow(s: FocusSession) { return { id: s.id, start_at: s.startAt, minutes: s.minutes, note: s.note, task_id: s.taskId ?? null } }
 function examToRow(e: Exam) { return { id: e.id, title: e.title, exam_date: e.examDate, exam_time: e.examTime, subject: e.subject, note: e.note, created_at: e.createdAt } }
 function noteToRow(n: Note) { return { id: n.id, content: n.content, tags: n.tags, archived: n.archived, created_at: n.createdAt, updated_at: n.updatedAt } }
 function paperToRow(p: Paper) { return { id: p.id, title: p.title, authors: p.authors, arxiv_id: p.arxivId, url: p.url, status: p.status, rating: p.rating, note: p.note, created_at: p.createdAt, type: p.type ?? 'paper', folder_id: p.folderId ?? null, tags: p.tags ?? [], content: p.content ?? null, summary: p.summary ?? null, keywords: p.keywords ?? [], source: p.source ?? null } }
-function goalToRow(g: StudyGoal) { return { id: g.id, title: g.title, target: g.target, progress: g.progress, deadline: g.deadline, status: g.status, note: g.note } }
+function goalToRow(g: StudyGoal) { return { id: g.id, title: g.title, target: g.target, progress: g.progress, deadline: g.deadline, status: g.status, note: g.note, exam_id: g.examId ?? null } }
 function folderToRow(f: Folder) { return { id: f.id, name: f.name, parent_id: f.parentId, sort: f.sort } }
 function healthToRow(l: HealthLog) { return { id: l.id, log_date: l.logDate, type: l.type, value: l.value } }
 function reviewToRow(r: Review) { return { id: r.id, review_date: r.reviewDate, mood: r.mood, achievements: r.achievements, reflection: r.reflection, gratitude: r.gratitude, learnings: r.learnings, summary: r.summary, plan_tomorrow: r.planTomorrow, score: r.score, updated_at: r.updatedAt } }
@@ -221,8 +221,9 @@ export class SupabaseRepository implements WorkbenchRepository {
   }
 
   async listFocusSessions() { const { data, error } = await this.sb.from('wb_focus_sessions').select('*').order('start_at', { ascending: false }); if (error) throw error; return (data ?? []).map(focusFromRow) }
-  async createFocusSession(minutes: number, note?: string) {
-    const { data, error } = await this.sb.from('wb_focus_sessions').insert({ id: genId(), minutes, note: note ?? null }).select().single()
+  async createFocusSession(minutes: number, note?: string, taskId?: string | null) {
+    // task_id 条件写入（v1.24 note 同款）：迁移 020 未执行时不发这个键，部署窗口内不会 42703
+    const { data, error } = await this.sb.from('wb_focus_sessions').insert({ id: genId(), minutes, note: note ?? null, ...(taskId ? { task_id: taskId } : {}) }).select().single()
     if (error) throw error; return focusFromRow(data)
   }
 
@@ -233,12 +234,12 @@ export class SupabaseRepository implements WorkbenchRepository {
 
   async listStudyGoals() { const { data, error } = await this.sb.from('wb_study_goals').select('*').order('created_at'); if (error) throw error; return (data ?? []).map(goalFromRow) }
   async createStudyGoal(input: StudyGoalInput) {
-    const { data, error } = await this.sb.from('wb_study_goals').insert({ id: genId(), title: input.title, target: input.target ?? 100, progress: 0, deadline: input.deadline ?? null, status: 'active', note: input.note ?? null }).select().single()
+    const { data, error } = await this.sb.from('wb_study_goals').insert({ id: genId(), title: input.title, target: input.target ?? 100, progress: 0, deadline: input.deadline ?? null, status: 'active', note: input.note ?? null, ...(input.examId ? { exam_id: input.examId } : {}) }).select().single()
     if (error) throw error; return goalFromRow(data)
   }
   async updateStudyGoal(id: string, p: Partial<StudyGoal>) {
     // completedAt 派生规则与本地对齐（契约测试防漂移）：归档写入、恢复清空、纯进度更新不动、显式 patch 采纳
-    const { data, error } = await this.sb.from('wb_study_goals').update({ title: p.title, target: p.target, progress: p.progress, deadline: p.deadline, status: p.status, note: p.note, completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt !== undefined ? p.completedAt : undefined }).eq('id', id).select().single()
+    const { data, error } = await this.sb.from('wb_study_goals').update({ title: p.title, target: p.target, progress: p.progress, deadline: p.deadline, status: p.status, note: p.note, ...(p.examId !== undefined ? { exam_id: p.examId } : {}), completed_at: p.status === 'done' ? new Date().toISOString() : p.status !== undefined ? null : p.completedAt !== undefined ? p.completedAt : undefined }).eq('id', id).select().single()
     if (error) throw error; return goalFromRow(data)
   }
   async deleteStudyGoal(id: string) { const { error } = await this.sb.from('wb_study_goals').delete().eq('id', id); if (error) throw error }

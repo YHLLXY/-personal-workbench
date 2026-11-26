@@ -31,7 +31,11 @@ export interface TaskInput { title: string; focus?: boolean; priority?: Task['pr
 export interface Habit { id: string; name: string; icon: string; color: string; targetPerDay: number; active: boolean; createdAt: string }
 export interface HabitLog { id: string; habitId: string; logDate: string; count: number }
 
-export interface FocusSession { id: string; startAt: string; minutes: number; note: string | null }
+export interface FocusSession {
+  id: string; startAt: string; minutes: number; note: string | null
+  /** v1.36：专注归属的任务（迁移 020）。自由专注为 null；不复从 note 猜任务 */
+  taskId?: string | null
+}
 
 /**
  * 每日计划项（v1.35，迁移 019）：某一天「计划了哪些任务」的事实快照。
@@ -117,8 +121,10 @@ export interface StudyGoal {
   status: 'active' | 'done'
   note: string | null
   completedAt: string | null  // 归档时间（仓储层维护，恢复时清空）
+  /** v1.36：属于哪场考试（迁移 020）。考试删了置 null，目标本身保留 */
+  examId?: string | null
 }
-export interface StudyGoalInput { title: string; target?: number; deadline?: string | null; note?: string | null }
+export interface StudyGoalInput { title: string; target?: number; deadline?: string | null; note?: string | null; examId?: string | null }
 
 /** 今日热点订阅配置：空 sourceIds = 订阅全部源 */
 export interface Subscriptions { sourceIds: string[]; topics: string[] }
@@ -203,7 +209,7 @@ export interface WorkbenchRepository {
   setHabitLog(habitId: string, logDate: string, count: number): Promise<void>
 
   listFocusSessions(): Promise<FocusSession[]>
-  createFocusSession(minutes: number, note?: string): Promise<FocusSession>
+  createFocusSession(minutes: number, note?: string, taskId?: string | null): Promise<FocusSession>
 
   listExams(): Promise<Exam[]>
   createExam(input: ExamInput): Promise<Exam>

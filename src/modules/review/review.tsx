@@ -6,6 +6,9 @@ import { useFocusSessions } from '../study/api'
 import { useHabitLogs, useHealthLogs } from '../health/api'
 import { useExams } from '../study/api'
 import { buildDailySummary } from '../../lib/review-summary'
+import { statsForDate } from '@/lib/day-plan'
+import { usePlanItems } from '@/modules/overview/day-plan-api'
+import { Progress } from '@/components/ui/progress'
 import { todayStr, type Review } from '../../lib/db/types'
 import { streakFromLogDates } from '@/lib/heatmap'
 import { Button } from '@/components/ui/button'
@@ -68,6 +71,11 @@ export default function Review() {
 
   // v1.35：统计跟随正在看的日期（D-16）。原实现固定用 today，切到历史日期时上面的数字不动，
   // 用户会以为"那天什么都没做"——而这正是复盘最需要看清的一天。
+  // 计划快照口径（v1.37 / 3.1）：计划 / 完成 / 未完成 三个数字来自当天的计划项，
+  // 而不是"任务当前状态"——后者会被今天的改期改写，历史就此失真
+  const { data: planRows } = usePlanItems() // 计划项行（与下面的 planItems = 明日计划文本，是两回事）
+  const planStats = statsForDate(planRows ?? [], activeDate)
+  const hasSnapshot = (planRows ?? []).some(i => i.planDate === activeDate)
   const s = buildDailySummary(activeDate, { tasks: tasks ?? [], focusSessions: sessions ?? [], habitLogs: logs ?? [], healthLogs: health ?? [], exams: exams ?? [] })
   const history = [...(reviews ?? [])].sort((a, b) => b.reviewDate.localeCompare(a.reviewDate))
   const isToday = activeDate === today
@@ -125,6 +133,31 @@ export default function Review() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)] lg:items-start">
         {/* 右栏（桌面 ≥lg）：汇总数据。移动端仍排在表单之前 —— 保持「先看数据再写」的顺序 */}
         <div className="space-y-4 lg:col-start-2 lg:row-start-1">
+          {/* 首屏先给「计划 / 完成 / 未完成」——复盘要回答的第一个问题是"今天该做的做完没有" */}
+          {hasSnapshot ? (
+            <div className="rounded-xl border border-border bg-card p-3">
+              <p className="text-sm font-medium">
+                计划 <span className="font-numeric">{planStats.planned}</span>
+                {' · '}完成 <span className="font-numeric text-primary">{planStats.done}</span>
+                {' · '}未完成 <span className="font-numeric">{planStats.unfinished}</span>
+              </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <Progress value={planStats.rate ?? 0} className="h-2 flex-1" />
+                {planStats.rate !== null && <span className="shrink-0 text-xs text-muted-foreground">{planStats.rate}%</span>}
+              </div>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                {planStats.moved > 0 && `改期 ${planStats.moved} 项`}
+                {planStats.moved > 0 && planStats.backfilled > 0 && ' · '}
+                {planStats.backfilled > 0 && `今日补完成 ${planStats.backfilled} 项（记在原计划日）`}
+                {planStats.moved === 0 && planStats.backfilled === 0 && '来自当天的计划快照'}
+              </p>
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-border px-3 py-2 text-[11px] text-muted-foreground">
+              从 v1.35 起记录每日计划快照；{activeDate} 这天没有快照数据
+            </p>
+          )}
+
           {/* 自动汇总 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {/* 「累计 N」歧义（D-26）：value 是当日完成，sub 是全历史完成，两者不该混在同一张卡里说不清 */}

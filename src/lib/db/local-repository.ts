@@ -101,8 +101,8 @@ export class LocalRepository implements WorkbenchRepository {
   }
 
   async listFocusSessions() { return read<FocusSession>('focusSessions') }
-  async createFocusSession(minutes: number, note?: string) {
-    return insert<FocusSession>('focusSessions', { id: genId(), startAt: new Date().toISOString(), minutes, note: note ?? null })
+  async createFocusSession(minutes: number, note?: string, taskId?: string | null) {
+    return insert<FocusSession>('focusSessions', { id: genId(), startAt: new Date().toISOString(), minutes, note: note ?? null, taskId: taskId ?? null })
   }
 
   async listExams() { return read<Exam>('exams') }
@@ -112,7 +112,7 @@ export class LocalRepository implements WorkbenchRepository {
 
   async listStudyGoals() { return read<StudyGoal>('studyGoals') }
   async createStudyGoal(input: StudyGoalInput) {
-    return insert<StudyGoal>('studyGoals', { id: genId(), title: input.title, target: input.target ?? 100, progress: 0, deadline: input.deadline ?? null, status: 'active', note: input.note ?? null, completedAt: null })
+    return insert<StudyGoal>('studyGoals', { id: genId(), title: input.title, target: input.target ?? 100, progress: 0, deadline: input.deadline ?? null, status: 'active', note: input.note ?? null, completedAt: null, examId: input.examId ?? null })
   }
   async updateStudyGoal(id: string, p: Partial<StudyGoal>) {
     // completedAt 跟随状态（与 updateTask 的 completedAt 模式一致）：归档写入、恢复清空、纯进度更新不动
