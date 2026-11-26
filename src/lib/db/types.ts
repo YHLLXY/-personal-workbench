@@ -192,6 +192,8 @@ export interface WorkbenchRepository {
   deletePlanItem(planDate: string, taskId: string): Promise<void>
   updateTask(id: string, patch: Partial<Task>): Promise<Task>
   deleteTask(id: string): Promise<void>
+  /** 撤销删除（v1.35）：按原 id 原样写回——"误删 1 次点击恢复"要求 id 不变，否则计划项/专注记录的引用会断 */
+  restoreTask(task: Task): Promise<Task>
 
   listHabits(): Promise<Habit[]>
   createHabit(input: { name: string; icon?: string; color?: string; targetPerDay?: number }): Promise<Habit>

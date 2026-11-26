@@ -17,6 +17,7 @@ import { useGlobalHotkeys } from './hotkeys'
 import { useOverlayBack } from './use-overlay-back'
 import { useReminderSync, useReminderTimer } from '@/modules/reminders/api'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { ConfirmProvider } from '@/components/confirm-dialog'
 import { greeting } from '@/lib/greeting'
 
 /** 移动端底部 Tab：取每个主模块第一个子模块 + 「我的」。
@@ -50,6 +51,8 @@ export function Shell() {
   const dateStr = `${today.getFullYear()} 年 ${today.getMonth() + 1} 月 ${today.getDate()} 日`
 
   return (
+    // ConfirmProvider 在壳层：删除任务、清理历史待办、顺延等二次确认统一走同一个 Promise 式弹窗
+    <ConfirmProvider>
     <div className="flex h-dvh overflow-hidden bg-background">
       {/* 桌面/平板侧边栏：>=md 显示；<xl 折叠为图标栏 */}
       <aside className="hidden md:flex md:flex-col md:w-[200px] xl:w-[224px] shrink-0 border-r border-border bg-card/60 backdrop-blur px-2 py-4">
@@ -159,6 +162,7 @@ export function Shell() {
       <ShortcutsDialog />
       <OnboardingOverlay />
     </div>
+    </ConfirmProvider>
   )
 }
 

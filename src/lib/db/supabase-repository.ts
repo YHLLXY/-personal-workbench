@@ -155,6 +155,11 @@ export class SupabaseRepository implements WorkbenchRepository {
     if (error) throw error; return taskFromRow(data)
   }
   async deleteTask(id: string) { const { error } = await this.sb.from('wb_tasks').delete().eq('id', id); if (error) throw error }
+  // upsert 而不是 insert：撤销可能连点两次（或本地已乐观写回），命中同一 id 应当是幂等的
+  async restoreTask(t: Task) {
+    const { data, error } = await this.sb.from('wb_tasks').upsert(taskToRow(t), { onConflict: 'id' }).select().single()
+    if (error) throw error; return taskFromRow(data)
+  }
 
   // —— 每日计划项（v1.35，迁移 019）——
   // user_id 显式写入（而不依赖库里的 default auth.uid()）：onConflict 需要它以命中主键，

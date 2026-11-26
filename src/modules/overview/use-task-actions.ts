@@ -1,7 +1,12 @@
 import { toast } from 'sonner'
-import { useTaskMutations } from './api'
+import { useQueryClient } from '@tanstack/react-query'
+import { repository } from '@/lib/db'
+import { useConfirm } from '@/components/confirm-context'
+import { useTaskMutations, taskKeys } from './api'
 import { completionPatch, isDoneForToday, reopenPatch } from '@/lib/task-rules'
 import { todayStr, type Task } from '@/lib/db/types'
+import { nextOccurrence } from '@/lib/repeat'
+import { dayLabel } from '@/lib/day-plan'
 import { usePlanWrites } from './day-plan-api'
 
 export interface CompleteOptions {
@@ -23,7 +28,9 @@ export interface CompleteOptions {
  * 所以不要在这里加规则分支 —— 要改规则就去改 task-rules，四个入口一起生效。
  */
 export function useTaskActions() {
-  const { update } = useTaskMutations()
+  const { update, remove } = useTaskMutations()
+  const qc = useQueryClient()
+  const confirm = useConfirm()
   // 计划项（v1.35）：完成/撤销同时写一条事实记录，复盘才有"当天计划了 N 项"可算
   const plan = usePlanWrites()
   const today = todayStr()
@@ -59,6 +66,40 @@ export function useTaskActions() {
   }
 
   /**
+   * 改期（v1.35）：写 dueDate + 计划项留痕（旧日 moved_to / 新日补一条），并给回执。
+   * 原实现只有一行 `update.mutate({ dueDate })`——没有任何反馈，改完当场看不出发生了什么，
+   * 更没法撤销（委托书 2.1 的痛点"改期后 1 次点击可核对"）。
+   */
+  function reschedule(t: Task, date: string, opts?: { title?: string }) {
+    const from = t.dueDate
+    update.mutate({ id: t.id, patch: { dueDate: date } })
+    void plan.move(t, date, today)
+    toast.success(opts?.title ?? `已改到${dayLabel(date, today)}`, {
+      description: `「${t.title}」`,
+      action: {
+        label: '撤销',
+        onClick: () => {
+          update.mutate({ id: t.id, patch: { dueDate: from } })
+          void plan.unmove(t, from ?? today, date)
+        },
+      },
+      duration: 6000,
+    })
+  }
+
+  /** 重复任务「跳过一次」：只推进 dueDate、不记完成，同样给回执（否则任务凭空换天） */
+  function skipOnce(t: Task) {
+    if (!t.repeat) return
+    const from = t.dueDate
+    const next = nextOccurrence(t.dueDate ?? today, t.repeat, null, today)
+    update.mutate({ id: t.id, patch: { dueDate: next } })
+    toast.success(`已跳过这一次，下次 ${next}`, {
+      action: { label: '撤销', onClick: () => update.mutate({ id: t.id, patch: { dueDate: from } }) },
+      duration: 5000,
+    })
+  }
+
+  /**
    * 批量完成（逾期清理、晚间收尾）：逐条派生各自的补丁，只弹一个汇总 toast + 一次撤销。
    * 逐条而不是批量接口：两者都是 N 次仓储写入，而逐条能保留「哪一条是哪一种完成语义」，
    * 撤销时按各自的 undo 原值写回（重复任务还原 dueDate，普通任务还原 status），不会串味。
@@ -82,5 +123,38 @@ export function useTaskActions() {
     })
   }
 
-  return { complete, reopen, toggle, completeMany }
+  /**
+   * 删除（v1.35）：二次确认 + 6 秒撤销。
+   * 原实现的垃圾桶按钮一点就删、没有任何回执——手机上误触一次就没了（委托书 5.2「删除防误触」）。
+   * 撤销走 repository.restoreTask 保留原 id：计划项、专注记录指向的是这个 id。
+   */
+  async function removeTask(t: Task) {
+    const ok = await confirm({
+      title: `删除「${t.title}」？`,
+      description: '删除后 6 秒内可以从提示条里撤销。',
+      confirmLabel: '删除',
+      destructive: true,
+    })
+    if (!ok) return
+    remove.mutate(t.id)
+    toast.success('已删除', {
+      description: `「${t.title}」`,
+      action: {
+        label: '撤销',
+        onClick: () => {
+          void (async () => {
+            try {
+              await repository.restoreTask(t)
+              await qc.invalidateQueries({ queryKey: taskKeys.all })
+            } catch {
+              toast.error('恢复失败，请重试')
+            }
+          })()
+        },
+      },
+      duration: 6000,
+    })
+  }
+
+  return { complete, reopen, toggle, completeMany, reschedule, skipOnce, removeTask }
 }

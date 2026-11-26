@@ -103,6 +103,16 @@ export function trimPlanItems(items: PlanItem[], today: string, keepDays = 400):
   return items.filter(i => i.planDate >= cutoff)
 }
 
+/** 日期的人类可读标签（改期回执用）。今天/明天/后天给相对说法，其余给"M 月 D 日"——
+ *  改期 toast 上写 "已改到 明天" 比 "已改到 2026-11-27" 快一步读懂。 */
+export function dayLabel(date: string, today: string): string {
+  if (date === today) return '今天'
+  if (date === shiftDate(today, 1)) return '明天'
+  if (date === shiftDate(today, 2)) return '后天'
+  const [, m, d] = date.split('-')
+  return `${Number(m)} 月 ${Number(d)} 日`
+}
+
 /** YYYY-MM-DD 加减天数（本地时区无关的纯字符串运算） */
 export function shiftDate(date: string, days: number): string {
   const [y, m, d] = date.split('-').map(Number)

@@ -224,6 +224,20 @@ async function runScript(repo: WorkbenchRepository) {
     .map(t => t.sort)
   const halfSnap = { count: halfSorts.length, strictlyDesc: halfSorts.every((v, i) => i === 0 || v < halfSorts[i - 1]) }
 
+  // —— 删除撤销 v1.35：restoreTask 必须保留原 id（计划项 / 专注记录都按 id 引用它）——
+  const delTarget = await repo.createTask({ title: '误删的任务', dueDate: TODAY })
+  await repo.deleteTask(delTarget.id)
+  const goneAfterDelete = (await repo.listTasks()).some(t => t.id === delTarget.id)
+  await repo.restoreTask(delTarget)
+  const restored = (await repo.listTasks()).find(t => t.id === delTarget.id)
+  await repo.restoreTask(delTarget) // 连点两次撤销必须幂等，不产生第二行
+  const restoreSnap = {
+    goneAfterDelete,
+    sameId: restored?.id === delTarget.id,
+    title: restored?.title,
+    rowsWithId: (await repo.listTasks()).filter(t => t.id === delTarget.id).length,
+  }
+
   // —— 每日计划项 v1.35：物化幂等 → 完成 → 只写传入字段（不清 moved_to） → 撤销 → 改期 → 撤销改期 ——
   const planRows = async () => (await repo.listPlanItems())
     .filter(i => i.taskId === 'plan-t1')
@@ -355,7 +369,7 @@ async function runScript(repo: WorkbenchRepository) {
   // —— AI 日报：写入方是服务端（service role），前端只读；本地模式没有这条链路 ——
   const digestSnap = { list: (await repo.listDailyReports()).length, one: await repo.getDailyReport(TODAY) }
 
-  return { habitSnap, habitCascade, taskSnap, repeatSnap, taskNoteSnap, orderSnap, halfSnap, planSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap, digestSnap }
+  return { habitSnap, habitCascade, taskSnap, repeatSnap, taskNoteSnap, orderSnap, halfSnap, restoreSnap, planSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap, digestSnap }
 }
 
 describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', () => {
@@ -400,7 +414,11 @@ describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', (
     expect(supaSnap.halfSnap?.strictlyDesc).toBe(true)
     expect(supaSnap.halfSnap?.count).toBe(52)
   })
-  it('每日计划项 v1.35：物化幂等、只写传入字段、改期留痕、撤销清空（双实现一致）', () => {
+  it('删除撤销 v1.35：restoreTask 保留原 id 且连点幂等（双实现一致）', () => {
+    expect(supaSnap.restoreSnap).toEqual(localSnap.restoreSnap)
+    expect(localSnap.restoreSnap).toEqual({ goneAfterDelete: false, sameId: true, title: '误删的任务', rowsWithId: 1 })
+  })
+  it('每日计划项 v1.35：物化即幂等、只写传入字段、改期留痕、撤销清空（双实现一致）', () => {
     expect(supaSnap.planSnap).toEqual(localSnap.planSnap)
     // 物化两次仍只有一行（PK (plan_date, task_id) 的应用层守卫）
     expect(localSnap.planSnap.planAfterMaterialize).toHaveLength(1)

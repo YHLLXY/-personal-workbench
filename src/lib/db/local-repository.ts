@@ -52,6 +52,14 @@ export class LocalRepository implements WorkbenchRepository {
     return rows[i]
   }
   async deleteTask(id: string) { remove('tasks', id) }
+  async restoreTask(task: Task) {
+    const rows = read<Task>('tasks')
+    const i = rows.findIndex(r => r.id === task.id)
+    if (i >= 0) rows[i] = task
+    else rows.unshift(task)
+    write('tasks', rows)
+    return task
+  }
 
   // —— 每日计划项（v1.35）：key `wb:planItems`，主键在本地是 (planDate, taskId) 的字符串比较 ——
   async listPlanItems() { return read<PlanItem>('planItems') }
