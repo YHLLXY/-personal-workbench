@@ -3,6 +3,7 @@ import { buildBackup, validateBackup, formatBytes, backupFileName, BACKUP_APP, B
 import type { BackupTables } from '../src/lib/db/types'
 
 const sample: BackupTables = {
+  planItems: [{ planDate: '2026-08-05', taskId: 't1', title: '写完计划', goalId: null, amount: null, doneAt: '2026-08-05T08:00:00.000Z', movedTo: null, createdAt: '2026-08-05T00:00:00.000Z' }],
   tasks: [{ id: 't1', title: '写完计划', focus: true, focusDate: '2026-08-05', priority: 'high', status: 'done', dueDate: '2026-08-05', dueTime: null, tags: [], sort: 1, completedAt: '2026-08-05T08:00:00.000Z', createdAt: '2026-08-01T00:00:00.000Z' }],
   habits: [{ id: 'h1', name: '喝水', icon: '💧', color: '#5B8A72', targetPerDay: 8, active: true, createdAt: '2026-08-01T00:00:00.000Z' }],
   habitLogs: [{ id: 'l1', habitId: 'h1', logDate: '2026-08-05', count: 3 }],

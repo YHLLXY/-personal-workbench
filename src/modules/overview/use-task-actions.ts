@@ -2,6 +2,7 @@ import { toast } from 'sonner'
 import { useTaskMutations } from './api'
 import { completionPatch, isDoneForToday, reopenPatch } from '@/lib/task-rules'
 import { todayStr, type Task } from '@/lib/db/types'
+import { usePlanWrites } from './day-plan-api'
 
 export interface CompleteOptions {
   /** 完成之后紧接着要做的界面动作（今日页：展开「已完成」分区，否则任务坠进折叠区等于隐形） */
@@ -23,21 +24,31 @@ export interface CompleteOptions {
  */
 export function useTaskActions() {
   const { update } = useTaskMutations()
+  // 计划项（v1.35）：完成/撤销同时写一条事实记录，复盘才有"当天计划了 N 项"可算
+  const plan = usePlanWrites()
   const today = todayStr()
 
   function complete(t: Task, opts?: CompleteOptions) {
     const { patch, undo, nextDue } = completionPatch(t, today)
     update.mutate({ id: t.id, patch })
+    void plan.done(t, today)
     opts?.after?.()
     toast.success(opts?.title ?? '已完成', {
       description: nextDue ? `「${t.title}」下次：${nextDue}` : `「${t.title}」已划线保留`,
-      action: { label: '撤销', onClick: () => update.mutate({ id: t.id, patch: undo }) },
+      action: {
+        label: '撤销',
+        onClick: () => {
+          update.mutate({ id: t.id, patch: undo })
+          void plan.undone(t, today) // 撤销完成 = 计划项 done_at 也回退，否则进度账本会重复计
+        },
+      },
       duration: 5000,
     })
   }
 
   function reopen(t: Task) {
     update.mutate({ id: t.id, patch: reopenPatch(t, today) })
+    void plan.undone(t, today)
     toast.success('已撤销完成', { description: `「${t.title}」回到待办`, duration: 3000 })
   }
 
@@ -55,11 +66,17 @@ export function useTaskActions() {
   function completeMany(list: Task[], opts?: { title?: string }) {
     if (list.length === 0) return
     const plans = list.map(t => ({ task: t, ...completionPatch(t, today) }))
-    plans.forEach(({ task, patch }) => update.mutate({ id: task.id, patch }))
+    plans.forEach(({ task, patch }) => {
+      update.mutate({ id: task.id, patch })
+      void plan.done(task, today)
+    })
     toast.success(opts?.title ?? `已处理 ${plans.length} 项`, {
       action: {
         label: '撤销',
-        onClick: () => plans.forEach(({ task, undo }) => update.mutate({ id: task.id, patch: undo })),
+        onClick: () => plans.forEach(({ task, undo }) => {
+          update.mutate({ id: task.id, patch: undo })
+          void plan.undone(task, today)
+        }),
       },
       duration: 6000,
     })

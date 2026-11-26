@@ -302,7 +302,7 @@ describe('exportAll / importAll', () => {
   let repo: LocalRepository
   beforeEach(() => { localStorage.clear(); repo = new LocalRepository() })
 
-  it('exportAll 导出 12 张表，往返 importAll 后数据一致', async () => {
+  it('exportAll 导出 13 张表，往返 importAll 后数据一致', async () => {
     const t = await repo.createTask({ title: '备份我' })
     const h = await repo.createHabit({ name: '喝水' })
     await repo.setHabitLog(h.id, '2026-08-05', 2)
@@ -318,7 +318,7 @@ describe('exportAll / importAll', () => {
 
     const tables = await repo.exportAll()
     expect(Object.keys(tables).sort()).toEqual(
-      ['tasks', 'habits', 'habitLogs', 'focusSessions', 'exams', 'studyGoals', 'notes', 'papers', 'folders', 'healthLogs', 'reviews', 'growthActions'].sort(),
+      ['tasks', 'planItems', 'habits', 'habitLogs', 'focusSessions', 'exams', 'studyGoals', 'notes', 'papers', 'folders', 'healthLogs', 'reviews', 'growthActions'].sort(),
     )
 
     localStorage.clear()
@@ -341,7 +341,7 @@ describe('exportAll / importAll', () => {
 
   it('importAll 覆盖式替换旧数据', async () => {
     await repo.createTask({ title: '旧任务' })
-    await repo.importAll({ tasks: [{ id: 'n1', title: '新任务', focus: false, focusDate: null, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }], habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [], growthActions: [] })
+    await repo.importAll({ tasks: [{ id: 'n1', title: '新任务', focus: false, focusDate: null, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }], planItems: [], habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [], growthActions: [] })
     const tasks = await repo.listTasks()
     expect(tasks).toHaveLength(1)
     expect(tasks[0].title).toBe('新任务')
@@ -357,7 +357,7 @@ describe('exportAll / importAll', () => {
       if (key === 'wb:habits') throw new DOMException('quota', 'QuotaExceededError')
       realSetItem.call(this, key, value)
     })
-    await expect(repo.importAll({ tasks: [], habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [], growthActions: [] })).rejects.toThrow()
+    await expect(repo.importAll({ tasks: [], planItems: [], habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [], growthActions: [] })).rejects.toThrow()
     spy.mockRestore()
     expect(await repo.exportAll()).toEqual(before)
   })

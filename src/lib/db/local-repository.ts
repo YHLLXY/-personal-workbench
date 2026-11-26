@@ -1,5 +1,6 @@
-import { applyTaskPatch, bakeTaskSort, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput, type DailyReport } from './types'
+import { applyTaskPatch, bakeTaskSort, genId, localDateOfISO, type PlanItem, type PlanItemInput, type WorkbenchRepository, type Task, type TaskInput, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type GrowthAction, type GrowthActionInput, type DailyReport, todayStr } from './types'
 import { assertNoCycle } from './folder-tree'
+import { trimPlanItems } from '../day-plan'
 
 const PREFIX = 'wb:'
 function read<T>(key: string): T[] {
@@ -17,6 +18,12 @@ function patch<T extends { id: string }>(key: string, id: string, p: Partial<T>)
   rows[i] = { ...rows[i], ...p } as T; write(key, rows); return rows[i]
 }
 function remove(key: string, id: string) { write(key, read<{ id: string }>(key).filter(r => r.id !== id)) }
+/** 丢掉值为 undefined 的键：本地实现是「合并已有行」，不滤掉会把已有字段覆盖成 undefined */
+function defined<T extends object>(obj: T): Partial<T> {
+  const out: Partial<T> = {}
+  for (const [k, v] of Object.entries(obj)) if (v !== undefined) (out as Record<string, unknown>)[k] = v
+  return out
+}
 
 export class LocalRepository implements WorkbenchRepository {
   async listTasks() {
@@ -45,6 +52,27 @@ export class LocalRepository implements WorkbenchRepository {
     return rows[i]
   }
   async deleteTask(id: string) { remove('tasks', id) }
+
+  // —— 每日计划项（v1.35）：key `wb:planItems`，主键在本地是 (planDate, taskId) 的字符串比较 ——
+  async listPlanItems() { return read<PlanItem>('planItems') }
+  async upsertPlanItem(input: PlanItemInput) {
+    const rows = read<PlanItem>('planItems')
+    const i = rows.findIndex(r => r.planDate === input.planDate && r.taskId === input.taskId)
+    let row: PlanItem
+    if (i >= 0) {
+      // 只合并传入字段（undefined = 不动），与云端"缺失列不进 update set"的语义对齐
+      row = { ...rows[i], ...defined(input) } as PlanItem
+      rows[i] = row
+    } else {
+      row = { planDate: input.planDate, taskId: input.taskId, title: input.title ?? '', goalId: input.goalId ?? null, amount: input.amount ?? null, doneAt: input.doneAt ?? null, movedTo: input.movedTo ?? null, createdAt: new Date().toISOString() }
+      rows.unshift(row)
+    }
+    write('planItems', trimPlanItems(rows, todayStr())) // 顺手裁剪，控制 localStorage 配额（D-22）
+    return row
+  }
+  async deletePlanItem(planDate: string, taskId: string) {
+    write('planItems', read<PlanItem>('planItems').filter(r => !(r.planDate === planDate && r.taskId === taskId)))
+  }
 
   async listHabits() { return read<Habit>('habits') }
   async createHabit(input: { name: string; icon?: string; color?: string; targetPerDay?: number }) {
@@ -210,11 +238,11 @@ export class LocalRepository implements WorkbenchRepository {
   async deleteGrowthAction(id: string) { remove('growthActions', id) }
 
   async exportAll() {
-    const [tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions] = await Promise.all([
-      this.listTasks(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
+    const [tasks, planItems, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions] = await Promise.all([
+      this.listTasks(), this.listPlanItems(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
       this.listStudyGoals(), this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(), this.listGrowthActions(),
     ])
-    return { tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions }
+    return { tasks, planItems, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions }
   }
 
   async importAll(tables: BackupTables) {
@@ -226,7 +254,7 @@ export class LocalRepository implements WorkbenchRepository {
     }
     try {
       const entries: Array<[string, unknown[]]> = [
-        ['tasks', tables.tasks], ['habits', tables.habits], ['habitLogs', tables.habitLogs],
+        ['tasks', tables.tasks], ['planItems', tables.planItems ?? []], ['habits', tables.habits], ['habitLogs', tables.habitLogs],
         ['focusSessions', tables.focusSessions], ['exams', tables.exams],
         // ?? [] 守卫：旧备份文件没有 studyGoals 等新 key 时按空表处理，不抛错
         ['studyGoals', tables.studyGoals ?? []], ['notes', tables.notes],

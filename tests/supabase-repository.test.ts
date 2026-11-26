@@ -173,7 +173,7 @@ describe('SupabaseRepository', () => {
   })
 
   describe('exportAll / importAll', () => {
-    it('exportAll 拉全 11 张表并映射为领域对象', async () => {
+    it('exportAll 拉全 13 张表并映射为领域对象', async () => {
       setRows('wb_tasks', [{ id: 't1', title: '任务', focus: false, priority: 'low', status: 'todo', due_date: null, tags: [], sort: 1, completed_at: null, created_at: '2026-08-01T00:00:00.000Z' }])
       setRows('wb_folders', [{ id: 'f1', name: '机器学习', parent_id: null, sort: 1 }])
       setRows('wb_papers', [{ id: 'p1', title: '论文', authors: 'a', arxiv_id: null, url: null, status: 'want', rating: null, note: null, created_at: '2026-08-01T00:00:00.000Z' }])
@@ -189,10 +189,10 @@ describe('SupabaseRepository', () => {
     it('importAll 每表先 delete().neq(id) 清空再 upsert，载荷 snake_case', async () => {
       await repo.importAll({
         tasks: [{ id: 't1', title: '任务', focus: false, focusDate: null, priority: 'low', status: 'todo', dueDate: null, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z' }],
-        habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [], growthActions: [],
+        planItems: [], habits: [], habitLogs: [], focusSessions: [], exams: [], studyGoals: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [], growthActions: [],
       })
-      // 每张表都先清空（v1.7 起 12 张表，含 wb_growth_actions）
-      expect(deleteCalls.length).toBe(12)
+      // 每张表都先清空（v1.35 起 13 张表，含 wb_plan_items）
+      expect(deleteCalls.length).toBe(13)
       expect(deleteCalls[0]).toEqual({ table: 'wb_tasks', column: 'id', value: '' })
       // tasks 表 upsert 载荷是 snake_case 列名
       const tasksUpsert = upsertCalls.find(u => u.table === 'wb_tasks')
@@ -207,7 +207,7 @@ describe('SupabaseRepository', () => {
         tasks: [], habits: [], habitLogs: [], focusSessions: [], exams: [], notes: [], papers: [], folders: [], healthLogs: [], reviews: [],
       } as unknown as BackupTables
       await repo.importAll(legacy)
-      expect(deleteCalls.length).toBe(12)
+      expect(deleteCalls.length).toBe(13)
       expect(upsertCalls.length).toBe(0)
     })
 

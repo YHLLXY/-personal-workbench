@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useTasks, useTaskMutations, todayTasks, todayDone, recentOverdue, oldOverdue, filterTasks } from './api'
 import { useTaskActions } from './use-task-actions'
+import { usePlanItems, usePlanMaterialize } from './day-plan-api'
 import { TaskItem } from './task-item'
 import { TaskDialog } from './task-dialog'
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,9 @@ export default function TodayTasks() {
   const [somedayMenuId, setSomedayMenuId] = useState<string | null>(null) // 将来区 ⋯ 菜单（受控，同一时刻至多一个展开）
   const [somedayDate, setSomedayDate] = useState('')
   const today = todayStr()
+  // 计划快照（v1.35）：进入今日页把「今天该有计划项但还没有」的任务补成行，复盘才有当天分母
+  const { data: planItems } = usePlanItems()
+  usePlanMaterialize(tasks, planItems, today)
   const rootRef = useRef<HTMLDivElement>(null)
 
   // FLIP 布局动画：每次提交后、绘制前对比各任务上一帧位置，位移即从旧位置滑到新位置

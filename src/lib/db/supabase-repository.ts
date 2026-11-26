@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseClient } from './supabase-client'
-import { bakeTaskSort, genId, localDateOfISO, type WorkbenchRepository, type Task, type TaskInput, type TaskRepeat, type ChecklistItem, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind, type GrowthAction, type GrowthActionInput, type DailyReport, type DailyReportSection } from './types'
+import { bakeTaskSort, genId, localDateOfISO, type PlanItem, type PlanItemInput, type WorkbenchRepository, type Task, type TaskInput, type TaskRepeat, type ChecklistItem, type Habit, type HabitLog, type FocusSession, type Exam, type ExamInput, type Note, type Paper, type HealthLog, type HealthLogInput, type Review, type StudyGoal, type StudyGoalInput, type Folder, type FolderInput, type BackupTables, type Subscriptions, type Reminder, type PushSubscriptionRow, type ChannelConfigs, type ReminderKind, type GrowthAction, type GrowthActionInput, type DailyReport, type DailyReportSection } from './types'
 import { assertNoCycle } from './folder-tree'
 
 /** Supabase 行 -> 领域对象 的映射（snake_case -> camelCase） */
@@ -91,6 +91,14 @@ function growthFromRow(r: Row): GrowthAction {
 function reminderFromRow(r: Row): Reminder {
   return { id: String(r.id), refType: r.ref_type as Reminder['refType'], refId: String(r.ref_id), kind: r.kind as ReminderKind, scheduledAt: String(r.scheduled_at), sentAt: r.sent_at ? String(r.sent_at) : null, createdAt: String(r.created_at) }
 }
+function planItemFromRow(r: Row): PlanItem {
+  return {
+    planDate: String(r.plan_date), taskId: String(r.task_id), title: String(r.title ?? ''),
+    goalId: (r.goal_id as string | null) ?? null, amount: r.amount == null ? null : Number(r.amount),
+    doneAt: r.done_at ? new Date(String(r.done_at)).toISOString() : null,
+    movedTo: (r.moved_to as string | null) ?? null, createdAt: String(r.created_at ?? ''),
+  }
+}
 function pushSubFromRow(r: Row): PushSubscriptionRow {
   return { id: String(r.id), endpoint: String(r.endpoint), keysP256dh: String(r.keys_p256dh), keysAuth: String(r.keys_auth), userAgent: r.user_agent as string | null, createdAt: String(r.created_at) }
 }
@@ -106,17 +114,18 @@ function goalToRow(g: StudyGoal) { return { id: g.id, title: g.title, target: g.
 function folderToRow(f: Folder) { return { id: f.id, name: f.name, parent_id: f.parentId, sort: f.sort } }
 function healthToRow(l: HealthLog) { return { id: l.id, log_date: l.logDate, type: l.type, value: l.value } }
 function reviewToRow(r: Review) { return { id: r.id, review_date: r.reviewDate, mood: r.mood, achievements: r.achievements, reflection: r.reflection, gratitude: r.gratitude, learnings: r.learnings, summary: r.summary, plan_tomorrow: r.planTomorrow, score: r.score, updated_at: r.updatedAt } }
+function planItemToRow(p: PlanItem) { return { plan_date: p.planDate, task_id: p.taskId, title: p.title, goal_id: p.goalId, amount: p.amount, done_at: p.doneAt, moved_to: p.movedTo, created_at: p.createdAt } }
 function growthToRow(g: GrowthAction) { return { id: g.id, no: g.no, title: g.title, emoji: g.emoji, category: g.category, why: g.why, steps: JSON.stringify(g.steps), targets: JSON.stringify(g.targets), verify: g.verify, habit_id: g.habitId, status: g.status, sort: g.sort, created_at: g.createdAt } }
 
 /** 表名映射（备份表 -> Supabase 表） */
 const TABLES: Record<keyof BackupTables, string> = {
-  tasks: 'wb_tasks', habits: 'wb_habits', habitLogs: 'wb_habit_logs', focusSessions: 'wb_focus_sessions',
+  tasks: 'wb_tasks', planItems: 'wb_plan_items', habits: 'wb_habits', habitLogs: 'wb_habit_logs', focusSessions: 'wb_focus_sessions',
   exams: 'wb_exams', studyGoals: 'wb_study_goals', notes: 'wb_notes', papers: 'wb_papers', folders: 'wb_folders',
   healthLogs: 'wb_health_logs', reviews: 'wb_reviews', growthActions: 'wb_growth_actions',
 }
 
 const toRows: { [K in keyof BackupTables]: (rows: BackupTables[K]) => Record<string, unknown>[] } = {
-  tasks: rs => rs.map(taskToRow), habits: rs => rs.map(habitToRow), habitLogs: rs => rs.map(logToRow),
+  tasks: rs => rs.map(taskToRow), planItems: rs => rs.map(planItemToRow), habits: rs => rs.map(habitToRow), habitLogs: rs => rs.map(logToRow),
   focusSessions: rs => rs.map(focusToRow), exams: rs => rs.map(examToRow), studyGoals: rs => rs.map(goalToRow),
   notes: rs => rs.map(noteToRow), papers: rs => rs.map(paperToRow), folders: rs => rs.map(folderToRow),
   healthLogs: rs => rs.map(healthToRow), reviews: rs => rs.map(reviewToRow), growthActions: rs => rs.map(growthToRow),
@@ -146,6 +155,42 @@ export class SupabaseRepository implements WorkbenchRepository {
     if (error) throw error; return taskFromRow(data)
   }
   async deleteTask(id: string) { const { error } = await this.sb.from('wb_tasks').delete().eq('id', id); if (error) throw error }
+
+  // —— 每日计划项（v1.35，迁移 019）——
+  // user_id 显式写入（而不依赖库里的 default auth.uid()）：onConflict 需要它以命中主键，
+  // 且 v1.28.7 的教训是「拿不到用户时绝不能把空串当 uuid 送进库」——这里拿不到就抛可读错误。
+  private uid: string | null = null
+  private async userId(): Promise<string> {
+    if (this.uid === null) {
+      const { data } = await this.sb.auth.getUser()
+      const id = data?.user?.id
+      if (!id) throw new Error('未登录：写每日计划项需要登录态')
+      this.uid = id
+    }
+    return this.uid
+  }
+  async listPlanItems() {
+    const { data, error } = await this.sb.from('wb_plan_items').select('*').order('plan_date', { ascending: false })
+    if (error) throw error
+    return (data ?? []).map(planItemFromRow)
+  }
+  async upsertPlanItem(input: PlanItemInput) {
+    // 只把**传入**的列放进 set：undefined 键被 JSON 序列化丢弃，PostgREST 就不会覆盖已有值
+    // （完成一条已物化的计划项时不能把 moved_to 顺手清掉）
+    const payload: Record<string, unknown> = { user_id: await this.userId(), plan_date: input.planDate, task_id: input.taskId }
+    if (input.title !== undefined) payload.title = input.title
+    if (input.goalId !== undefined) payload.goal_id = input.goalId
+    if (input.amount !== undefined) payload.amount = input.amount
+    if (input.doneAt !== undefined) payload.done_at = input.doneAt
+    if (input.movedTo !== undefined) payload.moved_to = input.movedTo
+    const { data, error } = await this.sb.from('wb_plan_items').upsert(payload, { onConflict: 'user_id,plan_date,task_id' }).select().single()
+    if (error) throw error
+    return planItemFromRow(data)
+  }
+  async deletePlanItem(planDate: string, taskId: string) {
+    const { error } = await this.sb.from('wb_plan_items').delete().eq('plan_date', planDate).eq('task_id', taskId)
+    if (error) throw error
+  }
 
   async listHabits() { const { data, error } = await this.sb.from('wb_habits').select('*').order('created_at'); if (error) throw error; return (data ?? []).map(habitFromRow) }
   async createHabit(input: { name: string; icon?: string; color?: string; targetPerDay?: number }) {
@@ -309,11 +354,11 @@ export class SupabaseRepository implements WorkbenchRepository {
   async deleteGrowthAction(id: string) { const { error } = await this.sb.from('wb_growth_actions').delete().eq('id', id); if (error) throw error }
 
   async exportAll() {
-    const [tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions] = await Promise.all([
-      this.listTasks(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
+    const [tasks, planItems, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions] = await Promise.all([
+      this.listTasks(), this.listPlanItems(), this.listHabits(), this.listHabitLogs(), this.listFocusSessions(), this.listExams(),
       this.listStudyGoals(), this.listNotes(), this.listPapers(), this.listFolders(), this.listHealthLogs(), this.listReviews(), this.listGrowthActions(),
     ])
-    return { tasks, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions }
+    return { tasks, planItems, habits, habitLogs, focusSessions, exams, studyGoals, notes, papers, folders, healthLogs, reviews, growthActions }
   }
 
   async importAll(tables: BackupTables) {
@@ -323,8 +368,10 @@ export class SupabaseRepository implements WorkbenchRepository {
       // ?? [] 守卫：旧备份文件没有 studyGoals 等新 key 时按空表处理，不抛错
       const rows = toSnake(key, tables[key] ?? [])
       try {
-        // RLS 已限定 user_id = auth.uid()，delete().neq('id','') 安全清空本用户全部行
-        const { error: delErr } = await this.sb.from(TABLES[key]).delete().neq('id', '')
+        // RLS 已限定 user_id = auth.uid()，delete().neq(清空列,'') 安全清空本用户全部行。
+        // wb_plan_items 没有 id 列（主键是 user_id+plan_date+task_id），清空列要用 plan_date
+        const clearColumn = key === 'planItems' ? 'plan_date' : 'id'
+        const { error: delErr } = await this.sb.from(TABLES[key]).delete().neq(clearColumn, '')
         if (delErr) throw new Error(`清空失败: ${delErr.message}`)
       } catch (err) {
         errors.push(`${key}（清空）: ${err instanceof Error ? err.message : String(err)}`)

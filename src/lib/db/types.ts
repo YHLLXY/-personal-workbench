@@ -23,13 +23,43 @@ export interface Task {
   repeat?: TaskRepeat | null   // v1.24 重复规则；null/缺省 = 不重复（旧数据天然缺省，非兼容层）
   checklist?: ChecklistItem[]  // v1.24 清单；缺省 = 无清单
   note?: string | null         // v1.25 备注；缺省 = 无备注（卡片标题下方灰字展示，line-clamp-2）
+  goalId?: string | null        // v1.36 学习目标归属（迁移 020）；缺省 = 与目标无关的普通任务
+  progressAmount?: number | null // v1.36 完成时推进多少目标进度（迁移 020）；缺省 = 按 1 计
 }
-export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; dueTime?: string | null; focusDate?: string | null; tags?: string[]; repeat?: TaskRepeat | null; checklist?: ChecklistItem[]; note?: string | null }
+export interface TaskInput { title: string; focus?: boolean; priority?: Task['priority']; status?: Task['status']; dueDate?: string | null; dueTime?: string | null; focusDate?: string | null; tags?: string[]; repeat?: TaskRepeat | null; checklist?: ChecklistItem[]; note?: string | null; goalId?: string | null; progressAmount?: number | null }
 
 export interface Habit { id: string; name: string; icon: string; color: string; targetPerDay: number; active: boolean; createdAt: string }
 export interface HabitLog { id: string; habitId: string; logDate: string; count: number }
 
 export interface FocusSession { id: string; startAt: string; minutes: number; note: string | null }
+
+/**
+ * 每日计划项（v1.35，迁移 019）：某一天「计划了哪些任务」的事实快照。
+ *
+ * 一条任务在某一天的唯一身份是 (planDate, taskId)。计划、完成、改期、删除都只在这一行上留痕，
+ * 而不是回头读任务当前状态——后者必然被今天的改期改写历史（v1.34 复盘统计的根因，见 D-16）。
+ * 行级（而不是一个 JSON 数组）：收尾会并发改 5 条，JSON 是"读-改-写"且必然丢更新，行级 upsert 天然幂等。
+ */
+export interface PlanItem {
+  planDate: string          // YYYY-MM-DD，这一项计划在哪一天
+  taskId: string
+  title: string             // 计划时的标题快照（任务改名或删除后历史仍可读）
+  goalId: string | null     // 计划时的目标归属（v1.36 起才有值）
+  amount: number | null     // 计划时从 Task.progressAmount 快照的推进量（v1.36 起才有值）
+  doneAt: string | null     // 完成事实（ISO）；撤销写回 null
+  movedTo: string | null    // 改期目标日；撤销改期清空
+  createdAt: string
+}
+/** 计划项写入载荷：**只写传入的字段**（undefined = 不动已有值），所以完成一条已物化的计划项不会误清 movedTo */
+export interface PlanItemInput {
+  planDate: string
+  taskId: string
+  title?: string
+  goalId?: string | null
+  amount?: number | null
+  doneAt?: string | null
+  movedTo?: string | null
+}
 
 export interface Exam {
   id: string
@@ -155,6 +185,11 @@ export interface ChannelConfigs { serverchanKey: string | null; telegramBotToken
 export interface WorkbenchRepository {
   listTasks(): Promise<Task[]>
   createTask(input: TaskInput): Promise<Task>
+  /** 每日计划项（v1.35）：只 upsert、不删行——任务删除后历史仍要可读 */
+  listPlanItems(): Promise<PlanItem[]>
+  upsertPlanItem(input: PlanItemInput): Promise<PlanItem>
+  /** 只给"撤销改期"用：改期给目标日补了一条行，撤销时必须把那条抹掉，否则目标日会留下幽灵计划 */
+  deletePlanItem(planDate: string, taskId: string): Promise<void>
   updateTask(id: string, patch: Partial<Task>): Promise<Task>
   deleteTask(id: string): Promise<void>
 
@@ -224,9 +259,12 @@ export interface WorkbenchRepository {
   importAll(tables: BackupTables): Promise<void>
 }
 
-/** 备份的 12 张表数据（导出/导入闭环的载体） */
+/** 备份的 13 张表数据（导出/导入闭环的载体）。
+ *  planItems 是 v1.35 新增的表：旧备份文件里没有它，`validateBackup` 会把缺省补成 []，
+ *  所以它**不能**进 backup.ts 的必需表清单（否则所有旧备份都会被判 corrupt）。 */
 export interface BackupTables {
   tasks: Task[]
+  planItems: PlanItem[]
   habits: Habit[]
   habitLogs: HabitLog[]
   focusSessions: FocusSession[]

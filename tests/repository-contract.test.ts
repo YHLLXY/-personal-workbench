@@ -35,7 +35,7 @@ function fakeSupabase(): SupabaseClient {
     if (name === 'wb_focus_sessions' && out.start_at == null) out.start_at = now
     if (name === 'wb_reviews' && out.updated_at == null) out.updated_at = now
     if (name === 'wb_folders' && out.sort == null) out.sort = 0
-    if (['wb_push_subscriptions', 'wb_reminders'].includes(name) && out.created_at == null) out.created_at = now
+    if (['wb_push_subscriptions', 'wb_reminders', 'wb_plan_items'].includes(name) && out.created_at == null) out.created_at = now
     return out
   }
   const applyUpdate = (name: string, payload: Row, col: string, val: unknown): Row[] => {
@@ -115,21 +115,29 @@ function fakeSupabase(): SupabaseClient {
           then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve({ error: null }).then(res, rej),
         }
       },
-      delete: () => ({
-        eq: (col: string, val: unknown) => {
-          const rows = rowsOf(name)
-          for (const r of [...rows]) if (r[col] === val) rows.splice(rows.indexOf(r), 1)
-          // 迁移 001：wb_habit_logs.habit_id 对 wb_habits on delete cascade
-          if (name === 'wb_habits') db['wb_habit_logs'] = rowsOf('wb_habit_logs').filter(l => l.habit_id !== val)
-          return Promise.resolve({ error: null })
-        },
-        // deleteFolder 用 .in 批量删子树（v1.24）
-        in: (col: string, vals: unknown[]) => {
-          const rows = rowsOf(name)
-          for (const r of [...rows]) if (vals.includes(r[col])) rows.splice(rows.indexOf(r), 1)
-          return Promise.resolve({ error: null })
-        },
-      }),
+      // delete 支持链式 eq（v1.35：deletePlanItem 用 .eq('plan_date').eq('task_id') 双条件）、
+      // 批量 .in（deleteFolder 删子树）与直接 await（importAll 的 .neq('id','')）
+      delete: () => {
+        const build = (conds: Array<[string, unknown]>): Record<string, unknown> => ({
+          eq: (col: string, val: unknown) => build([...conds, [col, val]]),
+          in: (col: string, vals: unknown[]) => {
+            const rows = rowsOf(name)
+            for (const r of [...rows]) if (vals.includes(r[col])) rows.splice(rows.indexOf(r), 1)
+            return Promise.resolve({ error: null })
+          },
+          then: (res?: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => {
+            const rows = rowsOf(name)
+            for (const r of [...rows]) if (conds.every(([c, v]) => r[c] === v)) rows.splice(rows.indexOf(r), 1)
+            // 迁移 001：wb_habit_logs.habit_id 对 wb_habits on delete cascade
+            if (name === 'wb_habits') {
+              const id = conds.find(([c]) => c === 'id')?.[1]
+              db['wb_habit_logs'] = rowsOf('wb_habit_logs').filter(l => l.habit_id !== id)
+            }
+            return Promise.resolve({ error: null }).then(res, rej)
+          },
+        })
+        return build([])
+      },
     }
     return b
   }
@@ -215,6 +223,24 @@ async function runScript(repo: WorkbenchRepository) {
     .filter(t => [anchorTop.id, anchorBottom.id, ...insertedIds].includes(t.id))
     .map(t => t.sort)
   const halfSnap = { count: halfSorts.length, strictlyDesc: halfSorts.every((v, i) => i === 0 || v < halfSorts[i - 1]) }
+
+  // —— 每日计划项 v1.35：物化幂等 → 完成 → 只写传入字段（不清 moved_to） → 撤销 → 改期 → 撤销改期 ——
+  const planRows = async () => (await repo.listPlanItems())
+    .filter(i => i.taskId === 'plan-t1')
+    .map(i => ({ planDate: i.planDate, title: i.title, goalId: i.goalId, amount: i.amount, done: i.doneAt !== null, movedTo: i.movedTo }))
+    .sort((a, b) => a.planDate.localeCompare(b.planDate))
+  await repo.upsertPlanItem({ planDate: TODAY, taskId: 'plan-t1', title: '写实验报告', amount: 5 })
+  await repo.upsertPlanItem({ planDate: TODAY, taskId: 'plan-t1', title: '写实验报告', amount: 5 }) // 幂等：仍只有一行
+  const planAfterMaterialize = await planRows()
+  await repo.upsertPlanItem({ planDate: TODAY, taskId: 'plan-t1', doneAt: '2026-08-29T10:00:00.000Z' }) // 只写 done_at
+  const planAfterDone = await planRows()
+  await repo.upsertPlanItem({ planDate: '2026-08-30', taskId: 'plan-t1', title: '写实验报告', movedTo: null }) // 改期后的新行
+  await repo.upsertPlanItem({ planDate: TODAY, taskId: 'plan-t1', movedTo: '2026-08-30' })
+  const planAfterMove = await planRows()
+  await repo.deletePlanItem('2026-08-30', 'plan-t1') // 撤销改期：抹掉目标日那条
+  await repo.upsertPlanItem({ planDate: TODAY, taskId: 'plan-t1', movedTo: null })
+  const planAfterUnmove = await planRows()
+  const planSnap = { planAfterMaterialize, planAfterDone, planAfterMove, planAfterUnmove }
 
   // —— 身体记录：体重当日覆盖 / 运动多条 ——
   await repo.createHealthLog({ logDate: TODAY, type: 'weight', value: 62.5 })
@@ -329,7 +355,7 @@ async function runScript(repo: WorkbenchRepository) {
   // —— AI 日报：写入方是服务端（service role），前端只读；本地模式没有这条链路 ——
   const digestSnap = { list: (await repo.listDailyReports()).length, one: await repo.getDailyReport(TODAY) }
 
-  return { habitSnap, habitCascade, taskSnap, repeatSnap, taskNoteSnap, orderSnap, halfSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap, digestSnap }
+  return { habitSnap, habitCascade, taskSnap, repeatSnap, taskNoteSnap, orderSnap, halfSnap, planSnap, healthSnap, goalSnap, paperSnap, pinnedFirst, noteSnap, reviewSnap, examSnap, growthSnap, focusSnap, folderSnap, pushSnap, channelSnap, digestSnap }
 }
 
 describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', () => {
@@ -373,6 +399,20 @@ describe('仓储契约：LocalRepository 与 SupabaseRepository 行为一致', (
     expect(supaSnap.halfSnap).toEqual(localSnap.halfSnap)
     expect(supaSnap.halfSnap?.strictlyDesc).toBe(true)
     expect(supaSnap.halfSnap?.count).toBe(52)
+  })
+  it('每日计划项 v1.35：物化幂等、只写传入字段、改期留痕、撤销清空（双实现一致）', () => {
+    expect(supaSnap.planSnap).toEqual(localSnap.planSnap)
+    // 物化两次仍只有一行（PK (plan_date, task_id) 的应用层守卫）
+    expect(localSnap.planSnap.planAfterMaterialize).toHaveLength(1)
+    // 完成时只写 done_at：标题与 amount 不能被 undefined 清掉
+    expect(localSnap.planSnap.planAfterDone).toEqual([{ planDate: TODAY, title: '写实验报告', goalId: null, amount: 5, done: true, movedTo: null }])
+    // 改期：旧行 moved_to 留痕 + 新行出现
+    expect(localSnap.planSnap.planAfterMove).toEqual([
+      { planDate: TODAY, title: '写实验报告', goalId: null, amount: 5, done: true, movedTo: '2026-08-30' },
+      { planDate: '2026-08-30', title: '写实验报告', goalId: null, amount: null, done: false, movedTo: null },
+    ])
+    // 撤销改期：目标日那条被删掉，旧行 moved_to 清零
+    expect(localSnap.planSnap.planAfterUnmove).toEqual([{ planDate: TODAY, title: '写实验报告', goalId: null, amount: 5, done: true, movedTo: null }])
   })
   it('身体记录：体重/睡眠当日覆盖、运动多条一致', () => {
     expect(supaSnap.healthSnap).toEqual(localSnap.healthSnap)

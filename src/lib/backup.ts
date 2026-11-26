@@ -19,7 +19,9 @@ export function buildBackup(tables: BackupTables, mode: 'local' | 'cloud'): Back
   return { app: BACKUP_APP, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), mode, tables }
 }
 
-/** 导入前校验：app 防误导入他应用文件；version 可解析；10 张表均为数组 */
+/** 导入前校验：app 防误导入他应用文件；version 可解析；12 张必需表均为数组。
+ *  planItems（v1.35）是**可选表**——把它加进 TABLE_KEYS 会让所有旧备份文件被判 corrupt，
+ *  所以这里只补缺省，不进必需清单。缺表 = 空表，靠这一条就够了，不写格式版本兼容层。 */
 export function validateBackup(raw: unknown): { ok: true; tables: BackupTables } | { ok: false; reason: 'not-workbench' | 'corrupt' } {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, reason: 'corrupt' }
   const obj = raw as Record<string, unknown>
@@ -27,7 +29,8 @@ export function validateBackup(raw: unknown): { ok: true; tables: BackupTables }
   if (typeof obj.version !== 'number' || !obj.tables || typeof obj.tables !== 'object') return { ok: false, reason: 'corrupt' }
   const tables = obj.tables as Record<string, unknown>
   for (const k of TABLE_KEYS) if (!Array.isArray(tables[k])) return { ok: false, reason: 'corrupt' }
-  return { ok: true, tables: tables as unknown as BackupTables }
+  const planItems = Array.isArray(tables.planItems) ? tables.planItems : []
+  return { ok: true, tables: { ...(tables as unknown as BackupTables), planItems } as BackupTables }
 }
 
 export function formatBytes(bytes: number): string {

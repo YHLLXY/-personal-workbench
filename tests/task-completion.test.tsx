@@ -32,6 +32,10 @@ vi.mock('@/lib/db', () => ({
     listExams: vi.fn(async () => []),
     updateTask: vi.fn(async (id: string, patch: Record<string, unknown>) => ({ id, ...patch })),
     deleteTask: vi.fn(async () => undefined),
+    // 计划项（v1.35）：完成/撤销同时写一条事实记录
+    listPlanItems: vi.fn(async () => []),
+    upsertPlanItem: vi.fn(async (input: Record<string, unknown>) => ({ createdAt: '2026-11-26T00:00:00.000Z', ...input })),
+    deletePlanItem: vi.fn(async () => undefined),
   } as never,
 }))
 
@@ -67,6 +71,26 @@ describe('useTaskActions 统一完成入口', () => {
     expect(patch).not.toHaveProperty('status')
     expect(typeof patch.completedAt).toBe('string')
     expect(patch.dueDate).toBeTruthy()
+  })
+
+  it('完成同时写计划项：plan_date 取完成前的 dueDate，done_at 记事实', async () => {
+    const { result } = renderHook(() => useTaskActions(), { wrapper })
+    act(() => result.current.complete(REPEAT))
+    // 重复任务完成后 dueDate 已滚到下一期，但计划项必须落在「今天」——否则复盘当天分母缺这一项
+    await waitFor(() => expect(repository.upsertPlanItem).toHaveBeenCalledWith(expect.objectContaining({
+      planDate: todayStr(), taskId: 'r1', doneAt: expect.any(String),
+    })))
+  })
+
+  it('撤销完成 → 把 done_at 清回 null（否则复盘/进度账本会重复计）', async () => {
+    vi.mocked(repository.listPlanItems).mockResolvedValueOnce([
+      { planDate: todayStr(), taskId: 'r1', title: '每天背单词', goalId: null, amount: null, doneAt: `${todayStr()}T02:00:00.000Z`, movedTo: null, createdAt: '2026-11-26T00:00:00.000Z' },
+    ] as never)
+    const { result } = renderHook(() => useTaskActions(), { wrapper })
+    act(() => result.current.reopen(REPEAT))
+    await waitFor(() => expect(repository.upsertPlanItem).toHaveBeenCalledWith(expect.objectContaining({
+      planDate: todayStr(), taskId: 'r1', doneAt: null,
+    })))
   })
 
   it('toggle：未完成 → 完成；已完成（重复任务当天）→ 撤销', async () => {

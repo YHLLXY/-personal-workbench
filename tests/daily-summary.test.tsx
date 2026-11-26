@@ -25,6 +25,9 @@ vi.mock('@/lib/db', () => ({
       { id: 'e1', title: '高数期末', examDate: dateOffset(3), examTime: '09:00', subject: null, note: null, createdAt: '2026-08-01T00:00:00.000Z' },
     ]),
     updateTask: vi.fn(async () => ({}) as never),
+    listPlanItems: vi.fn(async () => []),
+    upsertPlanItem: vi.fn(async () => ({}) as never),
+    deletePlanItem: vi.fn(async () => {}),
   } as never,
 }))
 
