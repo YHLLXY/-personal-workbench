@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useTasks, useTaskMutations, todayTasks, todayDone, recentOverdue, oldOverdue, filterTasks } from './api'
-import { completionPatch, isDoneForToday, reopenPatch } from '@/lib/task-rules'
+import { useTaskActions } from './use-task-actions'
 import { TaskItem } from './task-item'
 import { TaskDialog } from './task-dialog'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,8 @@ import type { Task } from '@/lib/db/types'
 export default function TodayTasks() {
   const { data: tasks, isLoading, isError } = useTasks()
   const { update, remove } = useTaskMutations()
+  // 完成 / 撤销 / 批量完成走唯一入口（v1.35）：规则在 lib/task-rules，回执与落库在这里
+  const { toggle, completeMany } = useTaskActions()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Task | null>(null)
   const [tag, setTag] = useState<string | null>(null) // 当前标签筛选，null=全部
@@ -38,17 +40,7 @@ export default function TodayTasks() {
   // 并弹 toast 撤销（Todoist 式主撤销路径，2026-08 反馈"找不到撤销"）。
   // v1.34：「重复任务滚到下一期 / 普通任务 status=done」这套规则挪进 lib/task-rules，
   // 提醒中心的「完成」按钮共用同一条 —— 那边曾写死 status:'done'，会把每日任务的整条序列终结掉。
-  const toggleDone = (t: Task) => {
-    if (isDoneForToday(t, today)) { update.mutate({ id: t.id, patch: reopenPatch(t, today) }); return }
-    setDoneOpen(true)
-    const { patch, undo, nextDue } = completionPatch(t, today)
-    update.mutate({ id: t.id, patch })
-    toast.success('已完成', {
-      description: nextDue ? `「${t.title}」下次：${nextDue}` : `「${t.title}」已划线保留`,
-      action: { label: '撤销', onClick: () => update.mutate({ id: t.id, patch: undo }) },
-      duration: 5000,
-    })
-  }
+  const toggleDone = (t: Task) => toggle(t, { after: () => setDoneOpen(true) })
 
   // v1.24 F：改期（直接写 dueDate）与 repeat「跳过一次」（只推 dueDate 不记完成，「跳过不补」会推进到首个 ≥ today 的槽位）
   const reschedule = (t: Task, date: string) => update.mutate({ id: t.id, patch: { dueDate: date } })
@@ -178,11 +170,8 @@ export default function TodayTasks() {
                       variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/30"
                       onClick={() => {
                         if (window.confirm(`将 ${old.length} 项更早过期的历史待办标记为已完成？这些任务将不再出现在待办中。`)) {
-                          old.forEach(t => update.mutate({ id: t.id, patch: { status: 'done' } }))
-                          toast.success(`已清理 ${old.length} 项历史待办`, {
-                            action: { label: '撤销', onClick: () => old.forEach(t => update.mutate({ id: t.id, patch: { status: 'todo' } })) },
-                            duration: 5000,
-                          })
+                          // 逐条走 completionPatch（v1.35）：原实现直接写 status:'done'，会把重复任务的整条序列终结掉（D-19）
+                          completeMany(old, { title: `已清理 ${old.length} 项历史待办` })
                         }
                       }}>
                       清理历史待办（全部标记完成）

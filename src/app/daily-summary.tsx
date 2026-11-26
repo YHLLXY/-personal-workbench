@@ -5,7 +5,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Link } from 'react-router-dom'
 import { ArrowRight, CalendarDays, ClipboardList, Sparkles } from 'lucide-react'
 import { RichText } from '@/components/rich-text'
-import { useTasks, useTaskMutations, todayTasks } from '@/modules/overview/api'
+import { useTasks, todayTasks } from '@/modules/overview/api'
+import { useTaskActions } from '@/modules/overview/use-task-actions'
 import { useExamsSoon } from '@/modules/study/api'
 import { todayStr, localDateOfISO } from '@/lib/db/types'
 import { CHANGELOG } from './changelog'
@@ -34,7 +35,8 @@ function fmtDate(ymd: string): string {
 export default function DailySummary() {
   const { data: tasks, isLoading: tasksLoading } = useTasks()
   const { data: exams, isLoading: examsLoading } = useExamsSoon()
-  const { update } = useTaskMutations()
+  // 完成走唯一入口（v1.35）：这里原先直接写 status:'done'，会把重复任务的整条序列终结掉
+  const { complete } = useTaskActions()
   const [open, setOpen] = useState(false)
   const today = todayStr()
 
@@ -95,7 +97,7 @@ export default function DailySummary() {
                     <ul className="mt-2 space-y-1">
                       {pendingList.map(t => (
                         <li key={t.id} className="flex items-center gap-2 py-0.5 text-sm">
-                          <Checkbox onCheckedChange={() => update.mutate({ id: t.id, patch: { status: 'done' } })} />
+                          <Checkbox onCheckedChange={() => complete(t)} />
                           {/* min-w-0 不能省：少了它，不换行标题会把整个弹窗顶宽（v1.32 的横向滚动条） */}
                           <span className="min-w-0 flex-1 truncate">{t.title}</span>
                           {t.dueTime && (

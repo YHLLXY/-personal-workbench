@@ -89,6 +89,21 @@ describe('DailySummary', () => {
     await waitFor(() => expect(repository.updateTask).toHaveBeenCalledWith('t1', { status: 'done' }))
   })
 
+  it('勾选「每天」任务 → 走重复任务规则（不写 status，滚到下一期），不会终结序列', async () => {
+    // v1.35 回归：这里原先直接 updateTask({ status: 'done' })，勾掉一条每日任务就会让整条序列消失
+    vi.mocked(repository.listTasks).mockResolvedValueOnce([
+      { id: 'r1', title: '背单词', focus: false, focusDate: null, priority: 'medium', status: 'todo', dueDate: TODAY, dueTime: null, tags: [], sort: 1, completedAt: null, createdAt: '2026-08-01T00:00:00.000Z', repeat: { freq: 'daily', interval: 1, anchor: 'due' } },
+    ] as never)
+    renderSummary()
+    const row = await screen.findByText('背单词')
+    const checkbox = row.closest('li')!.querySelector('[role="checkbox"]') as HTMLElement
+    checkbox.click()
+    await waitFor(() => expect(repository.updateTask).toHaveBeenCalledTimes(1))
+    const patch = vi.mocked(repository.updateTask).mock.calls[0][1] as Record<string, unknown>
+    expect(patch).not.toHaveProperty('status')
+    expect(typeof patch.completedAt).toBe('string')
+  })
+
   it('弹窗里只放最新一版，完整历史走 /changelog 整页（v1.32）', async () => {
     renderSummary()
     await screen.findByText(/写实验报告/)

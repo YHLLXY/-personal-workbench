@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import { useReminderView } from './api'
 import { useReminderStore } from './store'
 import { useTaskMutations } from '@/modules/overview/api'
+import { useTaskActions } from '@/modules/overview/use-task-actions'
 import { kindLabel, reminderFacts, type ReminderState } from './format'
-import { completionPatch } from '@/lib/task-rules'
 import { AlertTriangle, Bell, CalendarClock, Clock3, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -51,17 +51,8 @@ export default function RemindersCenter() {
   const upcomingCount = items.length - dueCount
   const visible = filter ? items.filter(x => x.facts.state === filter) : items
 
-  // 完成：走 completionPatch（重复任务**不能**写 status='done'，那会终结整条序列），5 秒内可撤销
-  const complete = (t: Task) => {
-    const plan = completionPatch(t, today)
-    update.mutate({ id: t.id, patch: plan.patch }, {
-      onSuccess: () => toast.success(plan.nextDue ? '已完成' : '已完成，提醒已消除', {
-        description: plan.nextDue ? `「${t.title}」下次：${plan.nextDue}` : `「${t.title}」已划线保留`,
-        action: { label: '撤销', onClick: () => update.mutate({ id: t.id, patch: plan.undo }) },
-        duration: 5000,
-      }),
-    })
-  }
+  // 完成走唯一入口（v1.35）：规则在 lib/task-rules，重复任务**不能**写 status='done'，那会终结整条序列
+  const { complete } = useTaskActions()
   // 顺延同样带撤销：还原原 dueDate（改期末尾那一下手滑，不然只能进编辑弹窗改回来）
   const postpone = (t: Task) => {
     const original = t.dueDate
@@ -147,7 +138,7 @@ export default function RemindersCenter() {
                                   <CalendarClock className="size-3 mr-1" />顺延
                                 </Button>
                               )}
-                              <Button size="sm" variant="ghost" className="h-7 text-[11px]" disabled={update.isPending} onClick={() => complete(task)}>完成</Button>
+                              <Button size="sm" variant="ghost" className="h-7 text-[11px]" disabled={update.isPending} onClick={() => complete(task, { title: '已完成，提醒已消除' })}>完成</Button>
                             </>
                           )}
                           {!facts.missing && (
