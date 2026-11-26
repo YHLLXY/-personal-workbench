@@ -325,3 +325,32 @@
   `reset --hard` + force push 只留作最后手段。
 - 迁移坚持「先加后用、先双写后切换、删列隔一个版本」；旧代码能接新库，回滚才有意义。
 - 操作手册：`docs/ROLLBACK_RUNBOOK.md`；基线 tag：`pre-v1.35`（f12b6b255e）。
+
+
+---
+
+## v1.35 前：三流程截图交付与 vite watcher EBUSY（2026-11-26）
+
+### 1. 现象
+
+- 为让另一个 AI 做功能优化，把三条流程的 23 张手机截图（1080×2376）放进 `给GPT/` 后，
+  正在跑的 `vite dev` 直接退出：`Error: EBUSY: resource busy or locked, watch '...jpg'`。
+- 同一目录里已有 43 张原图（含重复），文件被看图/同步软件占用时，chokidar 的 watch 失败被抛成未捕获异常。
+
+### 2. 根因
+
+- Vite 默认 watch 整个项目根；大批量图片目录在根内，等于把「用户随时会改的素材」接进 dev server 的监听面。
+- Windows 上文件被其他进程短暂占用是常态（缩略图/同步盘/看图器），watch 失败不是「偶发」，是必然。
+- 另外本机 `npm run dev` 会先撞 PowerShell 执行策略（`npm.ps1` 被禁止运行脚本），
+  必须用 `node node_modules/vite/bin/vite.js`。
+
+### 3. 处置
+
+- 截图期间用临时 config 把 `**/给GPT/**`、`**/.tmp-capture/**` 加入 `server.watch.ignored`，dev server 稳定跑完三组图。
+- 素材交付目录不要 `git add -A`：本次 `给GPT/` 约 28MB，保持未跟踪。
+
+### 4. 教训
+
+- **大批量图片不要放项目根内**；必须放时，dev 用 ignored 配置，或把素材放仓库外。
+- 截图/演示数据要和真实数据分开标注；演示数据的日期固定，真机截图才是生产数字。
+- 「截图能复现」本身是交付物的一部分：脚本 + 数据 + 时钟写进 `给GPT/复现说明.md`，否则下一个人只能重新猜。
