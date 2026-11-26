@@ -301,3 +301,27 @@
 - 用户侧：① 手机装「Server酱³」App 并登录一次，把 sctp… key 粘到「我的 → 通知设置」；
   ② 确认迁移 018（sent_channels）已在 Supabase 执行；③ 想在后台准时收到提醒，
   跑一遍 supabase/cron/reminders-5m.sql 里的自检 SQL（pg_cron + pg_net）。
+
+---
+
+## v1.35 前：git 仓库体检与回滚准备（2026-11-26）
+
+### 1. 版本 tag 齐全 ≠ 仓库健康
+
+- 现象：`git` 每条命令都警告 `unable to find all commit-graph files`，`git commit` 报
+  `renaming pack ... File exists / geometric-repack failed`；`git count-objects -vH` 显示
+  **308 个 pack / 236MB / 520,221 个对象**，而可达对象只有 **3,066** 个。
+- 根因：自动几何重打包（geometric repack）反复失败，但每次都留下一个完整快照 pack；
+  累积 308 份同一份历史，磁盘与对象数被放大 70 倍。
+- 修法：先 `git bundle create <外部路径> --all` + `git bundle verify`（1.5MB，含 main 与 42 个 tag），
+  再 `git gc --prune=now` → **1 个 pack / 1.55MB / 3,066 对象**，`git fsck --full` 干净。
+- 教训：**版本管理做得好，也可能被对象库维护拖垮**。发版前看 `git status`，每月看一次
+  `git count-objects -vH`；pack 数持续增长就该 gc，别等 commit 报错。
+
+### 2. 大迭代的回滚面不止 git
+
+- 代码回滚 ≠ 数据回滚：Supabase schema/数据、Vercel 环境变量、浏览器本地数据都不在 git。
+- 最快的恢复是 **Vercel Promote 上一个部署**（秒级、不动仓库）；git 回滚优先 `revert`，
+  `reset --hard` + force push 只留作最后手段。
+- 迁移坚持「先加后用、先双写后切换、删列隔一个版本」；旧代码能接新库，回滚才有意义。
+- 操作手册：`docs/ROLLBACK_RUNBOOK.md`；基线 tag：`pre-v1.35`（f12b6b255e）。
