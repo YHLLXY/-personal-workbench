@@ -30,7 +30,8 @@ describe('TaskDialog 提醒时间', () => {
         <TaskDialog open onOpenChange={() => {}} />
       </QueryClientProvider>,
     )
-    fireEvent.change(screen.getByPlaceholderText('任务内容'), { target: { value: '交报告' } })
+    fireEvent.change(screen.getByLabelText('任务内容'), { target: { value: '交报告' } })
+    fireEvent.click(screen.getByRole('button', { name: /更多设置/ }))
     fireEvent.change(screen.getByLabelText(/提醒时间/), { target: { value: '09:30' } })
     fireEvent.click(screen.getByRole('button', { name: '添加' }))
     await waitFor(() => expect(repository.createTask).toHaveBeenCalledWith(expect.objectContaining({ dueTime: '09:30', dueDate: expect.any(String) })))
@@ -45,7 +46,8 @@ describe('TaskDialog 备注（v1.25）', () => {
         <TaskDialog open onOpenChange={() => {}} />
       </QueryClientProvider>,
     )
-    fireEvent.change(screen.getByPlaceholderText('任务内容'), { target: { value: '带备注任务' } })
+    fireEvent.change(screen.getByLabelText('任务内容'), { target: { value: '带备注任务' } })
+    fireEvent.click(screen.getByRole('button', { name: /更多设置/ }))
     fireEvent.change(screen.getByLabelText(/备注/), { target: { value: '先查资料再动手' } })
     fireEvent.click(screen.getByRole('button', { name: '添加' }))
     await waitFor(() => expect(repository.createTask).toHaveBeenCalledWith(expect.objectContaining({ note: '先查资料再动手' })))
@@ -83,6 +85,7 @@ describe('TaskDialog 状态语义（v1.31）', () => {
 
   it('选「将来」→ 清空并禁用日期；重复规则**原样保留**（旧版会静默写 repeat: null 且切回来不恢复）', async () => {
     renderEdit()
+    // 这个 fixture 带 repeat + 高优先级，「更多设置」会自动展开（不让用户以为设置丢了）
     fireEvent.click(screen.getByRole('button', { name: '将来' }))
     expect(screen.getByLabelText(/日期/)).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '保存' }))

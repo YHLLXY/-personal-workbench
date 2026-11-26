@@ -1,8 +1,6 @@
-import { useState } from 'react'
-import { CalendarClock, Check, ChevronDown, Clock, GripVertical, MoreHorizontal, Plus, Repeat, RotateCcw, Star, Trash2, X } from 'lucide-react'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { genId, todayStr, type ChecklistItem, type Task } from '@/lib/db/types'
-import { addDays, nextMonday, repeatLabel } from '@/lib/repeat'
+import { CalendarClock, Check, Clock, GripVertical, MoreHorizontal, Repeat, RotateCcw, Star } from 'lucide-react'
+import { todayStr, type Task } from '@/lib/db/types'
+import { repeatLabel } from '@/lib/repeat'
 import { dueDateChip, taskCardTone } from './task-card'
 import type { DragHandleProps } from '@/lib/drag-sort'
 import { cn } from '@/lib/utils'
@@ -10,100 +8,84 @@ import { cn } from '@/lib/utils'
 const PRIORITY_DOT: Record<Task['priority'], string> = { high: 'bg-destructive', medium: 'bg-priority', low: 'bg-muted-foreground/40' }
 const PRIORITY_CN: Record<Task['priority'], string> = { high: '高', medium: '中', low: '低' }
 
-export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, onDelete, onPostpone, onToggleDoing, onChecklist, onReschedule, onSkip, drag }: {
-  task: Task; done?: boolean; onToggle: () => void; onFocus?: () => void; onEdit: () => void; onDelete: () => void; onPostpone?: () => void
-  /** 「进行中」胶囊的出口：点一下回到普通待办（v1.31） */
-  onToggleDoing?: () => void
-  onChecklist?: (items: ChecklistItem[]) => void
-  onReschedule?: (date: string) => void
-  onSkip?: () => void
+/**
+ * 任务卡 v2（v1.35，委托书 5.2）。
+ *
+ * 改动的唯一原因：v1.34 的一张卡上有 **7 个可点元素**（勾选框、标题、星标、清单箭头、⋯、垃圾桶、进行中胶囊），
+ * 右侧控件簇占了约 96px，标题被挤到只能缩字。手机上每个 18px 图标都是误触源，误触删除更是没有回执。
+ *
+ * 现在卡上只留 3 个可点区：**勾选框 / 标题 / ⋯**。其余全部收进操作面板（task-actions-sheet）。
+ * 徽章行是纯展示（信息还在，只是不再抢点击）；清单计数、重复规则、备注都照旧显示。
+ */
+export function TaskItem({ task, done: doneOverride, onToggle, onOpen, drag }: {
+  task: Task
+  /** done 覆盖：repeat 任务完成当天 status 仍是 todo（同一行滚动），由调用方用 isDoneForToday 收容 */
+  done?: boolean
+  onToggle: () => void
+  /** 打开操作面板（改期 / 延期 / 搁置 / 拆分 / 编辑 / 删除都在这一个入口后面） */
+  onOpen: () => void
   drag?: { id: string; handle: DragHandleProps }
 }) {
-  // done 覆盖：repeat 任务完成当天 status 仍是 todo（同一行滚动），由调用方传 isDoneForToday 收容进已完成区
   const done = doneOverride ?? task.status === 'done'
   const checklist = task.checklist ?? []
   const checklistDone = checklist.filter(c => c.done).length
-  const [checklistOpen, setChecklistOpen] = useState(false)
-  const [newItem, setNewItem] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false) // 改期菜单受控：自选日期确认后手动收起
-  const [customDate, setCustomDate] = useState('')
-  const checklistEditable = Boolean(onChecklist) && !done
   const note = task.note?.trim()
   const chip = dueDateChip(task.dueDate, todayStr())
-  // 标识 = 左侧状态轨（v1.32，见 task-card.ts）：底色一律中性，紧急度交给 3px 实色轨道，焦点仍是金边。
-  // 完成态轨道保留并降透明度 —— 颜色褪色而不是消失
   const tone = taskCardTone(task, done)
-  function addChecklistItem() {
-    const text = newItem.trim()
-    if (!text || !onChecklist) return
-    onChecklist([...checklist, { id: genId(), text, done: false }])
-    setNewItem('')
-  }
-  function confirmCustomDate() {
-    if (!customDate || !onReschedule) return
-    onReschedule(customDate)
-    setMenuOpen(false)
-  }
+
   return (
-    // data-flip-id：FLIP 布局动画锚点（src/lib/flip.ts）——同列表重排平滑（补加星标滑顶，不再瞬跳闪没），
-    // 今日↔已完成跨区块连续滑移（坠落/飞回）。一条任务同一时刻只挂载在一个区块，task.id 全局唯一
+    // data-flip-id：FLIP 布局动画锚点（src/lib/flip.ts）——同列表重排平滑，今日↔已完成跨区块连续滑移
     <div data-flip-id={task.id} data-drag-id={drag?.id}
       className={cn('group relative overflow-hidden border rounded-xl px-3 py-2.5 transition-colors', done ? 'bg-muted/40 border-border' : cn('bg-card', tone.border))}>
-      {/* 左侧状态轨（v1.32）：整卡淡色与白卡只差 1.18:1，读不出来；改成 3px 实色轨道。
-          完成态由 taskCardTone(task, true) 追加 opacity-40，轨道仍在（不"突然消失"） */}
+      {/* 左侧状态轨（v1.32）：3px 实色轨道，完成态降透明度（褪色而不是消失） */}
       {tone.rail && <span aria-hidden data-rail className={cn('absolute inset-y-0 left-0 w-[3px] transition-opacity duration-200', tone.rail)} />}
-      {/* v1.25 卡片信息升级（RESEARCH_TASK_CARD.md）：items-start 让标题完整换行时控件顶对齐；
-          焦点/进行中/清单徽章从标题行挪到元信息行，标题不再与徽章/元数据抢同一行宽度 */}
       <div className="flex items-start gap-2">
-        {/* 拖拽把手（v1.24 E）：touch-action:none 预置（W3C pointerevents#178）+ contextmenu 拦截（iOS 放大镜）都在 handleProps 里；
-            桌面悬停显现、移动端常显低强调；仅今日区行传 drag */}
+        {/* 拖拽把手只在「今天」段出现，24×44 触控区（touch-action:none 与 contextmenu 拦截在 handleProps 里） */}
         {drag && (
           <button type="button" aria-label="拖动排序" {...drag.handle}
-            className="shrink-0 self-center cursor-grab touch-none text-muted-foreground/40 hover:text-muted-foreground active:cursor-grabbing transition-colors md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100">
+            className="shrink-0 -my-1 self-stretch flex items-center px-0.5 cursor-grab touch-none text-muted-foreground/40 hover:text-muted-foreground active:cursor-grabbing transition-colors md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100">
             <GripVertical className="size-3.5" />
           </button>
         )}
+        {/* 勾选框：44×44 触控区靠 padding 撑开（视觉仍是 18px 方块，手指按得准） */}
         <button onClick={onToggle} aria-label={done ? '撤销完成' : '完成'} title={done ? '撤销完成' : '标记完成'}
-          className={cn('group/check size-[18px] mt-0.5 rounded-md border-[1.5px] shrink-0 flex items-center justify-center transition-all active:scale-90',
-            done ? 'bg-primary border-primary text-primary-foreground hover:brightness-110' : 'border-muted-foreground/40 hover:border-primary')}>
-          {done && (
-            // 完成态：常态对勾，悬停变 ↺ 恢复图标（Todoist/Things 式撤销暗示，修"找不到撤销"）
-            <>
-              <Check className="size-3 group-hover/check:hidden" strokeWidth={3} />
-              <RotateCcw className="hidden size-3 group-hover/check:block" strokeWidth={2.5} />
-            </>
-          )}
+          className="group/check -m-2.5 shrink-0 p-2.5 flex items-start justify-center">
+          <span className={cn('size-[18px] mt-0.5 rounded-md border-[1.5px] flex items-center justify-center transition-all active:scale-90',
+            done ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary')}>
+            {done && (
+              // 完成态：常态对勾，悬停变 ↺（Todoist/Things 式撤销暗示）
+              <>
+                <Check className="size-3 group-hover/check:hidden" strokeWidth={3} />
+                <RotateCcw className="hidden size-3 group-hover/check:block" strokeWidth={2.5} />
+              </>
+            )}
+          </span>
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-start gap-2">
-            {/* 焦点：金黄色实心星（v1.31 用户要求「加上金黄色的星星 + 边框也变金黄」） */}
+            {/* 焦点：金黄色实心星（纯展示，切换在操作面板里） */}
             {task.focus && !done && <Star className="size-3.5 shrink-0 mt-[3px] text-amber-500 fill-amber-400" strokeWidth={1.7} aria-label="今日焦点" />}
-            <span className={cn('size-2 rounded-full shrink-0 mt-[6px]', PRIORITY_DOT[task.priority])} title={`优先级 ${task.priority}`} />
-            {/* 颜色不是唯一载体（WCAG 1.4.1）：读屏与色觉障碍用户靠这行文字拿到优先级 */}
+            <span className={cn('size-2 rounded-full shrink-0 mt-[6px]', PRIORITY_DOT[task.priority])} title={'优先级 ' + PRIORITY_CN[task.priority]} />
+            {/* 颜色不是唯一载体（WCAG 1.4.1）：读屏用户靠这行文字拿到优先级 */}
             <span className="sr-only">优先级 {PRIORITY_CN[task.priority]}。</span>
-            <button onClick={onEdit} className="flex-1 min-w-0 text-left">
-              {/* v1.25：去掉 truncate 完整换行（TickTick/Reminders 截断标题是头号用户抱怨，个人工具无密度压力） */}
+            <button onClick={onOpen} className="flex-1 min-w-0 text-left">
               <span className={cn('block text-sm leading-snug break-words transition-all duration-300', done && 'line-through text-muted-foreground')}>{task.title}</span>
             </button>
           </div>
-          {/* v1.25 备注（Things/Reminders 式标题下灰字）：line-clamp-2 防列表爆炸（Reminders 全文铺开被要求隐藏的反例），全文悬停/进编辑可见 */}
+          {/* v1.25 备注：line-clamp-2 防列表爆炸，全文进操作面板看 */}
           {note && (
             <p title={note} className="mt-1 pl-4 text-xs leading-relaxed text-muted-foreground line-clamp-2 whitespace-pre-wrap break-words">{note}</p>
           )}
           {(chip || task.dueTime || task.repeat || task.focus || task.status === 'doing' || checklist.length > 0 || task.tags.length > 0 || (done && task.completedAt)) && (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 pl-4 text-[10px] text-muted-foreground">
-              {/* 到期日徽章：仅逾期（红，Todoist 惯例）或非今日的未来日（灰，焦点任务提前到期场景）显示 */}
               {chip && <span className={cn('flex items-center gap-0.5', chip.overdue && 'text-destructive font-medium')}><CalendarClock className="size-3" />{chip.label}</span>}
               {task.dueTime && <span className="flex items-center gap-0.5"><Clock className="size-3" />{task.dueTime}</span>}
               {task.repeat && <span className="flex items-center gap-0.5"><Repeat className="size-3" />{repeatLabel(task.repeat, task.dueDate)}</span>}
               {task.focus && !done && <span className="bg-amber-400/20 text-amber-700 dark:text-amber-300 rounded-full px-2 py-0.5">今日焦点</span>}
-              {/* 进行中可点：这是它唯一的出口（旧版只能在编辑弹窗里改回「待办」） */}
-              {task.status === 'doing' && !done && (onToggleDoing
-                ? <button onClick={onToggleDoing} title="点击改回「待办」" className="bg-primary/12 text-primary rounded-full px-2 py-0.5 hover:bg-primary/25 transition-colors">进行中</button>
-                : <span className="bg-primary/12 text-primary rounded-full px-2 py-0.5">进行中</span>)}
+              {task.status === 'doing' && !done && <span className="bg-primary/12 text-primary rounded-full px-2 py-0.5">进行中</span>}
               {checklist.length > 0 && (
                 <span className={cn('rounded-full px-1.5 py-px', checklistDone === checklist.length ? 'bg-primary/12 text-primary' : 'bg-muted')}>
-                  {checklistDone}/{checklist.length}
+                  清单 {checklistDone}/{checklist.length}
                 </span>
               )}
               {task.tags.map(tag => <span key={tag} className="rounded-full bg-muted px-1.5 py-px">{tag}</span>)}
@@ -111,84 +93,12 @@ export function TaskItem({ task, done: doneOverride, onToggle, onFocus, onEdit, 
             </div>
           )}
         </div>
-        {/* 操作簇收拢成一列组（gap-1.5 收紧给标题让宽），多行标题时垂直居中 */}
-        <div className="flex shrink-0 items-center gap-1.5 self-center">
-          {onPostpone && (
-            <button onClick={onPostpone} aria-label="顺延到今天" title="顺延到今天"
-              className="flex items-center gap-0.5 text-[10px] text-destructive/80 hover:text-destructive border border-destructive/30 rounded-full px-2 py-0.5 transition-colors">
-              <CalendarClock className="size-3" />顺延
-            </button>
-          )}
-          {onFocus && (
-            <button onClick={onFocus} aria-label="设为今日焦点" className={cn('transition-colors', task.focus ? 'text-amber-500' : 'text-muted-foreground/50 hover:text-primary')}>
-              <Star className="size-4" strokeWidth={1.7} fill={task.focus ? 'currentColor' : 'none'} />
-            </button>
-          )}
-          {checklistEditable && (
-            <button onClick={() => setChecklistOpen(o => !o)} aria-label="展开清单" aria-expanded={checklistOpen}
-              className="text-muted-foreground/50 hover:text-foreground transition-colors">
-              <ChevronDown className={cn('size-4 transition-transform', checklistOpen && 'rotate-180')} />
-            </button>
-          )}
-          {/* 改期菜单（v1.24 F）：今日区/逾期区行通用；跳过一次仅 repeat 任务显示 */}
-          {onReschedule && !done && (
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger aria-label="改期" className="p-0.5 text-muted-foreground/50 hover:text-foreground transition-colors">
-                <MoreHorizontal className="size-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuItem onClick={() => onReschedule(todayStr())}>今天</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onReschedule(addDays(todayStr(), 1))}>明天</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onReschedule(addDays(todayStr(), 2))}>后天</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onReschedule(nextMonday(todayStr()))}>下周一</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <div className="flex items-center gap-1.5 px-1.5 py-1">
-                  <input type="date" value={customDate} onChange={e => setCustomDate(e.target.value)} aria-label="自选日期"
-                    className="h-7 flex-1 min-w-0 rounded-md border border-border bg-transparent px-1.5 text-xs" />
-                  <button type="button" onClick={confirmCustomDate} disabled={!customDate}
-                    className="shrink-0 text-xs rounded-md border border-border px-2 py-1 hover:bg-muted disabled:opacity-40 transition-opacity">确定</button>
-                </div>
-                {onSkip && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={onSkip}>跳过一次</DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          <button onClick={onDelete} aria-label="删除" className="text-muted-foreground/50 hover:text-destructive transition-colors md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100">
-            <Trash2 className="size-4" strokeWidth={1.7} />
-          </button>
-        </div>
+        {/* 唯一的操作入口：右侧控件簇从 96px 收到 44px，标题可用宽度 +12% */}
+        <button onClick={onOpen} aria-label="更多操作" title="更多操作"
+          className="-m-2.5 shrink-0 self-center p-2.5 text-muted-foreground/50 hover:text-foreground transition-colors">
+          <MoreHorizontal className="size-4" />
+        </button>
       </div>
-      {/* 清单行内展开（Things 式 checklist；编辑入口唯一走这里，TaskDialog 不做清单编辑）。
-          全勾完不自动完成父任务（TickTick 同款语义） */}
-      {checklistEditable && checklistOpen && (
-        <div className="mt-2 pl-8 space-y-1">
-          {checklist.map(item => (
-            <div key={item.id} className="flex items-center gap-2">
-              <button onClick={() => onChecklist?.(checklist.map(c => c.id === item.id ? { ...c, done: !c.done } : c))}
-                aria-label={item.done ? '取消勾选' : '勾选'}
-                className={cn('size-[14px] rounded border-[1.5px] shrink-0 flex items-center justify-center transition-all active:scale-90',
-                  item.done ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40 hover:border-primary')}>
-                {item.done && <Check className="size-2.5" strokeWidth={3} />}
-              </button>
-              <span className={cn('flex-1 min-w-0 text-xs truncate', item.done && 'line-through text-muted-foreground')}>{item.text}</span>
-              <button onClick={() => onChecklist?.(checklist.filter(c => c.id !== item.id))} aria-label="删除条目"
-                className="shrink-0 text-muted-foreground/50 hover:text-destructive transition-colors">
-                <X className="size-3" />
-              </button>
-            </div>
-          ))}
-          <div className="flex items-center gap-2">
-            <Plus className="size-3 text-muted-foreground shrink-0" />
-            <input value={newItem} onChange={e => setNewItem(e.target.value)} placeholder="添加条目…"
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem() } }}
-              className="flex-1 min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground/50" />
-          </div>
-        </div>
-      )}
     </div>
   )
 }

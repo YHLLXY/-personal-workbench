@@ -19,4 +19,26 @@ describe('buildDailySummary', () => {
     expect(s.habitChecks).toBe(1)
     expect(s.weightLog?.value).toBe(62.5)
   })
+
+  it('v1.35：重复任务完成当天（status 仍是 todo）也计入当日完成，不能只看 status', () => {
+    const s = buildDailySummary('2026-08-04', {
+      tasks: [
+        task({ id: 'r', status: 'todo', dueDate: '2026-08-05', completedAt: new Date(2026, 7, 4, 21, 0).toISOString() }),
+        task({ id: 'n', status: 'done', completedAt: new Date(2026, 7, 4, 9, 0).toISOString() }),
+      ],
+      focusSessions: [], habitLogs: [], healthLogs: [], exams: [],
+    })
+    expect(s.tasksDone).toBe(2)
+  })
+
+  it('v1.35：切到历史日期时数字跟着变（D-16：原实现固定按 today 统计）', () => {
+    const tasks = [
+      task({ id: 'a', status: 'done', completedAt: new Date(2026, 7, 2, 10, 0).toISOString() }),
+      task({ id: 'b', status: 'done', completedAt: new Date(2026, 7, 4, 10, 0).toISOString() }),
+    ]
+    const data = { tasks, focusSessions: [], habitLogs: [], healthLogs: [], exams: [] }
+    expect(buildDailySummary('2026-08-02', data).tasksDone).toBe(1)
+    expect(buildDailySummary('2026-08-04', data).tasksDone).toBe(1)
+    expect(buildDailySummary('2026-08-03', data).tasksDone).toBe(0)
+  })
 })

@@ -31,45 +31,88 @@ test('首页加载：侧边栏导航渲染（KPI 卡在移动端容器，桌面�
 test('待办闭环：新建 → 显示 → 勾选完成 → toast 撤销 → 再完成 → 方块撤销', async ({ page }) => {
   await goto(page, '/tasks')
   await page.getByRole('button', { name: '新建' }).click()
-  await page.getByPlaceholder('任务内容').fill('E2E 冒烟任务')
+  await page.getByLabel('任务内容').fill('E2E 冒烟任务')
   await page.getByRole('button', { name: '添加', exact: true }).click()
-  await expect(page.getByText('今日 1 项')).toBeVisible()
-  // 勾选完成 → 移入「已完成」分区（划线保留，不消失），今日计数归零，toast 给出撤销入口
+  // v1.35 头部口径：今天 N · 完成 M · 剩余 K（替代旧的「今日 N 项」）
+  await expect(page.getByText(/今天 1 · 完成 0 · 剩余 1/)).toBeVisible()
+  // 勾选完成 → 移入「已完成」分区（划线保留，不消失），剩余归零，toast 给出撤销入口
   await page.getByLabel('完成', { exact: true }).first().click()
-  await expect(page.getByText('今日 0 项')).toBeVisible()
-  await expect(page.getByText('已完成 1 项 · 点方块可撤销')).toBeVisible()
+  await expect(page.getByText(/今天 1 · 完成 1 · 剩余 0/)).toBeVisible()
+  await expect(page.getByText('已完成 1 项 · 点勾撤销')).toBeVisible()
   await expect(page.getByText('「E2E 冒烟任务」已划线保留')).toBeVisible()
-  // 撤销路径一：toast「撤销」按钮（Todoist 式），任务回到今日待办
+  // 撤销路径一：toast「撤销」按钮（Todoist 式），任务回到今日计划
   await page.getByRole('button', { name: '撤销', exact: true }).click()
-  await expect(page.getByText('今日 1 项')).toBeVisible()
+  await expect(page.getByText(/今天 1 · 完成 0 · 剩余 1/)).toBeVisible()
   // 再完成，撤销路径二：已完成区方块悬停为撤销图标（aria-label 撤销完成）
   await page.getByLabel('完成', { exact: true }).first().click()
-  await expect(page.getByText('已完成 1 项 · 点方块可撤销')).toBeVisible()
+  await expect(page.getByText('已完成 1 项 · 点勾撤销')).toBeVisible()
   await page.getByLabel('撤销完成').click()
-  await expect(page.getByText('今日 1 项')).toBeVisible()
+  await expect(page.getByText(/今天 1 · 完成 0 · 剩余 1/)).toBeVisible()
 })
 
 test('重复任务：新建每天 → 完成滚动进已完成区（含徽章）→ toast 撤销回今日', async ({ page }) => {
   await goto(page, '/tasks')
   await page.getByRole('button', { name: '新建' }).click()
-  await page.getByPlaceholder('任务内容').fill('E2E 每日任务')
+  await page.getByLabel('任务内容').fill('E2E 每日任务')
+  // v1.35：重复在「更多设置」里（首屏只有标题 + 日期）
+  await page.getByRole('button', { name: /更多设置/ }).click()
   // 重复 Select（base-ui combobox）：不重复 → 每天
   await page.getByRole('combobox').filter({ hasText: '不重复' }).click()
   await page.getByRole('option', { name: '每天', exact: true }).click()
   await page.getByRole('button', { name: '添加', exact: true }).click()
-  await expect(page.getByText('今日 1 项')).toBeVisible()
+  await expect(page.getByText(/今天 1 · 完成 0 · 剩余 1/)).toBeVisible()
   // 行内 repeat 徽章（限定任务行作用域：Dialog 关闭后 select 节点仍留 DOM，裸 getByText 会 strict 冲突）
   const repeatBadge = page.locator('[data-flip-id]').getByText('每天', { exact: true })
   await expect(repeatBadge).toBeVisible()
   // 完成 → 同一行滚动（status 保持 todo，completedAt 记今天 + dueDate 推进）：进已完成区，toast 带下次日期
   await page.getByLabel('完成', { exact: true }).first().click()
-  await expect(page.getByText('今日 0 项')).toBeVisible()
-  await expect(page.getByText('已完成 1 项 · 点方块可撤销')).toBeVisible()
+  await expect(page.getByText(/今天 1 · 完成 1 · 剩余 0/)).toBeVisible()
+  await expect(page.getByText('已完成 1 项 · 点勾撤销')).toBeVisible()
   await expect(page.getByText(/「E2E 每日任务」下次：\d{4}-\d{2}-\d{2}/)).toBeVisible()
-  // toast 撤销（闭包原 dueDate 精确恢复）：回今日待办，徽章仍在
+  // toast 撤销（闭包原 dueDate 精确恢复）：回今日计划，徽章仍在
   await page.getByRole('button', { name: '撤销', exact: true }).click()
-  await expect(page.getByText('今日 1 项')).toBeVisible()
+  await expect(page.getByText(/今天 1 · 完成 0 · 剩余 1/)).toBeVisible()
   await expect(repeatBadge).toBeVisible()
+})
+
+test('三段视图（v1.35）：改期到明天 → 回执 → 明天段可见 → 撤销回来', async ({ page }) => {
+  await goto(page, '/tasks')
+  await page.getByRole('button', { name: '新建' }).click()
+  await page.getByLabel('任务内容').fill('E2E 改期任务')
+  await page.getByRole('button', { name: '添加', exact: true }).click()
+  // 卡片上只有一个操作入口 → 底部面板 → 改期「明天」
+  await page.locator('[data-flip-id]').getByLabel('更多操作').first().click()
+  await page.getByRole('button', { name: '明天', exact: true }).click()
+  await expect(page.getByText('已改到明天')).toBeVisible()
+  // 今天段不再显示；切到「明天」段立刻能核对（旧版改完当场消失、无法核对）
+  await expect(page.locator('[data-flip-id]').getByText('E2E 改期任务')).toHaveCount(0)
+  await page.getByRole('tab', { name: /明天/ }).click()
+  await expect(page.locator('[data-flip-id]').getByText('E2E 改期任务')).toBeVisible()
+  // 撤销回执：回到今天段
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await page.getByRole('tab', { name: /今天/ }).click()
+  await expect(page.locator('[data-flip-id]').getByText('E2E 改期任务')).toBeVisible()
+})
+
+test('收尾（v1.35）：晚间逐条选去向 → 确认 → 明天段可见', async ({ page }) => {
+  await goto(page, '/tasks')
+  for (const title of ['E2E 收尾一', 'E2E 收尾二']) {
+    await page.getByRole('button', { name: '新建' }).click()
+    await page.getByLabel('任务内容').fill(title)
+    await page.getByRole('button', { name: '添加', exact: true }).click()
+  }
+  // 默认「保持」→ 确认禁用；逐条选「明天」后计数与确认一起变
+  await page.getByRole('button', { name: '收尾', exact: true }).click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByRole('button', { name: '确认' })).toBeDisabled()
+  await sheet.getByText('E2E 收尾一', { exact: true }).locator('..').getByRole('button', { name: '明天', exact: true }).click()
+  await sheet.getByText('E2E 收尾二', { exact: true }).locator('..').getByRole('button', { name: '明天', exact: true }).click()
+  await expect(sheet.getByText(/将移动 2 项/)).toBeVisible()
+  await sheet.getByRole('button', { name: '确认' }).click()
+  await expect(page.getByText('已处理 2 项')).toBeVisible()
+  await page.getByRole('tab', { name: /明天/ }).click()
+  await expect(page.locator('[data-flip-id]').getByText('E2E 收尾一')).toBeVisible()
+  await expect(page.locator('[data-flip-id]').getByText('E2E 收尾二')).toBeVisible()
 })
 
 test('提醒中心：完成 → 该行立刻消失（提醒是任务的投影）→ toast 撤销后回来', async ({ page }) => {
@@ -101,10 +144,11 @@ test('提醒中心：完成 → 该行立刻消失（提醒是任务的投影）
 test('任务备注（v1.25）：新建填备注 → 卡片标题下方显示备注', async ({ page }) => {
   await goto(page, '/tasks')
   await page.getByRole('button', { name: '新建' }).click()
-  await page.getByPlaceholder('任务内容').fill('E2E 备注任务')
+  await page.getByLabel('任务内容').fill('E2E 备注任务')
+  await page.getByRole('button', { name: /更多设置/ }).click()
   await page.getByPlaceholder('补充细节、链接、背景…').fill('备注内容出现在卡片上')
   await page.getByRole('button', { name: '添加', exact: true }).click()
-  await expect(page.getByText('今日 1 项')).toBeVisible()
+  await expect(page.getByText(/今天 1 · 完成 0 · 剩余 1/)).toBeVisible()
   // 断言限定任务行作用域（Dialog 关闭后残留节点不再参与匹配）
   await expect(page.locator('[data-flip-id]').getByText('备注内容出现在卡片上')).toBeVisible()
 })
@@ -195,7 +239,7 @@ test('复盘：明日计划两段式（预览 → 结果卡片 → 已存在跳�
   await page.getByRole('button', { name: '确认生成 2 条' }).click()
   await expect(card).toContainText('跳过 2 条（已存在）')
   await card.getByRole('link', { name: /去待办查看/ }).click()
-  await expect(page.getByRole('heading', { level: 1, name: '今日待办' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1, name: '今日计划' })).toBeVisible()
 })
 
 test('今日热点：日报不可用时默认落热榜，日报 Tab 说清原因（v1.27.1）', async ({ page }) => {
@@ -296,7 +340,7 @@ test.describe('动效（v1.34 C：克制档 + reduced-motion 全量降级）', (
 test('今日概览：桌面双栏 820，长标题不会撑出横向滚动条（v1.33）', async ({ page }) => {
   await goto(page, '/tasks')
   await page.getByRole('button', { name: '新建' }).click()
-  await page.getByPlaceholder('任务内容').fill('把这一周所有实验数据按样本重新对齐，并逐条核对异常值与缺失值'.repeat(2))
+  await page.getByLabel('任务内容').fill('把这一周所有实验数据按样本重新对齐，并逐条核对异常值与缺失值'.repeat(2))
   await page.getByRole('button', { name: '添加', exact: true }).click()
   await goto(page, '/')
   const dlg = page.locator('[data-slot="dialog-content"]').first()

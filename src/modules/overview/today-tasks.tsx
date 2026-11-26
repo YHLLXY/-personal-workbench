@@ -6,6 +6,7 @@ import { usePlanItems, usePlanMaterialize } from './day-plan-api'
 import { TaskItem } from './task-item'
 import { TaskDialog } from './task-dialog'
 import { EveningWrapUp } from './evening-wrap-up'
+import { TaskActionsSheet } from './task-actions-sheet'
 import { useConfirm } from '@/components/confirm-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -49,11 +50,12 @@ export default function TodayTasks() {
   const { data: tasks, isLoading, isError } = useTasks()
   const { update } = useTaskMutations()
   // 完成 / 撤销 / 批量完成 / 改期 都走唯一入口（v1.35）：规则在 lib/task-rules，回执与落库在 hook 里
-  const { toggle, completeMany, reschedule, skipOnce, removeTask } = useTaskActions()
+  const { toggle, reopen, completeMany, reschedule, removeTask, defer, shelve, toggleDoing } = useTaskActions()
   const confirm = useConfirm()
   const [params, setParams] = useSearchParams()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [wrapOpen, setWrapOpen] = useState(false) // 收尾 Sheet（结束今天）：晚间批量处理未完成项
+  const [active, setActive] = useState<Task | null>(null) // 操作面板当前的任务（null = 收起）
   const [editing, setEditing] = useState<Task | null>(null)
   const [tag, setTag] = useState<string | null>(null) // 当前标签筛选，null=全部
   const [query, setQuery] = useState('') // 标题关键词
@@ -112,9 +114,6 @@ export default function TodayTasks() {
   const unscheduled = pool.filter(t => t.dueDate === null && t.status === 'todo')
   const allTags = [...new Set((tasks ?? []).flatMap(t => t.tags))] // 全部任务的去重标签
   const filtering = Boolean(tag || query.trim())
-  // 「进行中」的唯一出口：点卡片上的胶囊回到普通待办（v1.31——此前只能进编辑弹窗改，等于没有出口）
-  const toggleDoing = (t: Task) => update.mutate({ id: t.id, patch: { status: t.status === 'doing' ? 'todo' : 'doing' } })
-
   // v1.24 E：今日区手动拖拽排序——半序只写被拖项一项（上/下邻 sort 中点），焦点/doing 分组由比较器保持
   const todayById = new Map(todayList.map(t => [t.id, t]))
   const drag = useDragSort(todayList.map(t => t.id), (newOrder, movedId) => {
@@ -129,18 +128,14 @@ export default function TodayTasks() {
   const nearGroups = useMemo(() => groupByDate(nearList), [nearList])
   const farGroups = useMemo(() => groupByDate(farList), [farList])
 
-  /** 一段里的普通任务卡（明天/以后共用）：主操作是完成，次操作在 ⋯ 里（改期/编辑/删除） */
+  /** 一段里的普通任务卡（明天/以后共用）：卡上只有勾选、标题、⋯；其余都在操作面板里 */
   const renderRow = (t: Task) => (
-    <TaskItem key={t.id} task={t}
-      onToggle={() => toggle(t)}
-      onEdit={() => { setEditing(t); setDialogOpen(true) }}
-      onDelete={() => void removeTask(t)}
-      onReschedule={date => reschedule(t, date)}
-      onSkip={t.repeat ? () => skipOnce(t) : undefined} />
+    <TaskItem key={t.id} task={t} onToggle={() => toggle(t)} onOpen={() => setActive(t)} />
   )
 
   return (
-    <div ref={rootRef} className="mx-auto max-w-3xl">
+    // pb-16：移动端 FAB 常驻右下角，最后一张卡的 ⋯ 不能被它压住（v1.35 移动端收口）
+    <div ref={rootRef} className="mx-auto max-w-3xl pb-16 md:pb-0">
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="min-w-0">
           <h1 className="text-xl font-bold">今日计划</h1>
@@ -203,18 +198,7 @@ export default function TodayTasks() {
                 {recent.length > 0 && (
                   <div className="space-y-1.5">
                     {recent.map(t => (
-                      <div key={t.id} className="rounded-xl border border-destructive/25 bg-destructive/5">
-                        <TaskItem task={t}
-                          onToggle={() => toggle(t)}
-                          onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus } })}
-                          onEdit={() => { setEditing(t); setDialogOpen(true) }}
-                          onDelete={() => void removeTask(t)}
-                          onPostpone={() => reschedule(t, today, { title: '已顺延到今天' })}
-                          onToggleDoing={() => toggleDoing(t)}
-                          onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
-                          onReschedule={date => reschedule(t, date)}
-                          onSkip={t.repeat ? () => skipOnce(t) : undefined} />
-                      </div>
+                      <TaskItem key={t.id} task={t} onToggle={() => toggle(t)} onOpen={() => setActive(t)} />
                     ))}
                   </div>
                 )}
@@ -229,16 +213,7 @@ export default function TodayTasks() {
                     </summary>
                     <div className="px-3 pb-3 space-y-1.5">
                       {old.map(t => (
-                        <TaskItem key={t.id} task={t}
-                          onToggle={() => toggle(t)}
-                          onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus } })}
-                          onEdit={() => { setEditing(t); setDialogOpen(true) }}
-                          onDelete={() => void removeTask(t)}
-                          onPostpone={() => reschedule(t, today, { title: '已顺延到今天' })}
-                          onToggleDoing={() => toggleDoing(t)}
-                          onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
-                          onReschedule={date => reschedule(t, date)}
-                          onSkip={t.repeat ? () => skipOnce(t) : undefined} />
+                        <TaskItem key={t.id} task={t} onToggle={() => toggle(t)} onOpen={() => setActive(t)} />
                       ))}
                       <Button
                         variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/30"
@@ -267,13 +242,7 @@ export default function TodayTasks() {
                     <TaskItem key={id} task={t}
                       drag={{ id, handle: drag.handleProps(id) }}
                       onToggle={() => toggle(t, { after: () => setDoneOpen(true) })}
-                      onFocus={() => update.mutate({ id: t.id, patch: { focus: !t.focus, focusDate: t.focus ? null : today } })}
-                      onEdit={() => { setEditing(t); setDialogOpen(true) }}
-                      onDelete={() => void removeTask(t)}
-                      onToggleDoing={() => toggleDoing(t)}
-                      onChecklist={items => update.mutate({ id: t.id, patch: { checklist: items } })}
-                      onReschedule={date => reschedule(t, date)}
-                      onSkip={t.repeat ? () => skipOnce(t) : undefined} />
+                      onOpen={() => setActive(t)} />
                   )
                 })}
               </div>
@@ -290,10 +259,7 @@ export default function TodayTasks() {
                   </summary>
                   <div className="px-3 pb-3 space-y-1.5">
                     {doneToday.map(t => (
-                      <TaskItem key={t.id} task={t} done
-                        onToggle={() => toggle(t)}
-                        onEdit={() => { setEditing(t); setDialogOpen(true) }}
-                        onDelete={() => void removeTask(t)} />
+                      <TaskItem key={t.id} task={t} done onToggle={() => toggle(t)} onOpen={() => setActive(t)} />
                     ))}
                   </div>
                 </details>
@@ -379,6 +345,21 @@ export default function TodayTasks() {
       )}
       <TaskDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} />
       <EveningWrapUp open={wrapOpen} onOpenChange={setWrapOpen} tasks={[...todayList, ...recent]} />
+      {/* 操作面板：卡片上只剩 ⋯ 一个入口，改期/延期/搁置/清单/编辑/删除都在这里（v1.35 任务卡 v2） */}
+      <TaskActionsSheet
+        task={active}
+        done={active ? isDoneForToday(active, today) : false}
+        open={active !== null}
+        onOpenChange={o => { if (!o) setActive(null) }}
+        onComplete={() => { if (active) toggle(active, { after: () => setDoneOpen(true) }) }}
+        onReopen={() => { if (active) reopen(active) }}
+        onReschedule={date => { if (active) reschedule(active, date) }}
+        onDefer={() => { if (active) defer(active) }}
+        onShelve={() => { if (active) shelve(active) }}
+        onEdit={() => { if (active) { setEditing(active); setDialogOpen(true) } }}
+        onDelete={() => { if (active) void removeTask(active) }}
+        onToggleDoing={() => { if (active) toggleDoing(active) }}
+        onChecklist={items => { if (active) update.mutate({ id: active.id, patch: { checklist: items } }) }} />
     </div>
   )
 }

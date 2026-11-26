@@ -38,15 +38,18 @@ vi.mock('@/lib/db', () => ({
 }))
 
 import TodayTasks from '../src/modules/overview/today-tasks'
+import { ConfirmProvider } from '../src/components/confirm-dialog'
 import { repository } from '@/lib/db'
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 function renderPage(path = '/tasks') {
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes><Route path="/tasks" element={<TodayTasks />} /></Routes>
-      </MemoryRouter>
+      <ConfirmProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes><Route path="/tasks" element={<TodayTasks />} /></Routes>
+        </MemoryRouter>
+      </ConfirmProvider>
     </QueryClientProvider>,
   )
 }
@@ -88,12 +91,36 @@ describe('每日计划三段视图', () => {
     expect(tab(/明天/).getAttribute('aria-selected')).toBe('true')
   })
 
-  it('从明天段「移回今天」= 改期到今天，并给出回执', async () => {
+  it('从明天段「移回今天」= 操作面板里改期到今天，并给出回执', async () => {
     renderPage('/tasks?day=tomorrow')
     await screen.findByText('明天的演讲')
-    // 卡片上的 ⋯ → 改期菜单里的「今天」
-    fireEvent.click(screen.getByLabelText('改期'))
-    fireEvent.click(await screen.findByText('今天', { selector: '[role="menuitem"]' }))
+    // 卡片上只有一个操作入口（⋯）→ 底部面板 → 改期「今天」
+    fireEvent.click(screen.getByLabelText('更多操作'))
+    fireEvent.click(await screen.findByRole('button', { name: '今天' }))
     await waitFor(() => expect(repository.updateTask).toHaveBeenCalledWith('t2', { dueDate: T }))
+  })
+
+  it('卡片上只剩 3 个可点区：勾选框 / 标题 / ⋯（任务卡 v2）', async () => {
+    renderPage()
+    await screen.findByText('今天写的报告')
+    const card = screen.getByText('今天写的报告').closest('[data-flip-id]') as HTMLElement
+    const buttons = [...card.querySelectorAll('button')]
+    // 勾选 + 标题 + ⋯（今天段多一个拖拽把手，其余一律收进面板）
+    expect(buttons.length).toBeLessThanOrEqual(4)
+    expect(buttons.filter(b => b.getAttribute('aria-label') === '完成')).toHaveLength(1)
+    expect(buttons.filter(b => b.getAttribute('aria-label') === '更多操作')).toHaveLength(1)
+  })
+
+  it('删除走二次确认（不再一点就没）', async () => {
+    renderPage()
+    await screen.findByText('今天写的报告')
+    const card = screen.getByText('今天写的报告').closest('[data-flip-id]') as HTMLElement
+    fireEvent.click(card.querySelector('[aria-label="更多操作"]') as HTMLElement)
+    fireEvent.click(await screen.findByRole('button', { name: /删除这条任务/ }))
+    // 确认弹窗出现，且此时还没有真的删
+    expect(await screen.findByText('删除「今天写的报告」？')).toBeTruthy()
+    expect(repository.deleteTask).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    await waitFor(() => expect(repository.deleteTask).toHaveBeenCalledWith('t1'))
   })
 })

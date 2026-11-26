@@ -123,6 +123,32 @@ export function useTaskActions() {
     })
   }
 
+  /** 延期：清空日期进「以后 · 待安排」（不动 status —— 它仍然是待办，只是没有日子） */
+  function defer(t: Task) {
+    const before = t.dueDate
+    update.mutate({ id: t.id, patch: { dueDate: null } })
+    toast.success('已延期到「待安排」', {
+      description: '在「以后」段可以再给它定日期',
+      action: { label: '撤销', onClick: () => update.mutate({ id: t.id, patch: { dueDate: before } }) },
+      duration: 5000,
+    })
+  }
+
+  /** 搁置：进「将来」收件箱（status=someday）。与延期的区别是"这件事还没想清楚要不要做" */
+  function shelve(t: Task) {
+    const before = { status: t.status, dueDate: t.dueDate }
+    update.mutate({ id: t.id, patch: { status: 'someday', dueDate: null } })
+    toast.success('已搁置到「将来」', {
+      action: { label: '撤销', onClick: () => update.mutate({ id: t.id, patch: before }) },
+      duration: 5000,
+    })
+  }
+
+  /** 「进行中」开关：v1.31 的胶囊出口，v1.35 卡片瘦身后挪进操作面板 */
+  function toggleDoing(t: Task) {
+    update.mutate({ id: t.id, patch: { status: t.status === 'doing' ? 'todo' : 'doing' } })
+  }
+
   /**
    * 删除（v1.35）：二次确认 + 6 秒撤销。
    * 原实现的垃圾桶按钮一点就删、没有任何回执——手机上误触一次就没了（委托书 5.2「删除防误触」）。
@@ -156,5 +182,5 @@ export function useTaskActions() {
     })
   }
 
-  return { complete, reopen, toggle, completeMany, reschedule, skipOnce, removeTask }
+  return { complete, reopen, toggle, completeMany, reschedule, skipOnce, removeTask, defer, shelve, toggleDoing }
 }

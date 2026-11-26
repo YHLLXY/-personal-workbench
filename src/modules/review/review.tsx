@@ -66,7 +66,9 @@ export default function Review() {
     setResult(null)
   }, [review, activeDate])
 
-  const s = buildDailySummary(today, { tasks: tasks ?? [], focusSessions: sessions ?? [], habitLogs: logs ?? [], healthLogs: health ?? [], exams: exams ?? [] })
+  // v1.35：统计跟随正在看的日期（D-16）。原实现固定用 today，切到历史日期时上面的数字不动，
+  // 用户会以为"那天什么都没做"——而这正是复盘最需要看清的一天。
+  const s = buildDailySummary(activeDate, { tasks: tasks ?? [], focusSessions: sessions ?? [], habitLogs: logs ?? [], healthLogs: health ?? [], exams: exams ?? [] })
   const history = [...(reviews ?? [])].sort((a, b) => b.reviewDate.localeCompare(a.reviewDate))
   const isToday = activeDate === today
   const streak = streakFromLogDates((reviews ?? []).map(r => r.reviewDate)) // 连续复盘天数（复用打卡连击算法）
@@ -125,8 +127,9 @@ export default function Review() {
         <div className="space-y-4 lg:col-start-2 lg:row-start-1">
           {/* 自动汇总 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <Stat icon={CheckCircle2} label="完成任务" value={`${s.tasksDone}`} sub={`累计 ${s.tasksTotal}`} />
-            <Stat icon={Timer} label="专注时长" value={`${Math.floor(s.focusMinutes / 60)}h ${s.focusMinutes % 60}m`} sub="今天" />
+            {/* 「累计 N」歧义（D-26）：value 是当日完成，sub 是全历史完成，两者不该混在同一张卡里说不清 */}
+            <Stat icon={CheckCircle2} label="完成任务" value={`${s.tasksDone}`} sub={`历史 ${s.tasksTotal}`} />
+            <Stat icon={Timer} label="专注时长" value={`${Math.floor(s.focusMinutes / 60)}h ${s.focusMinutes % 60}m`} sub={isToday ? '今天' : activeDate} />
             <Stat icon={Flame} label="打卡" value={`${s.habitChecks}`} sub="次" />
             <Stat icon={Scale} label="体重" value={s.weightLog ? `${s.weightLog.value}kg` : '—'} sub={s.weightLog?.logDate === today ? '今天' : '未记录'} />
           </div>
